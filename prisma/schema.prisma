@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  PLAYER
+  ORGANIZER
+  PLATFORM_ADMIN
+}
+
+enum UserStatus {
+  ATIVO
+  INATIVO
+  BLOQUEADO
+}
+
+enum AuthProvider {
+  GOOGLE
+  APPLE
+}
+
+model Usuario {
+  idUsuario       String     @id @default(uuid()) @map("id_usuario") @db.VarChar(36)
+  firebaseUid     String?    @unique @map("firebase_uid") @db.VarChar(128)
+  senhaHash       String?    @map("senha_hash") @db.VarChar(255)
+  nome            String?    @db.VarChar(255)
+  email           String     @unique @db.VarChar(255)
+  fotoUrl         String?    @map("foto_url") @db.Text
+  tipoUsuario     UserType   @default(PLAYER) @map("tipo_usuario")
+  status          UserStatus @default(ATIVO)
+  dataCriacao     DateTime   @default(now()) @map("data_criacao")
+  dataAtualizacao DateTime   @updatedAt @map("data_atualizacao")
+  authAccounts    AuthAccount[]
+  resetTokens     PasswordResetToken[]
+  times           TimeUsuario[]
+
+  @@map("USUARIO")
+}
+
+model TimeUsuario {
+  usuarioId   String   @map("USUARIO_ID") @db.VarChar(36)
+  timeId      Int      @map("TIME_ID") @db.UnsignedInt
+  nome        String   @map("NOME") @db.VarChar(255)
+  nomeCartola String?  @map("NOME_CARTOLA") @db.VarChar(255)
+  slug        String?  @map("SLUG") @db.VarChar(255)
+  urlEscudoPng String? @map("URL_ESCUDO_PNG") @db.Text
+  fotoPerfil  String?  @map("FOTO_PERFIL") @db.Text
+  assinante   Boolean? @map("ASSINANTE")
+  criadoEm    DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario     Usuario  @relation(fields: [usuarioId], references: [idUsuario], onDelete: Cascade)
+
+  @@id([usuarioId, timeId])
+  @@index([timeId])
+  @@map("TIME_USUARIO")
+}
+
+model AuthAccount {
+  id                String       @id @default(uuid()) @db.VarChar(36)
+  userId            String       @map("user_id") @db.VarChar(36)
+  provider          AuthProvider
+  providerAccountId String       @map("provider_account_id") @db.VarChar(255)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  user              Usuario      @relation(fields: [userId], references: [idUsuario], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+  @@map("AUTH_ACCOUNT")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid()) @db.VarChar(36)
+  userId    String    @map("user_id") @db.VarChar(36)
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      Usuario   @relation(fields: [userId], references: [idUsuario], onDelete: Cascade)
+  @@index([userId])
+  @@map("PASSWORD_RESET_TOKEN")
+}

@@ -1,0 +1,18 @@
+ALTER TABLE `USUARIO` MODIFY `firebase_uid` VARCHAR(128) NULL,
+  ADD COLUMN `senha_hash` VARCHAR(255) NULL;
+CREATE TABLE `AUTH_ACCOUNT` (
+  `id` VARCHAR(36) NOT NULL, `user_id` VARCHAR(36) NOT NULL,
+  `provider` ENUM('GOOGLE','APPLE') NOT NULL,
+  `provider_account_id` VARCHAR(255) NOT NULL,
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_at` DATETIME(3) NOT NULL,
+  UNIQUE INDEX `AUTH_ACCOUNT_provider_provider_account_id_key` (`provider`,`provider_account_id`),
+  PRIMARY KEY (`id`), CONSTRAINT `AUTH_ACCOUNT_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `USUARIO`(`id_usuario`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE TABLE `PASSWORD_RESET_TOKEN` (
+  `id` VARCHAR(36) NOT NULL, `user_id` VARCHAR(36) NOT NULL, `token_hash` CHAR(64) NOT NULL,
+  `expires_at` DATETIME(3) NOT NULL, `used_at` DATETIME(3) NULL,
+  `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE INDEX `PASSWORD_RESET_TOKEN_token_hash_key` (`token_hash`), INDEX `PASSWORD_RESET_TOKEN_user_id_idx` (`user_id`),
+  PRIMARY KEY (`id`), CONSTRAINT `PASSWORD_RESET_TOKEN_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `USUARIO`(`id_usuario`) ON DELETE CASCADE ON UPDATE CASCADE
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
