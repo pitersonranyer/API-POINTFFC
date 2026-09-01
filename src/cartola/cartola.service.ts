@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CartolaCacheService } from './cartola-cache.service';
 import { CartolaHttpClient } from './cartola-http.client';
-import { CachedResult, CartolaBatchError, CartolaBatchResponse, CartolaDashboard, CartolaMarketStatus, CartolaMatchesResponse, CartolaPayload, CartolaTimePayload, CartolaTimeResumo, MarketState } from './cartola.types';
+import { CachedResult, CartolaBatchError, CartolaBatchResponse, CartolaDashboard, CartolaMarketStatus, CartolaMatchesResponse, CartolaPayload, CartolaScoredAthletesFreshResult, CartolaScoredAthletesPayload, CartolaTeamRequestOptions, CartolaTeamSubstitutionsPayload, CartolaTimePayload, CartolaTimeResumo, CartolaTimeSnapshotPayload, MarketState } from './cartola.types';
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -21,22 +21,38 @@ export class CartolaService {
     return this.cache.getOrLoad('atletas/mercado', state.mercadoAberto ? 3 * MINUTE : HOUR, () => this.http.get<CartolaPayload>('/atletas/mercado'));
   }
 
-  async getScoredAthletes(round?: number): Promise<CachedResult<CartolaPayload>> {
+  async getScoredAthletes(round?: number): Promise<CachedResult<CartolaScoredAthletesPayload>> {
     const state = await this.getState();
-    if (state.mercadoAberto && round === undefined) {
-      throw new BadRequestException('Informe a rodada para consultar atletas pontuados com o mercado aberto');
-    }
-    const ttl = state.bolaRolando ? 15 * SECOND : state.mercadoAberto ? 10 * MINUTE : MINUTE;
+    this.validateScoredAthletesRound(state, round);
+    const ttl = this.scoredAthletesTtl(state);
     const suffix = round === undefined ? '' : `/${round}`;
-    return this.cache.getOrLoad(`atletas/pontuados${suffix}`, ttl, () => this.http.get<CartolaPayload>(`/atletas/pontuados${suffix}`));
+    return this.cache.getOrLoad(`atletas/pontuados${suffix}`, ttl, () => this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados${suffix}`));
+  }
+
+  async loadScoredAthletesFresh(round?: number): Promise<CartolaScoredAthletesFreshResult> {
+    const state = await this.getState();
+    this.validateScoredAthletesRound(state, round);
+    const suffix = round === undefined ? '' : `/${round}`;
+    const value = await this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados${suffix}`);
+    return { value, ttlMs: this.scoredAthletesTtl(state) };
   }
 
   getClubs(): Promise<CachedResult<Record<string, unknown>>> {
     return this.cache.getOrLoad('clubes', 18 * HOUR, () => this.http.get<Record<string, unknown>>('/clubes'));
   }
 
-  getTeamById(timeId: number): Promise<CachedResult<CartolaTimePayload>> {
-    return this.cache.getOrLoad(`times/id/${timeId}`, 10 * MINUTE, () => this.http.get<CartolaTimePayload>(`/time/id/${timeId}`, { notFoundMessage: 'Time do Cartola não encontrado' }));
+  getTeamById(timeId: number, options?: CartolaTeamRequestOptions): Promise<CachedResult<CartolaTimeSnapshotPayload>> {
+    if (options?.forceRefresh) {
+      return this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}`, { notFoundMessage: 'Time do Cartola não encontrado' })
+        .then((value) => ({ value, cache: 'miss', stale: false }));
+    }
+    return this.cache.getOrLoad(`times/id/${timeId}`, 10 * MINUTE, () => this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}`, { notFoundMessage: 'Time do Cartola não encontrado' }));
+  }
+
+  getTeamSubstitutions(timeId: number): Promise<CartolaTeamSubstitutionsPayload> {
+    return this.http.get<CartolaTeamSubstitutionsPayload>(`/time/substituicoes/${timeId}`, {
+      notFoundMessage: 'Substituições do time não encontradas',
+    });
   }
 
   searchTeams(nome: string): Promise<CachedResult<CartolaTimePayload[]>> {
@@ -122,6 +138,16 @@ export class CartolaService {
   private matchesTtl(state: MarketState): number {
     if (state.bolaRolando) return 25 * SECOND;
     return state.mercadoAberto ? 3 * MINUTE : 90 * SECOND;
+  }
+
+  private scoredAthletesTtl(state: MarketState): number {
+    return state.bolaRolando ? 15 * SECOND : state.mercadoAberto ? 10 * MINUTE : MINUTE;
+  }
+
+  private validateScoredAthletesRound(state: MarketState, round?: number): void {
+    if (state.mercadoAberto && round === undefined) {
+      throw new BadRequestException('Informe a rodada para consultar atletas pontuados com o mercado aberto');
+    }
   }
 
   private toTeamSummary(timeId: number, team: CartolaTimePayload): CartolaTimeResumo {

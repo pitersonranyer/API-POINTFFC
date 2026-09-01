@@ -13,4 +13,12 @@ export const environmentValidationSchema = Joi.object({
   FIREBASE_PRIVATE_KEY: Joi.string().required(),
   CARTOLA_API_URL: Joi.string().uri({ scheme: ['https'] }).default('https://api.cartolafc.globo.com'),
   CARTOLA_API_TIMEOUT_MS: Joi.number().integer().min(1000).max(30000).default(5000),
+  REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }).when('NODE_ENV', {
+    is: 'production',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  }),
+  REDIS_SCORED_STALE_TTL_SECONDS: Joi.number().integer().min(60).default(86400),
+  REDIS_LOCK_TTL_MS: Joi.number().integer().min(1000).max(60000).default(10000),
+  REDIS_LOCK_WAIT_MS: Joi.number().integer().min(100).max(30000).default(5000),
 });

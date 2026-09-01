@@ -22,6 +22,15 @@ describe('CartolaService - times', () => {
     expect(get).toHaveBeenCalledWith('/time/id/123', { notFoundMessage: 'Time do Cartola não encontrado' });
   });
 
+  it('ignora o cache quando forceRefresh é solicitado', async () => {
+    get.mockResolvedValue({ time_id: 123, nome: 'Time fresco' });
+    await service.getTeamById(123);
+    const fresh = await service.getTeamById(123, { forceRefresh: true });
+
+    expect(fresh).toMatchObject({ cache: 'miss', stale: false, value: { nome: 'Time fresco' } });
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
   it('busca nome escapado, retorna múltiplos resultados e normaliza a chave de cache', async () => {
     get.mockResolvedValue([{ time_id: 1 }, { time_id: 2 }]);
     expect((await service.searchTeams(' Meu Time ')).value).toHaveLength(2);

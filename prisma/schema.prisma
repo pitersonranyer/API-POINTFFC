@@ -24,6 +24,15 @@ enum AuthProvider {
   APPLE
 }
 
+enum TimeRodadaStatus {
+  CAPTURADO
+}
+
+enum PontuacaoTimeRodadaStatus {
+  PARCIAL
+  FINAL
+}
+
 model Usuario {
   idUsuario       String     @id @default(uuid()) @map("id_usuario") @db.VarChar(36)
   firebaseUid     String?    @unique @map("firebase_uid") @db.VarChar(128)
@@ -58,6 +67,89 @@ model TimeUsuario {
   @@id([usuarioId, timeId])
   @@index([timeId])
   @@map("TIME_USUARIO")
+}
+
+model TimeCartola {
+  timeId         Int           @id @map("TIME_ID") @db.UnsignedInt
+  nomeTime       String        @map("NOME_TIME") @db.VarChar(255)
+  nomeCartoleiro String?       @map("NOME_CARTOLEIRO") @db.VarChar(255)
+  slug           String?       @map("SLUG") @db.VarChar(255)
+  escudoUrl      String?       @map("ESCUDO_URL") @db.Text
+  fotoPerfilUrl  String?       @map("FOTO_PERFIL_URL") @db.Text
+  assinante      Boolean?      @map("ASSINANTE")
+  criadoEm       DateTime      @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime      @updatedAt @map("ATUALIZADO_EM")
+  rodadas        TimeRodada[]
+
+  @@map("TIME_CARTOLA")
+}
+
+model TimeRodada {
+  id             String                    @id @default(uuid()) @map("ID") @db.VarChar(36)
+  timeId         Int                       @map("TIME_ID") @db.UnsignedInt
+  temporada      Int                       @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada         Int                       @map("RODADA") @db.UnsignedTinyInt
+  esquemaTatico  Int?                      @map("ESQUEMA_TATICO") @db.UnsignedInt
+  patrimonio     Decimal?                  @map("PATRIMONIO") @db.Decimal(12, 2)
+  capitaoId      Int?                      @map("CAPITAO_ID") @db.UnsignedInt
+  reservaLuxoId  Int?                      @map("RESERVA_LUXO_ID") @db.UnsignedInt
+  status         TimeRodadaStatus          @default(CAPTURADO) @map("STATUS")
+  criadoEm       DateTime                  @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime                  @updatedAt @map("ATUALIZADO_EM")
+  time           TimeCartola               @relation(fields: [timeId], references: [timeId], onDelete: Restrict)
+  escalacao      EscalacaoTimeRodada[]
+  pontuacao      PontuacaoTimeRodada?
+  substituicoes  SubstituicaoTimeRodada[]
+
+  @@unique([timeId, temporada, rodada])
+  @@index([temporada, rodada])
+  @@map("TIME_RODADA")
+}
+
+model SubstituicaoTimeRodada {
+  id              String      @id @default(uuid()) @map("ID") @db.VarChar(36)
+  timeRodadaId    String      @map("TIME_RODADA_ID") @db.VarChar(36)
+  atletaSaiuId    Int         @map("ATLETA_SAIU_ID") @db.UnsignedInt
+  atletaEntrouId  Int         @map("ATLETA_ENTROU_ID") @db.UnsignedInt
+  posicaoId       Int         @map("POSICAO_ID") @db.UnsignedInt
+  criadoEm        DateTime    @default(now()) @map("CRIADO_EM")
+  atualizadoEm    DateTime    @updatedAt @map("ATUALIZADO_EM")
+  timeRodada      TimeRodada  @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
+
+  @@unique([timeRodadaId, atletaSaiuId, atletaEntrouId], map: "SUB_TR_PAIR_key")
+  @@index([atletaSaiuId])
+  @@index([atletaEntrouId])
+  @@map("SUBSTITUICAO_TIME_RODADA")
+}
+
+model PontuacaoTimeRodada {
+  id             String                       @id @default(uuid()) @map("ID") @db.VarChar(36)
+  timeRodadaId   String                       @unique @map("TIME_RODADA_ID") @db.VarChar(36)
+  pontuacao      Decimal                      @map("PONTUACAO") @db.Decimal(12, 2)
+  status         PontuacaoTimeRodadaStatus    @default(PARCIAL) @map("STATUS")
+  criadoEm       DateTime                     @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime                     @updatedAt @map("ATUALIZADO_EM")
+  timeRodada     TimeRodada                   @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
+
+  @@map("PONTUACAO_TIME_RODADA")
+}
+
+model EscalacaoTimeRodada {
+  id             String      @id @default(uuid()) @map("ID") @db.VarChar(36)
+  timeRodadaId   String      @map("TIME_RODADA_ID") @db.VarChar(36)
+  atletaId       Int         @map("ATLETA_ID") @db.UnsignedInt
+  posicaoId      Int         @map("POSICAO_ID") @db.UnsignedInt
+  clubeId        Int?        @map("CLUBE_ID") @db.UnsignedInt
+  titular        Boolean     @map("TITULAR")
+  reserva        Boolean     @map("RESERVA")
+  capitao        Boolean     @map("CAPITAO")
+  criadoEm       DateTime    @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime    @updatedAt @map("ATUALIZADO_EM")
+  timeRodada     TimeRodada  @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
+
+  @@unique([timeRodadaId, atletaId])
+  @@index([atletaId])
+  @@map("ESCALACAO_TIME_RODADA")
 }
 
 model AuthAccount {

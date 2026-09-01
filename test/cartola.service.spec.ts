@@ -56,6 +56,33 @@ describe('CartolaService', () => {
     expect(get).toHaveBeenCalledWith('/atletas/pontuados');
   });
 
+  it('carrega pontuados fresh sem reutilizar o cache local e centraliza o TTL', async () => {
+    get.mockImplementation((path: string) => Promise.resolve(
+      path === '/mercado/status' ? status(2, true) : { rodada: 25, atletas: {} },
+    ));
+
+    const first = await service.loadScoredAthletesFresh();
+    const second = await service.loadScoredAthletesFresh();
+
+    expect(first.ttlMs).toBe(15_000);
+    expect(second.ttlMs).toBe(15_000);
+    expect(get.mock.calls.filter(([path]) => path === '/atletas/pontuados')).toHaveLength(2);
+  });
+
+  it('consulta substituições oficiais diretamente pelo timeId', async () => {
+    const substitutions = [{
+      saiu: { atleta_id: 94583, posicao_id: 5 },
+      entrou: { atleta_id: 90031, posicao_id: 5 },
+      posicao_id: 5,
+    }];
+    get.mockResolvedValueOnce(substitutions);
+
+    await expect(service.getTeamSubstitutions(30157355)).resolves.toEqual(substitutions);
+    expect(get).toHaveBeenCalledWith('/time/substituicoes/30157355', {
+      notFoundMessage: 'Substituições do time não encontradas',
+    });
+  });
+
   it('mantém bola rolando independente do estado fechado no dashboard', async () => {
     get.mockImplementation((path: string) => {
       if (path === '/mercado/status') return Promise.resolve(status(2, true));
