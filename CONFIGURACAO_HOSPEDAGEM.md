@@ -50,7 +50,7 @@ FIREBASE_PRIVATE_KEY=<COPIAR_FIREBASE_PRIVATE_KEY_DO_ENV_LOCAL>
 CARTOLA_API_URL=https://api.cartolafc.globo.com
 CARTOLA_API_TIMEOUT_MS=5000
 
-REDIS_URL=redis://<USUARIO>:<SENHA>@<HOST>:<PORTA>
+REDIS_URL=
 REDIS_SCORED_STALE_TTL_SECONDS=86400
 REDIS_LOCK_TTL_MS=10000
 REDIS_LOCK_WAIT_MS=5000
@@ -64,7 +64,7 @@ Solicite ou copie do painel dos serviços contratados:
 |---|---|
 | `FRONTEND_URL` | Domínio público do frontend, sem barra no final |
 | `DATABASE_URL` | Dados de conexão do banco MySQL de produção |
-| `REDIS_URL` | URL de conexão fornecida pelo serviço Redis |
+| `REDIS_URL` | Opcional. URL de conexão fornecida pelo serviço Redis, caso ele seja utilizado |
 
 ### Valores secretos existentes no `.env` local
 
@@ -85,7 +85,7 @@ PORT=3001
 
 ## Observações importantes
 
-- Em produção, a variável `REDIS_URL` é obrigatória.
+- `REDIS_URL` é opcional. Sem ela, a aplicação usa cache em memória; nesse modo, o cache não é compartilhado entre instâncias e é perdido a cada reinicialização.
 - Se a hospedagem definir automaticamente a variável `PORT`, não cadastre uma porta manualmente. A API já utiliza a porta fornecida pelo servidor.
 - `FRONTEND_URL` deve receber o endereço público do frontend, e não o endereço da API. Esse valor é usado na configuração de CORS.
 - O arquivo `dist/main.js` somente existirá após a execução de `npm run build`.

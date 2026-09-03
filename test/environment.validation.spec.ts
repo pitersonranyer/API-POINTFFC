@@ -16,10 +16,20 @@ describe('environmentValidationSchema Redis', () => {
     expect(result.error).toBeUndefined();
   });
 
-  it('exige REDIS_URL válida em produção', () => {
+  it('aceita fallback em memória sem REDIS_URL em produção', () => {
     const missing = environmentValidationSchema.validate({ ...validEnvironment, NODE_ENV: 'production' });
     const valid = environmentValidationSchema.validate({ ...validEnvironment, NODE_ENV: 'production', REDIS_URL: 'redis://localhost:6379' });
-    expect(missing.error?.message).toContain('REDIS_URL');
+    expect(missing.error).toBeUndefined();
     expect(valid.error).toBeUndefined();
+  });
+
+  it('rejeita REDIS_URL com protocolo invalido', () => {
+    const result = environmentValidationSchema.validate({
+      ...validEnvironment,
+      NODE_ENV: 'production',
+      REDIS_URL: 'http://localhost:6379',
+    });
+
+    expect(result.error?.message).toContain('REDIS_URL');
   });
 });
