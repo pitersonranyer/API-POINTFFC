@@ -29,7 +29,7 @@ npx prisma generate
 npm run build
 ```
 
-O comando de build cria o arquivo `dist/main.js`. Ao executar `npm run start:prod`, as migrations pendentes são aplicadas antes de iniciar a API.
+O comando de build cria o arquivo `dist/main.js`. Ao iniciar esse arquivo, a própria aplicação aplica as migrations pendentes antes de abrir o servidor HTTP.
 
 ## Variáveis de ambiente
 
@@ -89,7 +89,7 @@ PORT=3001
 - Se a hospedagem definir automaticamente a variável `PORT`, não cadastre uma porta manualmente. A API já utiliza a porta fornecida pelo servidor.
 - `FRONTEND_URL` deve receber o endereço público do frontend, e não o endereço da API. Esse valor é usado na configuração de CORS.
 - O arquivo `dist/main.js` somente existirá após a execução de `npm run build`.
-- A hospedagem deve executar `npm run start:prod`, e não iniciar `dist/main.js` diretamente, para que as migrations sejam aplicadas automaticamente.
+- As migrations são verificadas tanto ao executar `npm run start:prod` quanto ao iniciar `dist/main.js` diretamente.
 - Não envie o arquivo `.env` real para o Git nem exponha suas credenciais em uma pasta pública.
 - O valor de `JWT_SECRET` deve possuir no mínimo 32 caracteres e ser difícil de adivinhar.
 - Preserve os `\n` no valor de `FIREBASE_PRIVATE_KEY`. Dependendo do painel, talvez seja necessário colar a chave com quebras de linha reais.
