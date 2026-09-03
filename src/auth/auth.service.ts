@@ -20,5 +20,5 @@ export class AuthService {
     return this.session(user);
   }
   private session(user: Usuario): AuthResponse { return { accessToken: this.jwt.sign({ sub: user.idUsuario }), tokenType: 'Bearer', expiresIn: this.config.getOrThrow('JWT_EXPIRES_IN'), user: CurrentUserResponseDto.from(user) }; }
-  async authenticateJwt(token: string): Promise<Usuario> { try { const payload=await this.jwt.verifyAsync<{sub:string}>(token); const user=await this.prisma.usuario.findUnique({where:{idUsuario:payload.sub}}); if(!user)throw new Error(); return user; } catch { throw new UnauthorizedException('Token de acesso inválido ou expirado'); } }
+  async authenticateJwt(token: string): Promise<Usuario> { try { const payload=await this.jwt.verifyAsync<{sub:number}>(token); const user=await this.prisma.usuario.findUnique({where:{idUsuario:payload.sub}}); if(!user)throw new Error(); return user; } catch { throw new UnauthorizedException('Token de acesso inválido ou expirado'); } }
 }

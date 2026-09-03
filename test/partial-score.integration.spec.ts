@@ -94,7 +94,7 @@ describeIntegration('PartialScoreService - integração MySQL', () => {
       data: { timeRodadaId: timeRodada.id, pontuacao: new Prisma.Decimal(0) },
     })).rejects.toMatchObject({ code: 'P2002' });
     await expect(prisma.pontuacaoTimeRodada.create({
-      data: { timeRodadaId: 'time-rodada-inexistente', pontuacao: new Prisma.Decimal(0) },
+      data: { timeRodadaId: 4_294_967_295, pontuacao: new Prisma.Decimal(0) },
     })).rejects.toMatchObject({ code: 'P2003' });
   });
 

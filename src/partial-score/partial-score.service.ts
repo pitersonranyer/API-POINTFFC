@@ -30,7 +30,7 @@ export interface ParcialTimeResultado {
   timeId: number;
   temporada: number;
   rodada: number;
-  timeRodadaId: string;
+  timeRodadaId: number;
   pontuacaoParcial: number;
   status: 'PARCIAL';
   atletas: DetalhePontuacaoAtleta[];
@@ -101,7 +101,7 @@ export class PartialScoreService {
     };
   }
 
-  private async persistirParcial(timeRodadaId: string, pontuacao: Prisma.Decimal): Promise<void> {
+  private async persistirParcial(timeRodadaId: number, pontuacao: Prisma.Decimal): Promise<void> {
     const data = { pontuacao, status: 'PARCIAL' as const };
     try {
       await this.prisma.pontuacaoTimeRodada.upsert({

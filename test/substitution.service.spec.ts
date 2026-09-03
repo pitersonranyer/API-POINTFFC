@@ -7,7 +7,7 @@ import { SubstitutionService } from '../src/substitutions/substitution.service';
 describe('SubstitutionService', () => {
   const input = { timeId: 30157355, temporada: 2026, rodada: 25 };
   const snapshot = {
-    id: 'time-rodada-25',
+    id: 25,
     reservaLuxoId: 90031,
     escalacao: [
       { atletaId: 94583, posicaoId: 5, titular: true, reserva: false, capitao: false },
@@ -88,7 +88,7 @@ describe('SubstitutionService', () => {
 
     expect(result).toMatchObject({ pontuacaoBase: 75.2, pontuacaoEfetiva: 75.2, substituicoes: [] });
     expect(tx.substituicaoTimeRodada.createMany).not.toHaveBeenCalled();
-    expect(tx.substituicaoTimeRodada.deleteMany).toHaveBeenCalledWith({ where: { timeRodadaId: 'time-rodada-25' } });
+    expect(tx.substituicaoTimeRodada.deleteMany).toHaveBeenCalledWith({ where: { timeRodadaId: 25 } });
   });
 
   it('processa uma reserva normal com reservaLuxo false', async () => {

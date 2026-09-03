@@ -43,7 +43,7 @@ describe('TimeSnapshotsService', () => {
     cartola.getTeamById.mockResolvedValue({ value: payload, cache: 'miss', stale: false });
     tx.timeCartola.upsert.mockResolvedValue({});
     tx.timeRodada.findUnique.mockResolvedValue(null);
-    tx.timeRodada.create.mockResolvedValue({ id: 'time-rodada-1' });
+    tx.timeRodada.create.mockResolvedValue({ id: 1 });
     tx.escalacaoTimeRodada.createMany.mockResolvedValue({ count: 3 });
     prisma.$transaction.mockImplementation((callback) => callback(tx));
     prisma.timeRodada.findUnique.mockResolvedValue(null);
@@ -108,7 +108,7 @@ describe('TimeSnapshotsService', () => {
     expect(tx.timeRodada.create.mock.calls[0][0].data.reservaLuxoId).toBe(20);
 
     tx.timeRodada.findUnique.mockResolvedValue({
-      id: 'snapshot-existente',
+      id: 2,
       reservaLuxoId: null,
       escalacao: [{ atletaId: 10, titular: true, reserva: false }],
     });
@@ -132,16 +132,16 @@ describe('TimeSnapshotsService', () => {
     expect(result).toMatchObject({ criado: true, titulares: 2, reservas: 1 });
     const rows = tx.escalacaoTimeRodada.createMany.mock.calls[0][0].data;
     expect(rows).toEqual([
-      { timeRodadaId: 'time-rodada-1', atletaId: 10, posicaoId: 5, clubeId: 1, titular: true, reserva: false, capitao: true },
-      { timeRodadaId: 'time-rodada-1', atletaId: 11, posicaoId: 4, clubeId: 2, titular: true, reserva: false, capitao: false },
-      { timeRodadaId: 'time-rodada-1', atletaId: 20, posicaoId: 5, clubeId: 3, titular: false, reserva: true, capitao: false },
+      { timeRodadaId: 1, atletaId: 10, posicaoId: 5, clubeId: 1, titular: true, reserva: false, capitao: true },
+      { timeRodadaId: 1, atletaId: 11, posicaoId: 4, clubeId: 2, titular: true, reserva: false, capitao: false },
+      { timeRodadaId: 1, atletaId: 20, posicaoId: 5, clubeId: 3, titular: false, reserva: true, capitao: false },
     ]);
     expect(rows.every((row: Record<string, unknown>) => !('multiplicador' in row))).toBe(true);
   });
 
   it('é idempotente e não sobrescreve a escalação original existente', async () => {
     tx.timeRodada.findUnique.mockResolvedValue({
-      id: 'snapshot-existente',
+      id: 2,
       escalacao: [
         { atletaId: 10, titular: true, reserva: false },
         { atletaId: 20, titular: false, reserva: true },
@@ -150,7 +150,7 @@ describe('TimeSnapshotsService', () => {
 
     const result = await service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 });
 
-    expect(result).toMatchObject({ timeRodadaId: 'snapshot-existente', criado: false, titulares: 1, reservas: 1 });
+    expect(result).toMatchObject({ timeRodadaId: 2, criado: false, titulares: 1, reservas: 1 });
     expect(tx.timeRodada.create).not.toHaveBeenCalled();
     expect(tx.escalacaoTimeRodada.createMany).not.toHaveBeenCalled();
     expect(tx.timeCartola.upsert).toHaveBeenCalledTimes(1);
@@ -163,7 +163,7 @@ describe('TimeSnapshotsService', () => {
       meta: { target: 'TIME_RODADA_TIME_ID_TEMPORADA_RODADA_key' },
     });
     const snapshotVencedor = {
-      id: 'time-rodada-1',
+      id: 1,
       escalacao: [
         { titular: true, reserva: false },
         { titular: false, reserva: true },
@@ -182,8 +182,8 @@ describe('TimeSnapshotsService', () => {
       service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 }),
     ]);
 
-    expect(primeira).toMatchObject({ timeRodadaId: 'time-rodada-1', criado: true });
-    expect(segunda).toMatchObject({ timeRodadaId: 'time-rodada-1', criado: false, titulares: 1, reservas: 1 });
+    expect(primeira).toMatchObject({ timeRodadaId: 1, criado: true });
+    expect(segunda).toMatchObject({ timeRodadaId: 1, criado: false, titulares: 1, reservas: 1 });
     expect(primeira.timeRodadaId).toBe(segunda.timeRodadaId);
     expect(prisma.timeRodada.findUnique).toHaveBeenCalledWith({
       where: { timeId_temporada_rodada: { timeId: 123, temporada: 2026, rodada: 25 } },
@@ -198,12 +198,12 @@ describe('TimeSnapshotsService', () => {
       meta: { modelName: 'TimeCartola', target: 'PRIMARY' },
     }));
     prisma.timeRodada.findUnique.mockResolvedValue({
-      id: 'snapshot-vencedor',
+      id: 3,
       escalacao: [{ titular: true, reserva: false }],
     });
 
     await expect(service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 }))
-      .resolves.toMatchObject({ timeRodadaId: 'snapshot-vencedor', criado: false });
+      .resolves.toMatchObject({ timeRodadaId: 3, criado: false });
   });
 
   it('não mascara P2002 de outra constraint como concorrência de TIME_RODADA', async () => {

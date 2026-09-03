@@ -34,14 +34,14 @@ describeBenchmark('RankingGeralService - benchmark MySQL local', () => {
           nomeCartoleiro: `Cartoleiro ${index}`,
         })) });
         await prisma.timeRodada.createMany({ data: indexes.map((index) => ({
-          id: `rank-${dataset.temporada}-${index}`,
+          id: dataset.temporada * 10_000 + index,
           timeId: dataset.baseTimeId + index,
           temporada: dataset.temporada,
           rodada,
         })) });
         await prisma.pontuacaoTimeRodada.createMany({ data: indexes.map((index) => ({
-          id: `score-${dataset.temporada}-${index}`,
-          timeRodadaId: `rank-${dataset.temporada}-${index}`,
+          id: dataset.temporada * 10_000 + index,
+          timeRodadaId: dataset.temporada * 10_000 + index,
           pontuacao: new Prisma.Decimal(((index * 37) % 20000).toString()).div(100),
           status: index % 2 === 0 ? 'PARCIAL' : 'FINAL',
         })) });

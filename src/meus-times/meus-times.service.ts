@@ -20,16 +20,16 @@ export type ImportarTimesResultado = {
 export class MeusTimesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listarTimesDoUsuario(usuarioId: string): Promise<TimeUsuarioResponseDto[]> {
+  async listarTimesDoUsuario(usuarioId: number): Promise<TimeUsuarioResponseDto[]> {
     const times = await this.prisma.timeUsuario.findMany({ where: { usuarioId }, orderBy: { criadoEm: 'desc' } });
     return times.map(TimeUsuarioResponseDto.from);
   }
 
-  buscarTimeDoUsuario(usuarioId: string, timeId: number): Promise<TimeUsuario | null> {
+  buscarTimeDoUsuario(usuarioId: number, timeId: number): Promise<TimeUsuario | null> {
     return this.prisma.timeUsuario.findUnique({ where: { usuarioId_timeId: { usuarioId, timeId } } });
   }
 
-  async adicionarTime(usuarioId: string, dadosTime: AdicionarTimeDto): Promise<AdicionarTimeResultado> {
+  async adicionarTime(usuarioId: number, dadosTime: AdicionarTimeDto): Promise<AdicionarTimeResultado> {
     try {
       await this.prisma.timeUsuario.create({ data: { usuarioId, ...dadosTime } });
       return { status: 'adicionado', timeId: dadosTime.timeId };
@@ -41,12 +41,12 @@ export class MeusTimesService {
     }
   }
 
-  async removerTime(usuarioId: string, timeId: number): Promise<void> {
+  async removerTime(usuarioId: number, timeId: number): Promise<void> {
     const result = await this.prisma.timeUsuario.deleteMany({ where: { usuarioId, timeId } });
     if (result.count === 0) throw new NotFoundException('Time nao encontrado entre os times do usuario');
   }
 
-  async adicionarTimesEmLote(usuarioId: string, times: unknown[]): Promise<ImportarTimesResultado> {
+  async adicionarTimesEmLote(usuarioId: number, times: unknown[]): Promise<ImportarTimesResultado> {
     const resultado: ImportarTimesResultado = {
       solicitados: times.length, adicionados: 0, jaExistentes: 0, falhas: [],
       timesAdicionados: [], timesJaExistentes: [],

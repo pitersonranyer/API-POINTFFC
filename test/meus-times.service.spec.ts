@@ -2,7 +2,7 @@ import { Prisma, TimeUsuario } from '@prisma/client';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { MeusTimesService } from '../src/meus-times/meus-times.service';
 
-const team = (usuarioId: string, timeId: number): TimeUsuario => ({
+const team = (usuarioId: number, timeId: number): TimeUsuario => ({
   usuarioId, timeId, nome: `Time ${timeId}`, nomeCartola: null, slug: null,
   urlEscudoPng: null, fotoPerfil: null, assinante: null,
   criadoEm: new Date('2026-08-27T12:00:00Z'), atualizadoEm: new Date('2026-08-27T12:00:00Z'),
@@ -17,27 +17,27 @@ describe('MeusTimesService', () => {
 
   it('cria um vinculo e permite o mesmo time para usuarios diferentes', async () => {
     delegate.create.mockResolvedValue({});
-    await expect(service.adicionarTime('usuario-a', { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'adicionado', timeId: 10 });
-    await expect(service.adicionarTime('usuario-b', { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'adicionado', timeId: 10 });
-    expect(delegate.create.mock.calls.map(([arg]) => arg.data.usuarioId)).toEqual(['usuario-a', 'usuario-b']);
+    await expect(service.adicionarTime(1, { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'adicionado', timeId: 10 });
+    await expect(service.adicionarTime(2, { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'adicionado', timeId: 10 });
+    expect(delegate.create.mock.calls.map(([arg]) => arg.data.usuarioId)).toEqual([1, 2]);
   });
 
   it('trata a chave composta duplicada como regra de negocio', async () => {
     delegate.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '5.22.0' }));
-    await expect(service.adicionarTime('usuario-a', { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'ja_existente', timeId: 10 });
+    await expect(service.adicionarTime(1, { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'ja_existente', timeId: 10 });
   });
 
   it('lista somente pelo usuario e nao expoe usuarioId', async () => {
-    delegate.findMany.mockResolvedValue([team('usuario-a', 10)]);
-    const result = await service.listarTimesDoUsuario('usuario-a');
-    expect(delegate.findMany).toHaveBeenCalledWith({ where: { usuarioId: 'usuario-a' }, orderBy: { criadoEm: 'desc' } });
+    delegate.findMany.mockResolvedValue([team(1, 10)]);
+    const result = await service.listarTimesDoUsuario(1);
+    expect(delegate.findMany).toHaveBeenCalledWith({ where: { usuarioId: 1 }, orderBy: { criadoEm: 'desc' } });
     expect(result[0]).not.toHaveProperty('usuarioId');
   });
 
   it('remove usando simultaneamente usuario e time', async () => {
     delegate.deleteMany.mockResolvedValue({ count: 1 });
-    await service.removerTime('usuario-a', 10);
-    expect(delegate.deleteMany).toHaveBeenCalledWith({ where: { usuarioId: 'usuario-a', timeId: 10 } });
+    await service.removerTime(1, 10);
+    expect(delegate.deleteMany).toHaveBeenCalledWith({ where: { usuarioId: 1, timeId: 10 } });
   });
 
   it('importa 10 itens com 7 novos e 3 existentes', async () => {
@@ -45,7 +45,7 @@ describe('MeusTimesService', () => {
       ? Promise.resolve({})
       : Promise.reject(new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '5.22.0' })));
     const times = Array.from({ length: 10 }, (_, index) => ({ timeId: index + 1, nome: `Time ${index + 1}` }));
-    const result = await service.adicionarTimesEmLote('usuario-a', times);
+    const result = await service.adicionarTimesEmLote(1, times);
     expect(result).toMatchObject({ solicitados: 10, adicionados: 7, jaExistentes: 3, falhas: [] });
     expect(result.timesAdicionados).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(result.timesJaExistentes).toEqual([8, 9, 10]);
@@ -53,7 +53,7 @@ describe('MeusTimesService', () => {
 
   it('continua a importacao quando um item e invalido', async () => {
     delegate.create.mockResolvedValue({});
-    const result = await service.adicionarTimesEmLote('usuario-a', [
+    const result = await service.adicionarTimesEmLote(1, [
       null,
       { timeId: -1, nome: '' },
       { timeId: 20, nome: '  Valido  ', urlEscudoPng: 'https://example.com/a.png' },

@@ -35,7 +35,7 @@ describe('PartialScore + cache (benchmark local controlado)', () => {
     });
     const prisma = {
       timeRodada: { findUnique: jest.fn(async () => ({
-        id: 'rodada-1', capitaoId: 11, escalacao: [
+        id: 1, capitaoId: 11, escalacao: [
           { atletaId: 10, posicaoId: 5, clubeId: 1, titular: true, capitao: false },
           { atletaId: 11, posicaoId: 4, clubeId: 2, titular: true, capitao: true },
           { atletaId: 12, posicaoId: 6, clubeId: 3, titular: true, capitao: false },

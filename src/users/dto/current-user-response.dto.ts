@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus, UserType, Usuario } from '@prisma/client';
 
 export class CurrentUserResponseDto {
-  @ApiProperty({ format: 'uuid' }) idUsuario: string;
+  @ApiProperty({ example: 1 }) idUsuario: number;
   @ApiPropertyOptional({ nullable: true }) nome: string | null;
   @ApiProperty({ format: 'email' }) email: string;
   @ApiPropertyOptional({ nullable: true }) fotoUrl: string | null;

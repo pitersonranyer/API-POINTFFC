@@ -90,7 +90,7 @@ export class SubstitutionService {
     };
   }
 
-  private persistir(timeRodadaId: string, substituicoes: SubstituicaoNormalizada[], total: Prisma.Decimal): Promise<void> {
+  private persistir(timeRodadaId: number, substituicoes: SubstituicaoNormalizada[], total: Prisma.Decimal): Promise<void> {
     return this.prisma.$transaction(async (tx) => {
       await tx.substituicaoTimeRodada.deleteMany({
         where: substituicoes.length === 0

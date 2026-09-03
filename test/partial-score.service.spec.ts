@@ -24,7 +24,7 @@ describe('PartialScoreService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    prisma.timeRodada.findUnique.mockResolvedValue({ id: 'rodada-1', capitaoId: 11, escalacao: titulares });
+    prisma.timeRodada.findUnique.mockResolvedValue({ id: 1, capitaoId: 11, escalacao: titulares });
     prisma.pontuacaoTimeRodada.upsert.mockResolvedValue({});
     prisma.pontuacaoTimeRodada.update.mockResolvedValue({});
     scoredCache.getScoredAthletes.mockResolvedValue({
@@ -167,8 +167,8 @@ describe('PartialScoreService', () => {
 
     expect(prisma.pontuacaoTimeRodada.upsert).toHaveBeenCalledTimes(2);
     for (const [call] of prisma.pontuacaoTimeRodada.upsert.mock.calls) {
-      expect(call.where).toEqual({ timeRodadaId: 'rodada-1' });
-      expect(call.create.timeRodadaId).toBe('rodada-1');
+      expect(call.where).toEqual({ timeRodadaId: 1 });
+      expect(call.create.timeRodadaId).toBe(1);
       expect(call.update.status).toBe('PARCIAL');
     }
     expect(prisma.pontuacaoTimeRodada.upsert.mock.calls[1][0].update.pontuacao.toNumber()).toBe(28.5);
@@ -189,7 +189,7 @@ describe('PartialScoreService', () => {
     expect(prisma.pontuacaoTimeRodada.upsert).toHaveBeenCalledTimes(2);
     expect(prisma.pontuacaoTimeRodada.update).toHaveBeenCalledTimes(1);
     expect(prisma.pontuacaoTimeRodada.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { timeRodadaId: 'rodada-1' },
+      where: { timeRodadaId: 1 },
     }));
     expect(scoredCache.getScoredAthletes).toHaveBeenCalledTimes(2);
   });
@@ -223,7 +223,7 @@ describe('PartialScoreService', () => {
     { description: 'titular duplicado', escalacao: [titulares[0], titulares[0]] },
     { description: 'mais de um capitão', escalacao: [{ ...titulares[0], capitao: true }, titulares[1]] },
   ])('rejeita snapshot inconsistente: $description', async ({ escalacao }) => {
-    prisma.timeRodada.findUnique.mockResolvedValue({ id: 'rodada-1', capitaoId: 11, escalacao });
+    prisma.timeRodada.findUnique.mockResolvedValue({ id: 1, capitaoId: 11, escalacao });
 
     await expect(service.calcular(input)).rejects.toBeInstanceOf(UnprocessableEntityException);
     expect(scoredCache.getScoredAthletes).not.toHaveBeenCalled();

@@ -14,7 +14,7 @@ export interface SnapshotTimeResultado {
   timeId: number;
   temporada: number;
   rodada: number;
-  timeRodadaId: string;
+  timeRodadaId: number;
   criado: boolean;
   titulares: number;
   reservas: number;
@@ -126,7 +126,7 @@ export class TimeSnapshotsService {
 
   private toResultadoExistente(
     input: CriarSnapshotTimeInput,
-    existente: { id: string; escalacao: Array<{ titular: boolean; reserva: boolean }> },
+    existente: { id: number; escalacao: Array<{ titular: boolean; reserva: boolean }> },
   ): SnapshotTimeResultado {
     return {
       timeId: input.timeId,
@@ -211,7 +211,7 @@ export class TimeSnapshotsService {
     });
   }
 
-  private toEscalacao(atleta: AtletaNormalizado, timeRodadaId: string, titular: boolean, capitaoId: number | null) {
+  private toEscalacao(atleta: AtletaNormalizado, timeRodadaId: number, titular: boolean, capitaoId: number | null) {
     return {
       timeRodadaId,
       atletaId: atleta.atletaId,

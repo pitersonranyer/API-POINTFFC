@@ -89,7 +89,7 @@ describeIntegration('SubstitutionService - integração MySQL', () => {
       data: { timeRodadaId: timeRodada.id, atletaSaiuId: saiuId, atletaEntrouId: entrouId, posicaoId: 5 },
     })).rejects.toMatchObject({ code: 'P2002' });
     await expect(prisma.substituicaoTimeRodada.create({
-      data: { timeRodadaId: 'time-rodada-inexistente', atletaSaiuId: saiuId, atletaEntrouId: entrouId + 1, posicaoId: 5 },
+      data: { timeRodadaId: 4_294_967_295, atletaSaiuId: saiuId, atletaEntrouId: entrouId + 1, posicaoId: 5 },
     })).rejects.toMatchObject({ code: 'P2003' });
     expect(persisted).toMatchObject({ atletaSaiuId: saiuId, atletaEntrouId: entrouId, posicaoId: 5 });
   });
