@@ -70,7 +70,7 @@ describe('TimeSnapshotsService', () => {
   it('solicita payload fresh ao Cartola para não criar snapshot a partir do cache', async () => {
     await service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 });
 
-    expect(cartola.getTeamById).toHaveBeenCalledWith(123, { forceRefresh: true });
+    expect(cartola.getTeamById).toHaveBeenCalledWith(123, { forceRefresh: true, round: 25 });
   });
 
   it('atualiza os metadados de um TIME_CARTOLA existente por upsert', async () => {

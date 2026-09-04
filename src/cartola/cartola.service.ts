@@ -42,11 +42,12 @@ export class CartolaService {
   }
 
   getTeamById(timeId: number, options?: CartolaTeamRequestOptions): Promise<CachedResult<CartolaTimeSnapshotPayload>> {
+    const suffix = options?.round === undefined ? '' : `/${options.round}`;
     if (options?.forceRefresh) {
-      return this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}`, { notFoundMessage: 'Time do Cartola não encontrado' })
+      return this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}${suffix}`, { notFoundMessage: 'Time do Cartola não encontrado' })
         .then((value) => ({ value, cache: 'miss', stale: false }));
     }
-    return this.cache.getOrLoad(`times/id/${timeId}`, 10 * MINUTE, () => this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}`, { notFoundMessage: 'Time do Cartola não encontrado' }));
+    return this.cache.getOrLoad(`times/id/${timeId}${suffix}`, 10 * MINUTE, () => this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}${suffix}`, { notFoundMessage: 'Time do Cartola não encontrado' }));
   }
 
   getTeamSubstitutions(timeId: number): Promise<CartolaTeamSubstitutionsPayload> {

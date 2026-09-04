@@ -53,7 +53,7 @@ export class TimeSnapshotsService {
 
   async criarSnapshot(input: CriarSnapshotTimeInput): Promise<SnapshotTimeResultado> {
     this.validarInput(input);
-    const response = await this.cartola.getTeamById(input.timeId, { forceRefresh: true });
+    const response = await this.cartola.getTeamById(input.timeId, { forceRefresh: true, round: input.rodada });
     const snapshot = this.normalizarPayload(input.timeId, response.value);
 
     try {

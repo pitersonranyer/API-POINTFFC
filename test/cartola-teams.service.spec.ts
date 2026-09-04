@@ -53,6 +53,14 @@ describe('CartolaService - times', () => {
     expect(result.erros).toEqual([{ timeId: 456, tipo: 'timeout' }, { timeId: 789, tipo: 'api_indisponivel' }]);
   });
 
+  it('consulta a escalacao historica quando a rodada e informada', async () => {
+    get.mockResolvedValue({ time_id: 123, nome: 'Time historico', atletas: [] });
+
+    await service.getTeamById(123, { forceRefresh: true, round: 25 });
+
+    expect(get).toHaveBeenCalledWith('/time/id/123/25', { notFoundMessage: 'Time do Cartola não encontrado' });
+  });
+
   it('limita a cinco chamadas simultâneas e preserva a ordem da entrada', async () => {
     let active = 0;
     let maximum = 0;

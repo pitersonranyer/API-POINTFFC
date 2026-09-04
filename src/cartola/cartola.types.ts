@@ -123,6 +123,7 @@ export interface CartolaTimeSnapshotPayload extends CartolaTimePayload {
 
 export interface CartolaTeamRequestOptions {
   forceRefresh?: boolean;
+  round?: number;
 }
 
 export interface CartolaTimeResumo extends CartolaTimePayload {

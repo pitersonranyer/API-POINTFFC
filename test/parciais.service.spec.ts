@@ -4,6 +4,7 @@ import { ParciaisService } from '../src/parciais/parciais.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { CartolaService } from '../src/cartola/cartola.service';
 import { PartialScoreService } from '../src/partial-score/partial-score.service';
+import { TimeSnapshotsService } from '../src/time-snapshots/time-snapshots.service';
 
 const persisted = (timeId: number, score: number | null = timeId / 100) => ({
   timeId,
@@ -28,10 +29,12 @@ describe('ParciaisService', () => {
   };
   const cartola = { getMarketStatus: jest.fn() };
   const partialScore = { calcular: jest.fn() };
+  const timeSnapshots = { criarSnapshot: jest.fn() };
   const service = new ParciaisService(
     prisma as unknown as PrismaService,
     cartola as unknown as CartolaService,
     partialScore as unknown as PartialScoreService,
+    timeSnapshots as unknown as TimeSnapshotsService,
   );
 
   beforeEach(() => jest.clearAllMocks());
@@ -191,12 +194,33 @@ describe('ParciaisService', () => {
     prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
       { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
     ]);
+    timeSnapshots.criarSnapshot.mockRejectedValue(new Error('Historico indisponivel'));
 
     await expect(service.atualizarRodadaAnterior()).resolves.toMatchObject({
       timesCadastrados: 4, atualizados: 0, jaProcessados: 3,
       semSnapshot: 1, timeIdsSemSnapshot: [4], falhas: 0,
     });
     expect(partialScore.calcular).not.toHaveBeenCalled();
+  });
+
+  it('cria snapshot historico e processa um novo time sem snapshot local', async () => {
+    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
+    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }, { timeId: 4 }]);
+    prisma.timeRodada.findMany.mockResolvedValue([
+      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 },
+    ]);
+    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
+      { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
+    ]);
+    timeSnapshots.criarSnapshot.mockResolvedValue({ timeRodadaId: 104 });
+    partialScore.calcular.mockResolvedValue({});
+
+    await expect(service.atualizarRodadaAnterior()).resolves.toMatchObject({
+      timesCadastrados: 4, atualizados: 1, jaProcessados: 3,
+      semSnapshot: 0, timeIdsSemSnapshot: [], falhas: 0,
+    });
+    expect(timeSnapshots.criarSnapshot).toHaveBeenCalledWith({ timeId: 4, temporada: 2026, rodada: 25 });
+    expect(partialScore.calcular).toHaveBeenCalledWith({ timeId: 4, temporada: 2026, rodada: 25 });
   });
 
   it('isola a falha de um time pendente e preserva a contagem do resumo', async () => {
