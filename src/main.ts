@@ -2,22 +2,9 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { execFileSync } from 'node:child_process';
 import { AppModule } from './app.module';
 
-function applyPendingMigrations(): void {
-  const prismaCli = require.resolve('prisma/build/index.js');
-
-  console.log('Verificando migrations pendentes do banco de dados...');
-  execFileSync(process.execPath, [prismaCli, 'migrate', 'deploy'], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: 'inherit',
-  });
-}
-
 async function bootstrap(): Promise<void> {
-  applyPendingMigrations();
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
