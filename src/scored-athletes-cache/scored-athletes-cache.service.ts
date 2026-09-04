@@ -78,7 +78,7 @@ export class ScoredAthletesCacheService {
   private async refresh(temporada: number, rodada: number, key: string): Promise<CachedResult<CartolaScoredAthletesPayload>> {
     const stale = await this.readValid(`${key}:stale`, rodada);
     try {
-      const loaded = await this.cartola.loadScoredAthletesFresh();
+      const loaded = await this.cartola.loadScoredAthletesFresh(rodada);
       this.validateEnvelope(loaded.value, rodada);
       const serialized = JSON.stringify({ cachedAt: new Date().toISOString(), payload: loaded.value } satisfies StoredScoredAthletes);
       await Promise.all([

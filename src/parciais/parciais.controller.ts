@@ -1,6 +1,7 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiBearerAuth, ApiOkResponse, ApiOperation, ApiQuery, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { AtualizarRodadaAnteriorQueryDto, AtualizarRodadaAnteriorResponseDto } from './dto/atualizar-rodada-anterior.dto';
 import { ListarParciaisQueryDto, MAX_PARTIAL_TEAM_IDS } from './dto/listar-parciais-query.dto';
 import { ListaParciaisResponseDto } from './dto/parcial-time-response.dto';
 import { ParciaisService } from './parciais.service';
@@ -27,5 +28,15 @@ export class ParciaisController {
   @ApiBadRequestResponse({ description: 'Temporada, rodada ou lista de IDs inválida' })
   listar(@Query() query: ListarParciaisQueryDto): Promise<ListaParciaisResponseDto> {
     return this.parciais.listar(query);
+  }
+
+  @Post('atualizar-rodada-anterior')
+  @ApiOperation({ summary: 'Recalcula a parcial da rodada anterior para todos os times cadastrados com snapshot' })
+  @ApiOkResponse({ type: AtualizarRodadaAnteriorResponseDto })
+  @ApiBadRequestResponse({ description: 'Nao existe rodada anterior ou a temporada nao foi informada pelo Cartola' })
+  atualizarRodadaAnterior(
+    @Query() query: AtualizarRodadaAnteriorQueryDto,
+  ): Promise<AtualizarRodadaAnteriorResponseDto> {
+    return this.parciais.atualizarRodadaAnterior(query.temporada);
   }
 }

@@ -7,7 +7,7 @@ import { ParciaisService } from '../src/parciais/parciais.service';
 
 describe('ParciaisController', () => {
   const response = { temporada: 2026, rodada: 25, parciais: [] };
-  const service = { listar: jest.fn().mockResolvedValue(response) };
+  const service = { listar: jest.fn().mockResolvedValue(response), atualizarRodadaAnterior: jest.fn() };
   const controller = new ParciaisController(service as unknown as ParciaisService);
 
   beforeEach(() => jest.clearAllMocks());
@@ -50,5 +50,12 @@ describe('ParciaisController', () => {
     const thousandAndOne = `${thousand},1001`;
     expect(await validate(plainToInstance(ListarParciaisQueryDto, { ...base, timeIds: thousand }))).toHaveLength(0);
     expect(await validate(plainToInstance(ListarParciaisQueryDto, { ...base, timeIds: thousandAndOne }))).not.toHaveLength(0);
+  });
+  it('encaminha a atualizacao da rodada anterior ao servico', async () => {
+    const updated = { temporada: 2026, rodada: 24, timesCadastrados: 0, atualizados: 0, jaProcessados: 0, semSnapshot: 0, timeIdsSemSnapshot: [], falhas: 0, detalhesFalhas: [] };
+    service.atualizarRodadaAnterior.mockResolvedValue(updated);
+
+    await expect(controller.atualizarRodadaAnterior({ temporada: 2026 })).resolves.toBe(updated);
+    expect(service.atualizarRodadaAnterior).toHaveBeenCalledWith(2026);
   });
 });
