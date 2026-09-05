@@ -13,6 +13,7 @@ import { ScoredAthletesCacheModule } from './scored-athletes-cache/scored-athlet
 import { ParciaisModule } from './parciais/parciais.module';
 import { SubstitutionModule } from './substitutions/substitution.module';
 import { RankingGeralModule } from './ranking-geral/ranking-geral.module';
+import { RoundProcessingModule } from './round-processing/round-processing.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { RankingGeralModule } from './ranking-geral/ranking-geral.module';
     ParciaisModule,
     SubstitutionModule,
     RankingGeralModule,
+    RoundProcessingModule,
   ],
 })
 export class AppModule {}

@@ -3,7 +3,7 @@ import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AtualizarRodadaAnteriorQueryDto {
-  @ApiPropertyOptional({ example: 2026, description: 'Usada quando o status do Cartola nao informa a temporada' })
+  @ApiPropertyOptional({ example: 2026, description: 'Se informada, deve coincidir com a temporada oficial do mercado' })
   @IsOptional()
   @Type(() => Number)
   @IsInt({ message: 'temporada deve ser um numero inteiro' })

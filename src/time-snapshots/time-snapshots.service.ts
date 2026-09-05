@@ -42,6 +42,9 @@ interface AtletaNormalizado {
   atletaId: number;
   posicaoId: number;
   clubeId: number | null;
+  ordem: number;
+  preco: Prisma.Decimal | null;
+  nome: string | null;
 }
 
 @Injectable()
@@ -53,7 +56,21 @@ export class TimeSnapshotsService {
 
   async criarSnapshot(input: CriarSnapshotTimeInput): Promise<SnapshotTimeResultado> {
     this.validarInput(input);
+    const existente = await this.buscarSnapshotExistente(input);
+    if (existente && existente.escalacao.length > 0) return this.toResultadoExistente(input, existente);
+    const market = await this.cartola.loadMarketStatusFresh();
+    if (market.status_mercado !== 2 || market.rodada_atual !== input.rodada
+      || market.temporada !== input.temporada) {
+      throw new BadGatewayException('Snapshot novo exige mercado fechado na temporada e rodada solicitadas');
+    }
     const response = await this.cartola.getTeamById(input.timeId, { forceRefresh: true, round: input.rodada });
+    const after = await this.cartola.loadMarketStatusFresh();
+    if (after.status_mercado !== 2 || after.rodada_atual !== input.rodada || after.temporada !== input.temporada) {
+      throw new BadGatewayException('Mercado mudou durante captura do snapshot');
+    }
+    if (response.value.rodada_atual !== undefined && response.value.rodada_atual !== input.rodada) {
+      throw this.payloadInvalido('rodada divergente');
+    }
     const snapshot = this.normalizarPayload(input.timeId, response.value);
 
     try {
@@ -85,10 +102,9 @@ export class TimeSnapshotsService {
           where: { timeId_temporada_rodada: input },
           include: { escalacao: true },
         });
-        if (existente) return this.toResultadoExistente(input, existente);
+        if (existente && existente.escalacao.length > 0) return this.toResultadoExistente(input, existente);
 
-        const timeRodada = await tx.timeRodada.create({
-          data: {
+        const data = {
             timeId: input.timeId,
             temporada: input.temporada,
             rodada: input.rodada,
@@ -96,9 +112,11 @@ export class TimeSnapshotsService {
             patrimonio: snapshot.patrimonio,
             capitaoId: snapshot.capitaoId,
             reservaLuxoId: snapshot.reservaLuxoId,
-            status: 'CAPTURADO',
-          },
-        });
+            status: 'CAPTURADO' as const,
+        };
+        const timeRodada = existente
+          ? await tx.timeRodada.update({ where: { id: existente.id }, data })
+          : await tx.timeRodada.create({ data });
         const escalacao = [
           ...snapshot.titulares.map((atleta) => this.toEscalacao(atleta, timeRodada.id, true, snapshot.capitaoId)),
           ...snapshot.reservas.map((atleta) => this.toEscalacao(atleta, timeRodada.id, false, snapshot.capitaoId)),
@@ -110,7 +128,7 @@ export class TimeSnapshotsService {
           temporada: input.temporada,
           rodada: input.rodada,
           timeRodadaId: timeRodada.id,
-          criado: true,
+          criado: !existente,
           titulares: snapshot.titulares.length,
           reservas: snapshot.reservas.length,
         };
@@ -173,7 +191,7 @@ export class TimeSnapshotsService {
     const reservaLuxoId = this.optionalPositiveInteger(payload.reserva_luxo_id, 'reserva_luxo_id');
     const atletaIds = [...titulares, ...reservas].map((atleta) => atleta.atletaId);
     if (new Set(atletaIds).size !== atletaIds.length) throw this.payloadInvalido('atleta duplicado na escalação');
-    if (capitaoId !== null && !atletaIds.includes(capitaoId)) throw this.payloadInvalido('capitão não pertence à escalação');
+    if (capitaoId !== null && !titulares.some((atleta) => atleta.atletaId === capitaoId && atleta.posicaoId !== 6)) throw this.payloadInvalido('capitão não pertence aos titulares de linha/gol');
     if (reservaLuxoId !== null && !reservas.some((atleta) => atleta.atletaId === reservaLuxoId)) {
       throw this.payloadInvalido('Reserva de Luxo não pertence às reservas');
     }
@@ -207,6 +225,9 @@ export class TimeSnapshotsService {
         atletaId: this.requiredPositiveInteger(athlete.atleta_id, `${field}[${index}].atleta_id`),
         posicaoId: this.requiredPositiveInteger(athlete.posicao_id, `${field}[${index}].posicao_id`),
         clubeId: this.optionalPositiveInteger(athlete.clube_id, `${field}[${index}].clube_id`),
+        ordem: index,
+        preco: this.optionalDecimal(athlete.preco_num, `${field}[${index}].preco_num`),
+        nome: this.optionalString(athlete.apelido ?? athlete.nome, `${field}[${index}].nome`),
       };
     });
   }
@@ -217,6 +238,9 @@ export class TimeSnapshotsService {
       atletaId: atleta.atletaId,
       posicaoId: atleta.posicaoId,
       clubeId: atleta.clubeId,
+      ordem: atleta.ordem,
+      preco: atleta.preco,
+      nome: atleta.nome,
       titular,
       reserva: !titular,
       capitao: atleta.atletaId === capitaoId,

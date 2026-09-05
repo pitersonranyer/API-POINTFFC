@@ -2,9 +2,7 @@ import { Prisma } from '@prisma/client';
 import { performance } from 'perf_hooks';
 import { ParciaisService } from '../src/parciais/parciais.service';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { CartolaService } from '../src/cartola/cartola.service';
-import { PartialScoreService } from '../src/partial-score/partial-score.service';
-import { TimeSnapshotsService } from '../src/time-snapshots/time-snapshots.service';
+import { RoundProcessingService } from '../src/round-processing/round-processing.service';
 
 const persisted = (timeId: number, score: number | null = timeId / 100) => ({
   timeId,
@@ -23,19 +21,13 @@ const persisted = (timeId: number, score: number | null = timeId / 100) => ({
 describe('ParciaisService', () => {
   const prisma = {
     timeCartola: { findMany: jest.fn() },
+    rodadaProcessamento: { findFirst: jest.fn() },
     timeUsuario: { findMany: jest.fn() },
     timeRodada: { findMany: jest.fn() },
     pontuacaoTimeRodada: { findMany: jest.fn() },
   };
-  const cartola = { getMarketStatus: jest.fn() };
-  const partialScore = { calcular: jest.fn() };
-  const timeSnapshots = { criarSnapshot: jest.fn() };
-  const service = new ParciaisService(
-    prisma as unknown as PrismaService,
-    cartola as unknown as CartolaService,
-    partialScore as unknown as PartialScoreService,
-    timeSnapshots as unknown as TimeSnapshotsService,
-  );
+  const rounds = { reconcilePending: jest.fn() };
+  const service = new ParciaisService(prisma as unknown as PrismaService, rounds as unknown as RoundProcessingService);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -135,128 +127,15 @@ describe('ParciaisService', () => {
     expect(metrics.map(({ times }) => times)).toEqual([1, 100, 1000]);
     expect(prisma.timeCartola.findMany).toHaveBeenCalledTimes(3);
   });
-  it('processa todos os snapshots pendentes na primeira execucao', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([
-      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 },
-    ]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([]);
-    partialScore.calcular.mockResolvedValue({});
-
-    await expect(service.atualizarRodadaAnterior()).resolves.toEqual({
-      temporada: 2026, rodada: 25, timesCadastrados: 3, atualizados: 3,
-      jaProcessados: 0, semSnapshot: 0, timeIdsSemSnapshot: [], falhas: 0, detalhesFalhas: [],
-    });
-    expect(partialScore.calcular).toHaveBeenCalledTimes(3);
+  it('delega conciliacao ao processador sem baixar escalações historicas', async () => {
+    rounds.reconcilePending.mockResolvedValue([{ temporada: 2026, rodada: 25 }]);
+    prisma.rodadaProcessamento.findFirst.mockResolvedValue({ temporada: 2026, rodada: 25, timesPrevistos: [1, 2] });
+    prisma.timeRodada.findMany.mockResolvedValue([{ timeId: 1, pontuacao: { status: 'FINAL' } }, { timeId: 2, pontuacao: { status: 'FINAL' } }]);
+    await expect(service.atualizarRodadaAnterior(2026)).resolves.toMatchObject({ atualizados: 2, semSnapshot: 0 });
+    expect(rounds.reconcilePending).toHaveBeenCalledWith(2026);
   });
-
-  it('nao recalcula snapshots que ja possuem pontuacao', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([
-      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 },
-    ]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
-      { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
-    ]);
-
-    await expect(service.atualizarRodadaAnterior()).resolves.toMatchObject({
-      atualizados: 0, jaProcessados: 3, semSnapshot: 0, falhas: 0,
-    });
-    expect(partialScore.calcular).not.toHaveBeenCalled();
-  });
-
-  it('processa somente o novo time quando os demais ja possuem pontuacao', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }, { timeId: 4 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([
-      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 }, { id: 104, timeId: 4 },
-    ]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
-      { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
-    ]);
-    partialScore.calcular.mockResolvedValue({});
-
-    await expect(service.atualizarRodadaAnterior()).resolves.toMatchObject({
-      timesCadastrados: 4, atualizados: 1, jaProcessados: 3, semSnapshot: 0, falhas: 0,
-    });
-    expect(partialScore.calcular).toHaveBeenCalledTimes(1);
-    expect(partialScore.calcular).toHaveBeenCalledWith({ timeId: 4, temporada: 2026, rodada: 25 });
-  });
-
-  it('classifica novo time sem snapshot sem recalcular os existentes', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }, { timeId: 4 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([
-      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 },
-    ]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
-      { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
-    ]);
-    timeSnapshots.criarSnapshot.mockRejectedValue(new Error('Historico indisponivel'));
-
-    await expect(service.atualizarRodadaAnterior()).resolves.toMatchObject({
-      timesCadastrados: 4, atualizados: 0, jaProcessados: 3,
-      semSnapshot: 1, timeIdsSemSnapshot: [4], falhas: 0,
-    });
-    expect(partialScore.calcular).not.toHaveBeenCalled();
-  });
-
-  it('cria snapshot historico e processa um novo time sem snapshot local', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }, { timeId: 4 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([
-      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 },
-    ]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
-      { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
-    ]);
-    timeSnapshots.criarSnapshot.mockResolvedValue({ timeRodadaId: 104 });
-    partialScore.calcular.mockResolvedValue({});
-
-    await expect(service.atualizarRodadaAnterior()).resolves.toMatchObject({
-      timesCadastrados: 4, atualizados: 1, jaProcessados: 3,
-      semSnapshot: 0, timeIdsSemSnapshot: [], falhas: 0,
-    });
-    expect(timeSnapshots.criarSnapshot).toHaveBeenCalledWith({ timeId: 4, temporada: 2026, rodada: 25 });
-    expect(partialScore.calcular).toHaveBeenCalledWith({ timeId: 4, temporada: 2026, rodada: 25 });
-  });
-
-  it('isola a falha de um time pendente e preserva a contagem do resumo', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }, { timeId: 4 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([
-      { id: 101, timeId: 1 }, { id: 102, timeId: 2 }, { id: 103, timeId: 3 }, { id: 104, timeId: 4 },
-    ]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([
-      { timeRodadaId: 101 }, { timeRodadaId: 102 }, { timeRodadaId: 103 },
-    ]);
-    partialScore.calcular.mockRejectedValue(new Error('snapshot inconsistente'));
-
-    const result = await service.atualizarRodadaAnterior();
-    expect(result).toMatchObject({
-      timesCadastrados: 4, atualizados: 0, jaProcessados: 3, semSnapshot: 0, falhas: 1,
-      detalhesFalhas: [{ timeId: 4, motivo: 'snapshot inconsistente' }],
-    });
-    expect(result.timesCadastrados).toBe(
-      result.jaProcessados + result.atualizados + result.semSnapshot + result.falhas,
-    );
-  });
-
-  it('consulta pontuacoes existentes uma unica vez em lote', async () => {
-    cartola.getMarketStatus.mockResolvedValue({ value: { rodada_atual: 26, temporada: 2026 } });
-    prisma.timeUsuario.findMany.mockResolvedValue([{ timeId: 1 }, { timeId: 2 }]);
-    prisma.timeRodada.findMany.mockResolvedValue([{ id: 101, timeId: 1 }, { id: 102, timeId: 2 }]);
-    prisma.pontuacaoTimeRodada.findMany.mockResolvedValue([{ timeRodadaId: 101 }]);
-    partialScore.calcular.mockResolvedValue({});
-
-    await service.atualizarRodadaAnterior();
-
-    expect(prisma.pontuacaoTimeRodada.findMany).toHaveBeenCalledTimes(1);
-    expect(prisma.pontuacaoTimeRodada.findMany).toHaveBeenCalledWith({
-      where: { timeRodadaId: { in: [101, 102] } },
-      select: { timeRodadaId: true },
-    });
+  it('propaga falha da conciliacao', async () => {
+    rounds.reconcilePending.mockRejectedValueOnce(new Error('Snapshot incompleto'));
+    await expect(service.atualizarRodadaAnterior()).rejects.toThrow('Snapshot incompleto');
   });
 });

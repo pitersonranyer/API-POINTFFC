@@ -164,6 +164,7 @@ export interface CachedResult<T> {
 
 export interface MarketState {
   rodada: number;
+  temporada?: number;
   mercadoAberto: boolean;
   bolaRolando: boolean;
 }

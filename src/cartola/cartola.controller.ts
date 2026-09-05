@@ -7,6 +7,7 @@ import { RoundParamsDto } from './dto/round-params.dto';
 import { TeamIdParamsDto } from './dto/team-id-params.dto';
 import { TeamIdsBodyDto } from './dto/team-ids-body.dto';
 import { TeamSearchQueryDto } from './dto/team-search-query.dto';
+import { SeasonQueryDto } from './dto/season-query.dto';
 
 @ApiTags('cartola')
 @ApiBadGatewayResponse({ description: 'Falha na API do Cartola sem fallback disponível' })
@@ -25,7 +26,9 @@ export class CartolaController {
   async scoredAthletes(@Res({ passthrough: true }) response: Response) { return this.respond(response, await this.cartola.getScoredAthletes()); }
 
   @Get('atletas/pontuados/:rodada') @ApiOperation({ summary: 'Retorna atletas pontuados de uma rodada específica' }) @ApiParam({ name: 'rodada', schema: { type: 'integer', minimum: 1, maximum: 38 } }) @ApiOkResponse({ description: 'Atletas pontuados da rodada informada' })
-  async scoredAthletesByRound(@Param() params: RoundParamsDto, @Res({ passthrough: true }) response: Response) { return this.respond(response, await this.cartola.getScoredAthletes(params.rodada)); }
+  async scoredAthletesByRound(@Param() params: RoundParamsDto, @Res({ passthrough: true }) response: Response, @Query() query: SeasonQueryDto = {}) {
+    return this.respond(response, await (query.temporada === undefined ? this.cartola.getScoredAthletes(params.rodada) : this.cartola.getScoredAthletes(params.rodada, query.temporada)));
+  }
 
   @Get('clubes') @ApiOperation({ summary: 'Retorna os clubes do Cartola' }) @ApiOkResponse({ description: 'Clubes' })
   async clubs(@Res({ passthrough: true }) response: Response) { return this.respond(response, await this.cartola.getClubs()); }
@@ -66,7 +69,9 @@ export class CartolaController {
   async matches(@Res({ passthrough: true }) response: Response) { return this.respond(response, await this.cartola.getMatches()); }
 
   @Get('partidas/:rodada') @ApiOperation({ summary: 'Retorna as partidas de uma rodada específica' }) @ApiParam({ name: 'rodada', schema: { type: 'integer', minimum: 1, maximum: 38 } }) @ApiOkResponse({ description: 'Rodada, clubes e partidas' })
-  async matchesByRound(@Param() params: RoundParamsDto, @Res({ passthrough: true }) response: Response) { return this.respond(response, await this.cartola.getMatchesByRound(params.rodada)); }
+  async matchesByRound(@Param() params: RoundParamsDto, @Res({ passthrough: true }) response: Response, @Query() query: SeasonQueryDto = {}) {
+    return this.respond(response, await (query.temporada === undefined ? this.cartola.getMatchesByRound(params.rodada) : this.cartola.getMatchesByRound(params.rodada, query.temporada)));
+  }
 
   @Get('dashboard') @ApiOperation({ summary: 'Retorna mercado, estado resumido, partidas e clubes para o Dashboard' }) @ApiOkResponse({ description: 'Visão agregada do Dashboard' })
   async dashboard(@Res({ passthrough: true }) response: Response) { return this.respond(response, await this.cartola.getDashboard()); }

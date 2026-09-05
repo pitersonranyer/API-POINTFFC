@@ -26,10 +26,10 @@ describe('TimeSnapshotsService', () => {
     reservas: [{ atleta_id: 20, posicao_id: 5, clube_id: 3 }],
   };
 
-  const cartola = { getTeamById: jest.fn() };
+  const cartola = { getTeamById: jest.fn(), loadMarketStatusFresh: jest.fn() };
   const tx = {
     timeCartola: { upsert: jest.fn() },
-    timeRodada: { findUnique: jest.fn(), create: jest.fn() },
+    timeRodada: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     escalacaoTimeRodada: { createMany: jest.fn() },
   };
   const prisma = { $transaction: jest.fn(), timeRodada: { findUnique: jest.fn() } };
@@ -40,6 +40,7 @@ describe('TimeSnapshotsService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    cartola.loadMarketStatusFresh.mockResolvedValue({ temporada: 2026, rodada_atual: 25, status_mercado: 2 });
     cartola.getTeamById.mockResolvedValue({ value: payload, cache: 'miss', stale: false });
     tx.timeCartola.upsert.mockResolvedValue({});
     tx.timeRodada.findUnique.mockResolvedValue(null);
@@ -132,9 +133,9 @@ describe('TimeSnapshotsService', () => {
     expect(result).toMatchObject({ criado: true, titulares: 2, reservas: 1 });
     const rows = tx.escalacaoTimeRodada.createMany.mock.calls[0][0].data;
     expect(rows).toEqual([
-      { timeRodadaId: 1, atletaId: 10, posicaoId: 5, clubeId: 1, titular: true, reserva: false, capitao: true },
-      { timeRodadaId: 1, atletaId: 11, posicaoId: 4, clubeId: 2, titular: true, reserva: false, capitao: false },
-      { timeRodadaId: 1, atletaId: 20, posicaoId: 5, clubeId: 3, titular: false, reserva: true, capitao: false },
+      { timeRodadaId: 1, atletaId: 10, posicaoId: 5, clubeId: 1, titular: true, reserva: false, capitao: true, ordem: 0, preco: null, nome: null },
+      { timeRodadaId: 1, atletaId: 11, posicaoId: 4, clubeId: 2, titular: true, reserva: false, capitao: false, ordem: 1, preco: null, nome: null },
+      { timeRodadaId: 1, atletaId: 20, posicaoId: 5, clubeId: 3, titular: false, reserva: true, capitao: false, ordem: 0, preco: null, nome: null },
     ]);
     expect(rows.every((row: Record<string, unknown>) => !('multiplicador' in row))).toBe(true);
   });
@@ -175,7 +176,7 @@ describe('TimeSnapshotsService', () => {
       if (chamada === 2) throw conflito;
       return callback(tx);
     });
-    prisma.timeRodada.findUnique.mockResolvedValue(snapshotVencedor);
+    prisma.timeRodada.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValue(snapshotVencedor);
 
     const [primeira, segunda] = await Promise.all([
       service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 }),
@@ -215,7 +216,7 @@ describe('TimeSnapshotsService', () => {
 
     await expect(service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 }))
       .rejects.toMatchObject({ code: 'P2002' });
-    expect(prisma.timeRodada.findUnique).not.toHaveBeenCalled();
+    expect(prisma.timeRodada.findUnique).toHaveBeenCalledTimes(1);
   });
 
   it('mantém todas as escritas na mesma transação e propaga erro de persistência', async () => {
@@ -256,5 +257,25 @@ describe('TimeSnapshotsService', () => {
       .rejects.toBeInstanceOf(BadGatewayException);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(tx.escalacaoTimeRodada.createMany).not.toHaveBeenCalled();
+  });
+  it('retorna snapshot existente sem rede mesmo com Cartola indisponivel', async () => {
+    prisma.timeRodada.findUnique.mockResolvedValue({ id: 4, escalacao: [{ titular: true, reserva: false }] });
+    cartola.getTeamById.mockRejectedValue(new Error('offline'));
+    await expect(service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 })).resolves.toMatchObject({ criado: false });
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    expect(cartola.loadMarketStatusFresh).not.toHaveBeenCalled();
+  });
+  it('completa registro vazio da rodada fechada sem duplicar TimeRodada', async () => {
+    prisma.timeRodada.findUnique.mockResolvedValue({ id: 4, escalacao: [] });
+    tx.timeRodada.findUnique.mockResolvedValue({ id: 4, escalacao: [] });
+    tx.timeRodada.update.mockResolvedValue({ id: 4 });
+    await expect(service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 })).resolves.toMatchObject({ criado: false, timeRodadaId: 4, titulares: 2 });
+    expect(tx.timeRodada.create).not.toHaveBeenCalled();
+    expect(tx.escalacaoTimeRodada.createMany).toHaveBeenCalledTimes(1);
+  });
+  it.each([1, 3, 4])('nao captura escalações durante estado %s', async (status) => {
+    cartola.loadMarketStatusFresh.mockResolvedValue({ temporada: 2026, rodada_atual: 25, status_mercado: status });
+    await expect(service.criarSnapshot({ timeId: 123, temporada: 2026, rodada: 25 })).rejects.toThrow('mercado fechado');
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
   });
 });

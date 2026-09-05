@@ -2,7 +2,7 @@ import { BadGatewayException, Injectable, Logger, NotFoundException, Unprocessab
 import { Prisma } from '@prisma/client';
 import { CartolaScoredAthlete, CartolaScoredAthletesPayload, CartolaScouts } from '../cartola/cartola.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { ScoredAthletesCacheService } from '../scored-athletes-cache/scored-athletes-cache.service';
+import { effectiveLineup } from '../round-processing/round-calculator';
 
 export interface CalcularParcialInput {
   timeId: number;
@@ -32,7 +32,7 @@ export interface ParcialTimeResultado {
   rodada: number;
   timeRodadaId: number;
   pontuacaoParcial: number;
-  status: 'PARCIAL';
+  status: 'PARCIAL' | 'FINAL';
   atletas: DetalhePontuacaoAtleta[];
 }
 
@@ -48,22 +48,25 @@ export class PartialScoreService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly scoredAthletesCache: ScoredAthletesCacheService,
   ) {}
 
   async calcular(input: CalcularParcialInput): Promise<ParcialTimeResultado> {
-    const timeRodada = await this.prisma.timeRodada.findUnique({
+    const [timeRodada, round] = await this.prisma.$transaction([this.prisma.timeRodada.findUnique({
       where: { timeId_temporada_rodada: input },
-      include: { escalacao: true },
-    });
+      include: { escalacao: true, pontuacao: true, substituicoes: { where: { ativa: true } } },
+    }), this.prisma.rodadaProcessamento.findUnique({
+      where: { temporada_rodada: { temporada: input.temporada, rodada: input.rodada } },
+    })], { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
     if (!timeRodada) throw new NotFoundException('Snapshot do time não encontrado para temporada e rodada');
 
-    const titulares = timeRodada.escalacao.filter((atleta) => atleta.titular);
-    this.validarEscalacao(titulares, timeRodada.capitaoId);
+    const titularesOriginais = timeRodada.escalacao.filter((atleta) => atleta.titular);
+    this.validarEscalacao(titularesOriginais, timeRodada.capitaoId);
+    const titulares = effectiveLineup(timeRodada, timeRodada.substituicoes);
 
-    // A parcial usa somente o snapshot e /atletas/pontuados. O campo pontos de /time/id não é fonte de verdade.
-    const response = await this.scoredAthletesCache.getScoredAthletes(input.temporada, input.rodada);
-    const pontuados = this.normalizarPontuados(response.value, input.rodada);
+    if (!round?.pontuados || !timeRodada.pontuacao) {
+      throw new UnprocessableEntityException('Rodada aguardando processamento pelo scheduler');
+    }
+    const pontuados = this.normalizarPontuados(round.pontuados as CartolaScoredAthletesPayload, input.rodada);
     const detalhes = titulares.map((atleta) => {
       const pontuado = pontuados.get(atleta.atletaId);
       const original = pontuado?.pontuacao ?? new Prisma.Decimal(0);
@@ -88,7 +91,7 @@ export class PartialScoreService {
     }, new Prisma.Decimal(0));
     const total = this.arredondar(totalExato);
 
-    await this.persistirParcial(timeRodada.id, total);
+
 
     return {
       timeId: input.timeId,
@@ -96,34 +99,9 @@ export class PartialScoreService {
       rodada: input.rodada,
       timeRodadaId: timeRodada.id,
       pontuacaoParcial: total.toNumber(),
-      status: 'PARCIAL',
+      status: timeRodada.pontuacao.status,
       atletas: detalhes,
     };
-  }
-
-  private async persistirParcial(timeRodadaId: number, pontuacao: Prisma.Decimal): Promise<void> {
-    const data = { pontuacao, status: 'PARCIAL' as const };
-    try {
-      await this.prisma.pontuacaoTimeRodada.upsert({
-        where: { timeRodadaId },
-        create: { timeRodadaId, ...data },
-        update: data,
-      });
-    } catch (error) {
-      if (!this.isPontuacaoTimeRodadaUniqueConflict(error)) throw error;
-      await this.prisma.pontuacaoTimeRodada.update({ where: { timeRodadaId }, data });
-    }
-  }
-
-  private isPontuacaoTimeRodadaUniqueConflict(error: unknown): boolean {
-    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') return false;
-    const target = error.meta?.target;
-    if (typeof target === 'string') {
-      return target.toUpperCase() === 'PONTUACAO_TIME_RODADA_TIME_RODADA_ID_KEY';
-    }
-    return Array.isArray(target)
-      && target.length === 1
-      && ['timerodadaid', 'time_rodada_id'].includes(String(target[0]).toLowerCase());
   }
 
   private validarEscalacao(titulares: Array<{ atletaId: number; capitao: boolean }>, capitaoId: number | null): void {

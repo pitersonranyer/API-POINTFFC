@@ -13,6 +13,7 @@ describeIntegration('TimeSnapshotsService - integração MySQL', () => {
   const rodada = 38;
 
   const cartola = {
+    loadMarketStatusFresh: jest.fn(async () => ({ temporada, rodada_atual: rodada, status_mercado: 2 })),
     getTeamById: jest.fn(async (timeId: number) => ({
       value: {
         time: { time_id: timeId, nome: `Time integração ${timeId}` },

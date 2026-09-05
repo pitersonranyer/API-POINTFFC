@@ -31,7 +31,7 @@ export class ParciaisController {
   }
 
   @Post('atualizar-rodada-anterior')
-  @ApiOperation({ summary: 'Recalcula a parcial da rodada anterior para todos os times cadastrados com snapshot' })
+  @ApiOperation({ summary: 'Concilia a rodada pendente apos a reabertura, reutilizando snapshots congelados' })
   @ApiOkResponse({ type: AtualizarRodadaAnteriorResponseDto })
   @ApiBadRequestResponse({ description: 'Nao existe rodada anterior ou a temporada nao foi informada pelo Cartola' })
   atualizarRodadaAnterior(

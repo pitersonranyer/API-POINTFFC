@@ -33,6 +33,33 @@ enum PontuacaoTimeRodadaStatus {
   FINAL
 }
 
+enum RodadaProcessamentoStatus {
+  AGUARDANDO_ESCALACOES
+  ESCALACOES_CARREGADAS
+  EM_ANDAMENTO
+  AGUARDANDO_CONSOLIDACAO
+  CONSOLIDADA
+}
+
+model RodadaProcessamento {
+  temporada Int @db.UnsignedSmallInt
+  rodada Int @db.UnsignedTinyInt
+  status RodadaProcessamentoStatus @default(AGUARDANDO_ESCALACOES)
+  timesPrevistos Json
+  falhasSnapshot Json
+  pontuados Json?
+  partidas Json?
+  erro String? @db.Text
+  lockToken String? @db.VarChar(36)
+  lockAte DateTime?
+  consolidadoEm DateTime?
+  atualizadoEm DateTime @updatedAt
+
+  @@id([temporada, rodada])
+  @@index([status, temporada, rodada])
+  @@map("RODADA_PROCESSAMENTO")
+}
+
 model Usuario {
   idUsuario       Int        @id @default(autoincrement()) @map("id_usuario") @db.UnsignedInt
   firebaseUid     String?    @unique @map("firebase_uid") @db.VarChar(128)
@@ -112,6 +139,7 @@ model SubstituicaoTimeRodada {
   atletaSaiuId    Int         @map("ATLETA_SAIU_ID") @db.UnsignedInt
   atletaEntrouId  Int         @map("ATLETA_ENTROU_ID") @db.UnsignedInt
   posicaoId       Int         @map("POSICAO_ID") @db.UnsignedInt
+  ativa           Boolean     @default(true) @map("ATIVA")
   criadoEm        DateTime    @default(now()) @map("CRIADO_EM")
   atualizadoEm    DateTime    @updatedAt @map("ATUALIZADO_EM")
   timeRodada      TimeRodada  @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
@@ -129,6 +157,7 @@ model PontuacaoTimeRodada {
   status         PontuacaoTimeRodadaStatus    @default(PARCIAL) @map("STATUS")
   criadoEm       DateTime                     @default(now()) @map("CRIADO_EM")
   atualizadoEm   DateTime                     @updatedAt @map("ATUALIZADO_EM")
+  consolidadoEm  DateTime?                    @map("CONSOLIDADO_EM")
   timeRodada     TimeRodada                   @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
 
   @@map("PONTUACAO_TIME_RODADA")
@@ -143,12 +172,16 @@ model EscalacaoTimeRodada {
   titular        Boolean     @map("TITULAR")
   reserva        Boolean     @map("RESERVA")
   capitao        Boolean     @map("CAPITAO")
+  ordem          Int?        @map("ORDEM") @db.UnsignedTinyInt
+  preco          Decimal?    @map("PRECO") @db.Decimal(12, 2)
+  nome           String?     @map("NOME") @db.VarChar(255)
   criadoEm       DateTime    @default(now()) @map("CRIADO_EM")
   atualizadoEm   DateTime    @updatedAt @map("ATUALIZADO_EM")
   timeRodada     TimeRodada  @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
 
   @@unique([timeRodadaId, atletaId])
   @@index([atletaId])
+  @@index([clubeId, timeRodadaId])
   @@map("ESCALACAO_TIME_RODADA")
 }
 

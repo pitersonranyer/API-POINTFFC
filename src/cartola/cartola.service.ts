@@ -1,4 +1,5 @@
-import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { CartolaCacheService } from './cartola-cache.service';
 import { CartolaHttpClient } from './cartola-http.client';
 import { CachedResult, CartolaBatchError, CartolaBatchResponse, CartolaDashboard, CartolaMarketStatus, CartolaMatchesResponse, CartolaPayload, CartolaScoredAthletesFreshResult, CartolaScoredAthletesPayload, CartolaTeamRequestOptions, CartolaTeamSubstitutionsPayload, CartolaTimePayload, CartolaTimeResumo, CartolaTimeSnapshotPayload, MarketState } from './cartola.types';
@@ -10,7 +11,38 @@ const TEAM_BATCH_CONCURRENCY = 5;
 
 @Injectable()
 export class CartolaService {
-  constructor(private readonly http: CartolaHttpClient, private readonly cache: CartolaCacheService) {}
+  private marketRequest?: Promise<CartolaMarketStatus>;
+  constructor(private readonly http: CartolaHttpClient, private readonly cache: CartolaCacheService,
+    @Optional() private readonly prisma?: PrismaService) {}
+
+  private async historicalRound(round: number, temporada?: number) {
+    if (!this.prisma) return null;
+    const season = temporada ?? (await this.prisma.rodadaProcessamento.findFirst({
+      orderBy: { temporada: 'desc' }, select: { temporada: true },
+    }))?.temporada;
+    if (season === undefined) return null;
+    return this.prisma.rodadaProcessamento.findUnique({ where: { temporada_rodada: { temporada: season, rodada: round } } });
+  }
+
+  loadMarketStatusFresh(): Promise<CartolaMarketStatus> {
+    if (!this.marketRequest) {
+      this.marketRequest = this.http.get<CartolaMarketStatus>('/mercado/status').finally(() => { this.marketRequest = undefined; });
+    }
+    return this.marketRequest;
+  }
+
+  loadMatchesFresh(round: number): Promise<CartolaMatchesResponse> {
+    return this.http.get<CartolaMatchesResponse>(`/partidas/${round}`);
+  }
+
+  async loadFinalScoredAthletesFresh(temporada: number, round: number): Promise<CartolaScoredAthletesPayload> {
+    const market = await this.loadMarketStatusFresh();
+    if (market.status_mercado !== 1 || market.temporada !== temporada
+      || (round !== market.rodada_atual - 1 && !(market.game_over && round === market.rodada_atual))) {
+      throw new BadRequestException('Fonte final fora da janela oficial da rodada');
+    }
+    return this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados/${round}`);
+  }
 
   getMarketStatus(): Promise<CachedResult<CartolaMarketStatus>> {
     return this.cache.getOrLoad('mercado/status', (status) => this.statusTtl(status), () => this.http.get<CartolaMarketStatus>('/mercado/status'));
@@ -21,15 +53,39 @@ export class CartolaService {
     return this.cache.getOrLoad('atletas/mercado', state.mercadoAberto ? 3 * MINUTE : HOUR, () => this.http.get<CartolaPayload>('/atletas/mercado'));
   }
 
-  async getScoredAthletes(round?: number): Promise<CachedResult<CartolaScoredAthletesPayload>> {
+  async getScoredAthletes(round?: number, temporada?: number): Promise<CachedResult<CartolaScoredAthletesPayload>> {
+    if (round !== undefined) {
+      const historical = await this.historicalRound(round, temporada);
+      if (historical?.status === 'CONSOLIDADA') {
+        if (!historical.pontuados) throw new ServiceUnavailableException('Rodada consolidada sem atletas persistidos');
+        return { value: historical.pontuados as CartolaScoredAthletesPayload, cache: 'hit', stale: false };
+      }
+      if (historical?.pontuados) return { value: historical.pontuados as CartolaScoredAthletesPayload, cache: 'hit', stale: false };
+    }
     const state = await this.getState();
+    if (this.prisma && round !== undefined && (state.mercadoAberto || round !== state.rodada)) {
+      throw new NotFoundException('Rodada historica ainda nao consolidada no banco');
+    }
     this.validateScoredAthletesRound(state, round);
+    if (this.prisma) {
+      if (temporada !== undefined && temporada !== state.temporada) throw new NotFoundException('Temporada sem historico persistido');
+      const current = await this.historicalRound(round ?? state.rodada, state.temporada);
+      if (!current?.pontuados) throw new ServiceUnavailableException('Rodada aguardando snapshot e processamento das parciais');
+      return { value: current.pontuados as CartolaScoredAthletesPayload, cache: 'hit', stale: false };
+    }
     const ttl = this.scoredAthletesTtl(state);
     const suffix = round === undefined ? '' : `/${round}`;
     return this.cache.getOrLoad(`atletas/pontuados${suffix}`, ttl, () => this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados${suffix}`));
   }
 
   async loadScoredAthletesFresh(round?: number): Promise<CartolaScoredAthletesFreshResult> {
+    if (round !== undefined) {
+      const historical = await this.historicalRound(round);
+      if (historical?.status === 'CONSOLIDADA') {
+        if (!historical.pontuados) throw new ServiceUnavailableException('Rodada consolidada sem atletas persistidos');
+        return { value: historical.pontuados as CartolaScoredAthletesPayload, ttlMs: 10 * MINUTE };
+      }
+    }
     const state = await this.getState();
     this.validateScoredAthletesRound(state, round);
     const suffix = round === undefined ? '' : `/${round}`;
@@ -97,8 +153,16 @@ export class CartolaService {
     return this.getCurrentMatches(await this.getState());
   }
 
-  async getMatchesByRound(round: number): Promise<CachedResult<CartolaMatchesResponse>> {
+  async getMatchesByRound(round: number, temporada?: number): Promise<CachedResult<CartolaMatchesResponse>> {
+    const historical = await this.historicalRound(round, temporada);
+    if (historical?.status === 'CONSOLIDADA') {
+      if (!historical.partidas) throw new ServiceUnavailableException('Rodada consolidada sem partidas persistidas');
+      return { value: historical.partidas as unknown as CartolaMatchesResponse, cache: 'hit', stale: false };
+    }
     const state = await this.getState();
+    if (this.prisma && ((temporada !== undefined && temporada !== state.temporada) || round < state.rodada)) {
+      throw new NotFoundException('Partidas historicas ainda nao consolidadas no banco');
+    }
     const ttl = round === state.rodada ? this.matchesTtl(state) : 24 * HOUR;
     return this.cache.getOrLoad(`partidas/${round}`, ttl, () => this.http.get<CartolaMatchesResponse>(`/partidas/${round}`));
   }
@@ -124,7 +188,7 @@ export class CartolaService {
   private async getState(): Promise<MarketState> { return this.toState((await this.getMarketStatus()).value); }
 
   private toState(status: CartolaMarketStatus): MarketState {
-    return { rodada: status.rodada_atual, mercadoAberto: status.status_mercado === 1, bolaRolando: status.bola_rolando === true };
+    return { rodada: status.rodada_atual, temporada: status.temporada, mercadoAberto: status.status_mercado === 1, bolaRolando: status.bola_rolando === true };
   }
 
   private getCurrentMatches(state: MarketState): Promise<CachedResult<CartolaMatchesResponse>> {
