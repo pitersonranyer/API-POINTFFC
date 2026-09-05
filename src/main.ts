@@ -3,8 +3,10 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { deployMigrations } from './prisma/deploy-migrations';
 
 async function bootstrap(): Promise<void> {
+  deployMigrations();
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
@@ -24,4 +26,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(config.get<number>('PORT', 3001));
 }
 
-void bootstrap();
+void bootstrap().catch((error: unknown) => {
+  console.error('Falha ao iniciar o backend:', error);
+  process.exitCode = 1;
+});
