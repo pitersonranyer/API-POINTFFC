@@ -63,6 +63,22 @@ export class CartolaService {
       if (historical?.pontuados) return { value: historical.pontuados as CartolaScoredAthletesPayload, cache: 'hit', stale: false };
     }
     const state = await this.getState();
+    // A ultima rodada encerrada ainda esta disponivel na fonte oficial,
+    // mesmo quando o scheduler nao chegou a persistir seu historico.
+    if (this.prisma && state.mercadoAberto && round === state.rodada - 1
+      && (temporada === undefined || temporada === state.temporada)) {
+      return this.cache.getOrLoad(
+        `atletas/pontuados/${state.temporada}/${round}`, 10 * MINUTE,
+        async () => {
+          const value = await this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados/${round}`);
+          if (value.rodada !== round || !value.atletas || Array.isArray(value.atletas)
+            || typeof value.atletas !== 'object' || Object.keys(value.atletas).length === 0) {
+            throw new ServiceUnavailableException('Pontuacoes oficiais indisponiveis para a rodada solicitada');
+          }
+          return value;
+        },
+      );
+    }
     if (this.prisma && round !== undefined && (state.mercadoAberto || round !== state.rodada)) {
       throw new NotFoundException('Rodada historica ainda nao consolidada no banco');
     }
