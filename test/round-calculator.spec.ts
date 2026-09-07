@@ -21,6 +21,36 @@ const scores = (a: number, b: number, c: number, participation = true) => new Ma
 ]);
 
 describe('Regras da escalação efetiva', () => {
+  it('reconcilia titular omitido do envelope completo somente apos fim confirmado e cobertura do clube', () => {
+    const frozen = team([athlete(98617, { clubeId: 1 }), athlete(105047, { clubeId: 3, titular: false, reserva: true })]);
+    const points = new Map<number, CartolaScoredAthlete>([
+      [72951, { pontuacao: 2.7, entrou_em_campo: true, clube_id: 1 }],
+      [105047, { pontuacao: 5.3, entrou_em_campo: true, clube_id: 3 }],
+    ]);
+    const result = resolveReplacements(frozen, points, matches, false, true);
+    expect(result.replacements).toEqual([{ atletaSaiuId: 98617, atletaEntrouId: 105047, posicaoId: 5 }]);
+    expect(totalScore(effectiveLineup(frozen, result.replacements), points).toNumber()).toBe(5.3);
+    expect(resolveReplacements(frozen, points, matches).replacements).toEqual([]);
+    const ongoing = new Map(matches); ongoing.set(1, game(1, { periodo_tr: '2T' }));
+    expect(resolveReplacements(frozen, points, ongoing, false, true).replacements).toEqual([]);
+    points.delete(72951);
+    expect(resolveReplacements(frozen, points, matches, false, true).replacements).toEqual([]);
+    points.set(72951, { pontuacao: 2.7, entrou_em_campo: true, clube_id: 1 });
+    points.set(98617, { pontuacao: 0 });
+    expect(resolveReplacements(frozen, points, matches, false, true).replacements).toEqual([]);
+  });
+  it('reconhece POS_JOGO da API e reavalia banco normal e luxo', () => {
+    const ended = new Map<number, CartolaMatch>([...matches].map(([id, match]) => [id, { ...match, periodo_tr: 'POS_JOGO' }]));
+    const frozen = team([athlete(1), reserve], 3);
+    expect(matchEnded(game(1, { periodo_tr: 'POS_JOGO' }))).toBe(true);
+    expect(matchEnded(game(1, { periodo_tr: 'POS_JOGO', valida: false }))).toBe(false);
+    expect(resolveReplacements(frozen, scores(1, 0, 8), ended).replacements).toEqual([
+      { atletaSaiuId: 1, atletaEntrouId: 3, posicaoId: 5 },
+    ]);
+    expect(resolveReplacements(frozen, scores(0, 0, 8, false), ended).replacements).toHaveLength(1);
+    ended.set(1, game(1, { periodo_tr: '2T' }));
+    expect(resolveReplacements(frozen, scores(0, 0, 8, false), ended).replacements).toEqual([]);
+  });
   it.each([[10, 15], [-2, -3], [0, 0]])('aplica capitao %s -> %s e inclui tecnico uma vez', (raw, expected) => {
     const lineup = [athlete(1, { capitao: true }), athlete(2, { posicaoId: 6 })];
     expect(totalScore(lineup, scores(raw, 4, 99)).toNumber()).toBe(expected + 4);

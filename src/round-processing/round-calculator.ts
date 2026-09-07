@@ -15,7 +15,7 @@ export interface FrozenTeam {
 
 // Unknown match states are deliberately not interpreted as full time.
 export function matchEnded(match: CartolaMatch): boolean {
-  return match.valida === true && match.periodo_tr === 'F';
+  return match.valida === true && (match.periodo_tr === 'F' || match.periodo_tr === 'POS_JOGO');
 }
 
 export function matchStart(match: CartolaMatch): number {
@@ -84,7 +84,7 @@ export function totalScore(athletes: FrozenAthlete[], scores: Map<number, Cartol
   }, new Prisma.Decimal(0)).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 }
 
-export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false) {
+export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false) {
   const replacements: Replacement[] = [];
   const pending: string[] = [];
   const starters = team.escalacao.filter((a) => a.titular);
@@ -93,11 +93,19 @@ export function resolveReplacements(team: FrozenTeam, scores: Map<number, Cartol
     || starters.some((a) => a.capitao && a.atletaId !== team.capitaoId)) {
     throw new UnprocessableEntityException('Snapshot invalido');
   }
-  const played = (a: FrozenAthlete) => scores.get(a.atletaId)?.entrou_em_campo;
   const game = (a: FrozenAthlete) => a.clubeId === null ? undefined : matches.get(a.clubeId);
   const finished = (a: FrozenAthlete) => {
     const m = game(a);
     return m !== undefined && (matchEnded(m) || (reopened && m.valida === true && matchStart(m) <= Date.now()));
+  };
+  // The complete scored-athlete feed omits players who did not participate.
+  // Only infer absence after confirmed full time and with scores for this club.
+  // Missing participation on an existing entry remains unknown.
+  const scoredClubs = new Set([...scores.values()].map((a) => a.clube_id));
+  const played = (a: FrozenAthlete) => {
+    if (scores.has(a.atletaId)) return scores.get(a.atletaId)?.entrou_em_campo;
+    if (completeScoredEnvelope && finished(a) && a.clubeId !== null && scoredClubs.has(a.clubeId)) return false;
+    return undefined;
   };
   const points = (a: FrozenAthlete) => scores.get(a.atletaId)?.pontuacao ?? 0;
   const kickoff = (a: FrozenAthlete) => {

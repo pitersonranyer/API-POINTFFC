@@ -39,6 +39,7 @@ function setup() {
       }),
       findMany: jest.fn(async () => round && round.status !== 'CONSOLIDADA' ? [round] : []),
       findUniqueOrThrow: jest.fn(async () => ({ ...round })),
+      findUnique: jest.fn(async () => round ? { ...round } : null),
       updateMany: jest.fn(async ({ where, data }: any) => {
         if (!round || (where.status?.not === round.status) || (where.lockToken && round.lockToken !== where.lockToken)
           || (where.lockAte?.gt && round.lockAte <= where.lockAte.gt)
@@ -56,7 +57,7 @@ function setup() {
       if (sql.sql.includes('INSERT INTO PONTUACAO')) {
         for (let i = 0; i < sql.values.length; i += 6) {
           const target = teams.find((t) => t.id === sql.values[i]);
-          target.pontuacao = { pontuacao: new Prisma.Decimal(sql.values[i + 1] as Prisma.Decimal), status: sql.values[i + 2] };
+          target.pontuacao = { pontuacao: new Prisma.Decimal(sql.values[i + 1] as Prisma.Decimal), status: sql.values[i + 2], consolidadoEm: sql.values[i + 5] };
         }
       }
       if (sql.sql.includes('INSERT INTO SUBSTITUICAO')) {
@@ -81,6 +82,7 @@ function setup() {
     return { timeRodadaId: timeId, titulares: 1 };
   }) };
   const cartola = {
+    getTeamById: jest.fn(),
     loadMarketStatusFresh: jest.fn(async () => ({ ...market })),
     loadScoredAthletesFresh: jest.fn(async () => { events.push('pontuados'); return { value: points, ttlMs: 1000 }; }),
     loadFinalScoredAthletesFresh: jest.fn(async () => { events.push('finais'); return points; }),
@@ -98,6 +100,74 @@ function setup() {
     failCommit: (value: boolean) => { failCommit = value; },
   };
 }
+
+describe('Reprocessamento manual', () => {
+  beforeAll(() => Logger.overrideLogger([]));
+  it('recalcula todos sem diff, corrige substituicoes e repete sem duplicar nem alterar snapshots', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    const frozen = JSON.stringify(f.teams.map((t) => t.escalacao));
+    f.teams[0].substituicoes = [{ atletaSaiuId: 10, atletaEntrouId: 99, posicaoId: 5 }];
+    f.teams.forEach((t) => { t.pontuacao.pontuacao = new Prisma.Decimal(999); });
+    jest.clearAllMocks();
+    const result = await f.create().reprocessarParciais(25, 2026);
+    expect(result).toMatchObject({ temporada: 2026, rodada: 25, status: 'PARCIAL', timesProcessados: 3, timesComErro: 0, substituicoesAlteradas: 1 });
+    expect(f.teams.map((t) => t.pontuacao.pontuacao.toNumber())).toEqual([15, 15, 6]);
+    expect(f.teams[0].substituicoes).toEqual([]);
+    expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ timesProcessados: 3, substituicoesAlteradas: 0 });
+    expect(f.teams).toHaveLength(3);
+    expect(JSON.stringify(f.teams.map((t) => t.escalacao))).toBe(frozen);
+    expect(f.teams.every((t) => t.pontuacao.status === 'PARCIAL' && t.pontuacao.consolidadoEm === null)).toBe(true);
+    expect(f.round).toMatchObject({ status: 'EM_ANDAMENTO', consolidadoEm: null, lockToken: null, lockAte: null });
+    expect(f.snapshots.criarSnapshot).not.toHaveBeenCalled();
+    for (const method of Object.values(f.cartola)) expect(method).not.toHaveBeenCalled();
+    expect(f.prisma.timeRodada.findMany.mock.calls.every(([args]) => !args.where.OR)).toBe(true);
+  });
+  it('reavalia reserva de luxo e aplica capitao 1,5, mantendo uma unica substituicao', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].reservaLuxoId = 12;
+    f.teams[0].escalacao.push({ atletaId: 12, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
+    f.round.pontuados.atletas['12'] = { pontuacao: 20, entrou_em_campo: true };
+    f.round.partidas.partidas[0].periodo_tr = 'F';
+    expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ substituicoesAlteradas: 1 });
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(30);
+    expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ substituicoesAlteradas: 0 });
+    expect(f.teams[0].substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 12, posicaoId: 5 }]);
+    expect(f.prisma.$executeRaw.mock.calls.some(([sql]) => sql.sql.includes('ON DUPLICATE KEY UPDATE ATIVA=true'))).toBe(true);
+  });
+  it('404 para rodada inexistente e 400 para parametros invalidos', async () => {
+    const f = setup();
+    await expect(f.create().reprocessarParciais(25, 2026)).rejects.toMatchObject({ status: 404 });
+    await expect(f.create().reprocessarParciais(39, 2026)).rejects.toMatchObject({ status: 400 });
+    await expect(f.create().reprocessarParciais(25, 0)).rejects.toMatchObject({ status: 400 });
+  });
+  it.each(['consolidada', 'lock', 'envelope', 'snapshot', 'envelope-invalido'])('409 para %s', async (condition) => {
+    const f = setup(); f.closed(); await f.create().tick();
+    if (condition === 'consolidada') f.round.status = 'CONSOLIDADA';
+    if (condition === 'lock') { f.round.lockToken = 'outro'; f.round.lockAte = new Date(Date.now() + 120000); }
+    if (condition === 'envelope') f.round.pontuados = null;
+    if (condition === 'envelope-invalido') f.round.partidas.rodada = 24;
+    if (condition === 'snapshot') f.teams.pop();
+    f.prisma.$executeRaw.mockClear();
+    await expect(f.create().reprocessarParciais(25, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.round.lockToken).toBe(condition === 'lock' ? 'outro' : null);
+  });
+  it('lease impede dois workers simultaneos', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    const results = await Promise.allSettled([f.create().reprocessarParciais(25, 2026), f.create().reprocessarParciais(25, 2026)]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find((r) => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+    expect(f.round.lockToken).toBeNull();
+  });
+  it('contabiliza erro de time e libera lease apos falha de persistencia', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].capitaoId = 999;
+    expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ timesProcessados: 2, timesComErro: 1 });
+    f.failCommit(true);
+    await expect(f.create().reprocessarParciais(25, 2026)).rejects.toThrow('Database unavailable');
+    expect(f.round.lockToken).toBeNull();
+  });
+});
 
 describe('Ciclo persistido de rodadas', () => {
   beforeAll(() => Logger.overrideLogger([]));
