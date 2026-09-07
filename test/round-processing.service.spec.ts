@@ -47,13 +47,23 @@ function setup() {
       }),
       update: jest.fn(async ({ data }: any) => { round = { ...round, ...data }; return round; }),
     },
-    substituicaoTimeRodada: { updateMany: jest.fn(async () => ({ count: 0 })) },
+    substituicaoTimeRodada: { updateMany: jest.fn(async ({ where }: any) => {
+      for (const target of teams.filter((t) => where.timeRodadaId.in.includes(t.id))) target.substituicoes = [];
+      return { count: 0 };
+    }) },
     $executeRaw: jest.fn(async (sql: Prisma.Sql) => {
       if (failCommit) throw new Error('Database unavailable');
       if (sql.sql.includes('INSERT INTO PONTUACAO')) {
         for (let i = 0; i < sql.values.length; i += 6) {
           const target = teams.find((t) => t.id === sql.values[i]);
           target.pontuacao = { pontuacao: new Prisma.Decimal(sql.values[i + 1] as Prisma.Decimal), status: sql.values[i + 2] };
+        }
+      }
+      if (sql.sql.includes('INSERT INTO SUBSTITUICAO')) {
+        for (let i = 0; i < sql.values.length; i += 7) {
+          teams.find((t) => t.id === sql.values[i]).substituicoes.push({
+            atletaSaiuId: sql.values[i + 1], atletaEntrouId: sql.values[i + 2], posicaoId: sql.values[i + 3],
+          });
         }
       }
       return 1;
@@ -120,6 +130,27 @@ describe('Ciclo persistido de rodadas', () => {
     expect(sql.values[0]).toBe(1); expect(sql.values[6]).toBe(2); expect(sql.values).toHaveLength(12);
     expect(f.teams[2].pontuacao.pontuacao.toNumber()).toBe(6);
     f.prisma.$executeRaw.mockClear(); await f.create().tick(); expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it.each([false, true])('corrigir apenas pontos aplica e reverte substituicao com luxo=%s', async (luxury) => {
+    const f = setup(); f.closed(); const worker = f.create(); await worker.tick();
+    const target = f.teams[0];
+    target.reservaLuxoId = luxury ? 20 : null;
+    target.escalacao.push({ atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
+    const update = (reservePoints: number) => f.points({ rodada: 25, atletas: {
+      '10': { pontuacao: luxury ? 10 : 0, entrou_em_campo: luxury },
+      '11': { pontuacao: 4, entrou_em_campo: true },
+      '20': { pontuacao: reservePoints, entrou_em_campo: true },
+    } });
+    f.end(); update(0); await worker.tick();
+    expect(target.substituicoes).toEqual([]);
+    update(12); await worker.tick();
+    expect(f.round.erro).toBeNull();
+    expect(target.substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 20, posicaoId: 5 }]);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(18);
+    expect(target.pontuacao.status).toBe('PARCIAL');
+    update(0); await worker.tick();
+    expect(target.substituicoes).toEqual([]);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(luxury ? 15 : 0);
   });
   it.each([false, true])('fim dos jogos aguarda; reabertura consolida com manutencao=%s', async (maintenance) => {
     const f = setup(); f.closed(); await f.create().tick(); f.end(); await f.create().tick();

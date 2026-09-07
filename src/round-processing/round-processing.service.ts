@@ -220,12 +220,10 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const totals: Array<{ id: number; total: Prisma.Decimal; replacements: Replacement[] }> = [];
     let substitutionCount = 0;
     for (const team of affected) {
-      // Reevaluate only on relevant match changes, first calculation, or final reconciliation.
-      const relevantMatchChange = team.escalacao.some((a) => a.clubeId !== null && changedClubs.has(a.clubeId));
-      const participationChanged = team.escalacao.some((a) => changed.has(a.atletaId)
-        && oldScores[a.atletaId]?.entrou_em_campo !== scores.get(a.atletaId)?.entrou_em_campo);
-      const resolution = final || !team.pontuacao || relevantMatchChange || participationChanged
-        ? resolveReplacements(team, scores, clubs, final) : { replacements: team.substituicoes, pending: [] };
+      // A score correction can enable, reverse, or change a replacement even
+      // when participation and match status are unchanged. The affected query
+      // already limits this work to teams whose inputs changed.
+      const resolution = resolveReplacements(team, scores, clubs, final);
       if (final && resolution.pending.length) throw new Error(`Time ${team.timeId}: ${resolution.pending.join('; ')}`);
       if (final && team.escalacao.some((a) => a.titular && !scores.has(a.atletaId))) {
         throw new Error(`Time ${team.timeId}: atleta titular sem dados finais oficiais`);
