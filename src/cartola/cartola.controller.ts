@@ -8,6 +8,7 @@ import { TeamIdParamsDto } from './dto/team-id-params.dto';
 import { TeamIdsBodyDto } from './dto/team-ids-body.dto';
 import { TeamSearchQueryDto } from './dto/team-search-query.dto';
 import { SeasonQueryDto } from './dto/season-query.dto';
+import { TeamDetailQueryDto } from './dto/team-detail-query.dto';
 
 @ApiTags('cartola')
 @ApiBadGatewayResponse({ description: 'Falha na API do Cartola sem fallback disponível' })
@@ -61,8 +62,10 @@ export class CartolaController {
   @ApiOkResponse({ description: 'Payload público do time' })
   @ApiBadRequestResponse({ description: 'ID ausente, não inteiro ou menor que 1' })
   @ApiNotFoundResponse({ description: 'Time não encontrado no Cartola' })
-  async teamById(@Param() params: TeamIdParamsDto, @Res({ passthrough: true }) response: Response) {
-    return this.respond(response, await this.cartola.getTeamById(params.timeId));
+  @ApiQuery({ name: 'temporada', required: false, type: Number })
+  @ApiQuery({ name: 'rodada', required: false, type: Number })
+  async teamById(@Param() params: TeamIdParamsDto, @Res({ passthrough: true }) response: Response, @Query() query: TeamDetailQueryDto = {}) {
+    return this.respond(response, await this.cartola.getTeamDetail(params.timeId, query));
   }
 
   @Get('partidas') @ApiOperation({ summary: 'Retorna as partidas da rodada atual' }) @ApiOkResponse({ description: 'Rodada, clubes e partidas' })

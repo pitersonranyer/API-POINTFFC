@@ -14,7 +14,7 @@ describe('CartolaController', () => {
     getMarketAthletes: jest.fn().mockResolvedValue(result),
     getScoredAthletes: jest.fn().mockResolvedValue(result),
     getClubs: jest.fn().mockResolvedValue(result),
-    getTeamById: jest.fn().mockResolvedValue(result),
+    getTeamDetail: jest.fn().mockResolvedValue(result),
     searchTeams: jest.fn().mockResolvedValue(result),
     getTeamsByIds: jest.fn().mockResolvedValue(result),
     getMatches: jest.fn().mockResolvedValue(result),
@@ -45,9 +45,14 @@ describe('CartolaController', () => {
     expect(service.getMatchesByRound).toHaveBeenCalledWith(25);
     expect(service.searchTeams).toHaveBeenCalledWith('Meu Time');
     expect(service.getTeamsByIds).toHaveBeenCalledWith([123, 456]);
-    expect(service.getTeamById).toHaveBeenCalledWith(123);
+    expect(service.getTeamDetail).toHaveBeenCalledWith(123, {});
     expect(response.setHeader).toHaveBeenCalledWith('X-Cartola-Cache', 'hit');
     expect(response.setHeader).toHaveBeenCalledWith('X-Cartola-Stale', 'false');
+  });
+
+  it('encaminha temporada e rodada para o detalhe existente', async () => {
+    await controller.teamById({ timeId: 123 }, response as never, { temporada: 2026, rodada: 25 });
+    expect(service.getTeamDetail).toHaveBeenCalledWith(123, { temporada: 2026, rodada: 25 });
   });
 
   it.each(['0', '39', '2.5', 'abc'])('rejeita rodada inválida: %s', async (round) => {

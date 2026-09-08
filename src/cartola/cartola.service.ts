@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException, Optional, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '@prisma/client';
+import { TeamDetailQueryDto } from './dto/team-detail-query.dto';
+import { teamDetailResponse, TeamDetailResponse } from './team-detail-response';
 import { CartolaCacheService } from './cartola-cache.service';
 import { CartolaHttpClient } from './cartola-http.client';
 import { CachedResult, CartolaBatchError, CartolaBatchResponse, CartolaDashboard, CartolaMarketStatus, CartolaMatchesResponse, CartolaPayload, CartolaScoredAthletesFreshResult, CartolaScoredAthletesPayload, CartolaTeamRequestOptions, CartolaTeamSubstitutionsPayload, CartolaTimePayload, CartolaTimeResumo, CartolaTimeSnapshotPayload, MarketState } from './cartola.types';
@@ -120,6 +123,30 @@ export class CartolaService {
         .then((value) => ({ value, cache: 'miss', stale: false }));
     }
     return this.cache.getOrLoad(`times/id/${timeId}${suffix}`, 10 * MINUTE, () => this.http.get<CartolaTimeSnapshotPayload>(`/time/id/${timeId}${suffix}`, { notFoundMessage: 'Time do Cartola não encontrado' }));
+  }
+
+  async getTeamDetail(timeId: number, query: TeamDetailQueryDto = {}): Promise<CachedResult<TeamDetailResponse | CartolaTimeSnapshotPayload>> {
+    const detail = this.prisma ? await this.prisma.$transaction(async (tx) => {
+      const round = await tx.rodadaProcessamento.findFirst({
+        where: { temporada: query.temporada, rodada: query.rodada },
+        orderBy: [{ temporada: 'desc' }, { rodada: 'desc' }],
+      });
+      if (!round) return null;
+      const team = await tx.timeRodada.findUnique({
+        where: { timeId_temporada_rodada: { timeId, temporada: round.temporada, rodada: round.rodada } },
+        include: { time: true, escalacao: { orderBy: [{ ordem: 'asc' }, { atletaId: 'asc' }] },
+          pontuacao: true, substituicoes: { where: { ativa: true }, orderBy: { id: 'asc' } } },
+      });
+      if (!team) {
+        if (round.status === 'CONSOLIDADA') throw new NotFoundException('Snapshot historico do time nao encontrado');
+        return null;
+      }
+      if (!round.pontuados || !team.pontuacao) throw new ServiceUnavailableException('Time aguardando processamento da rodada');
+      return teamDetailResponse(team, round.pontuados as CartolaScoredAthletesPayload);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead }) : null;
+    if (detail) return { value: detail, cache: 'hit', stale: false };
+    if (query.rodada !== undefined || query.temporada !== undefined) throw new NotFoundException('Snapshot do time nao encontrado');
+    return this.getTeamById(timeId);
   }
 
   getTeamSubstitutions(timeId: number): Promise<CartolaTeamSubstitutionsPayload> {
