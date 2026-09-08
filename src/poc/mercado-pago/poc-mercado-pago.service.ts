@@ -4,6 +4,10 @@ import { MercadoPagoClient, ORDER_ID } from './mercado-pago.client';
 import { mapOrderStatus, PocPixStatus } from './mercado-pago-status';
 import { OrderResult, PixData, PocPix, PocPixResponse } from './poc-mercado-pago.types';
 
+const LOG_STATUSES = new Set(['created', 'processing', 'action_required', 'processed', 'approved',
+  'rejected', 'canceled', 'cancelled', 'expired', 'failed', 'refunded', 'charged_back']);
+const safeStatus = (value: unknown): string => typeof value === 'string' && LOG_STATUSES.has(value) ? value : 'desconhecido';
+
 @Injectable()
 export class PocMercadoPagoService {
   private readonly logger = new Logger(PocMercadoPagoService.name);
@@ -41,15 +45,25 @@ export class PocMercadoPagoService {
     return this.response(record);
   }
 
-  async webhook(signature: string | undefined, requestId: string | undefined, dataId: unknown): Promise<{ received: true }> {
-    this.client.assertConfigured();
-    if (typeof dataId !== 'string' || !ORDER_ID.test(dataId)) throw new BadRequestException('data.id de Order inválido');
-    this.client.validateSignature(signature, requestId, dataId);
+  async webhook(signature: string | undefined, requestId: string | undefined, dataId: unknown, body?: unknown): Promise<{ received: true }> {
     const safeRequestId = requestId?.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80) ?? 'ausente';
-    this.logger.log(`[POC MercadoPago] webhook recebido requestId=${safeRequestId}`);
-    // Always consult the signed resource; the body status is never used.
-    await this.refresh(dataId);
-    return { received: true };
+    const payload = body && typeof body === 'object' ? body as Record<string, unknown> : {};
+    const action = typeof payload.action === 'string' && payload.action.startsWith('order.')
+      && LOG_STATUSES.has(payload.action.slice(6)) ? payload.action : 'desconhecida';
+    const context = { requestId: safeRequestId, dataId: typeof dataId === 'string' && ORDER_ID.test(dataId) ? dataId : 'invalido',
+      action, type: payload.type === 'order' ? 'order' : 'desconhecido' };
+    this.logger.log({ event: '[POC MercadoPago] webhook recebido', ...context });
+    let result = 'erro';
+    try {
+      this.client.assertConfigured();
+      if (typeof dataId !== 'string' || !ORDER_ID.test(dataId)) throw new BadRequestException('data.id de Order inválido');
+      this.client.validateSignature(signature, requestId, dataId);
+      this.logger.log({ event: '[POC MercadoPago] assinatura validada', ...context });
+      // Body metadata is logged only; the signed query ID selects the official resource.
+      await this.refresh(dataId);
+      result = 'ok';
+      return { received: true };
+    } finally { this.logger.log({ event: '[POC MercadoPago] webhook finalizado', ...context, resultado: result }); }
   }
 
   private async refresh(externalId: string): Promise<void> {
@@ -58,10 +72,17 @@ export class PocMercadoPagoService {
     const operation = (async () => {
       const order = await this.client.get(externalId);
       if (order.id !== externalId) throw new BadGatewayException('Order retornada não corresponde à solicitada');
+      this.logger.log({ event: '[POC MercadoPago] Order consultada', dataId: externalId,
+        statusOficial: safeStatus(order.status), statusInterno: mapOrderStatus(order.status, order.status_detail) });
       // Look up after the await: creation may have finished while its webhook was in flight.
       const id = this.byExternalId.get(externalId);
       const record = id ? this.byId.get(id) : undefined;
-      if (record) this.apply(record, order);
+      if (record) {
+        this.logger.log({ event: '[POC MercadoPago] pagamento interno localizado', dataId: externalId, idInterno: record.id });
+        this.apply(record, order);
+      } else {
+        this.logger.log({ event: '[POC MercadoPago] Order ausente da memória; nenhuma transação criada', dataId: externalId });
+      }
     })();
     this.refreshing.set(externalId, operation);
     try { await operation; } finally { this.refreshing.delete(externalId); }

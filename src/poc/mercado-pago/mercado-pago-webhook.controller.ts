@@ -1,4 +1,4 @@
-import { Controller, Headers, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PocMercadoPagoService } from './poc-mercado-pago.service';
 
@@ -9,7 +9,8 @@ export class MercadoPagoWebhookController {
   @Post()
   @HttpCode(200)
   receive(@Headers('x-signature') signature: string | undefined,
-    @Headers('x-request-id') requestId: string | undefined, @Query('data.id') dataId: unknown) {
-    return this.service.webhook(signature, requestId, dataId);
+    @Headers('x-request-id') requestId: string | undefined, @Query('data.id') dataId: unknown,
+    @Body() body: unknown) {
+    return this.service.webhook(signature, requestId, dataId, body);
   }
 }

@@ -57,7 +57,7 @@ describe('POC PIX isolada: HTTP, SDK e memória, sem banco', () => {
   function webhook(headers = signature(), id = externalId) {
     return fetch(`${base}/webhooks/mercado-pago?data.id=${id}&type=order`, { method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'order', data: { id: 'ORDOTHER' }, status: 'approved', extra: 'ignored' }) });
+      body: JSON.stringify({ action: 'order.processed', type: 'order', data: { id: 'ORDOTHER' }, status: 'approved', extra: 'ignored' }) });
   }
   function addQr() {
     current = { ...current, status: 'action_required', status_detail: 'waiting_transfer', transactions: { payments: [{
@@ -65,6 +65,37 @@ describe('POC PIX isolada: HTTP, SDK e memória, sem banco', () => {
       date_of_expiration: '2026-09-09T12:00:00Z',
     }] } };
   }
+  it.each([
+    ['action_required', 'waiting_transfer', 'PENDENTE'],
+    ['processed', 'accredited', 'APROVADO'],
+    ['approved', 'accredited', 'APROVADO'],
+  ])('criação %s armazena %s como %s antes de webhook', async (status, detail, expected) => {
+    const original = create.getMockImplementation()!;
+    create.mockImplementation(async (input) => {
+      await original(input);
+      addQr();
+      current = { ...current, status, status_detail: detail };
+      return current;
+    });
+    const pix = await newPix();
+    expect(pix).toMatchObject({ status: expected, pix: { copiaCola: 'test-copy-code', qrCodeBase64: 'test-base64' } });
+    expect(get).not.toHaveBeenCalled();
+    expect(await (await fetch(`${base}/poc/mercado-pago/pix/${pix.id}/status`)).json()).toMatchObject({ status: expected });
+  });
+  it('webhook conclui pendente -> aprovado antes do polling e registra etapas seguras', async () => {
+    const pix = await newPix(); addQr(); await webhook();
+    logs.mockClear();
+    current = { ...current, status: 'processed', status_detail: 'accredited' };
+    expect((await webhook()).status).toBe(200);
+    expect(logs).toHaveBeenCalledWith(expect.stringContaining('PENDENTE -> APROVADO'));
+    for (const event of ['webhook recebido', 'assinatura validada', 'Order consultada', 'pagamento interno localizado', 'webhook finalizado']) {
+      expect(logs).toHaveBeenCalledWith(expect.objectContaining({ event: `[POC MercadoPago] ${event}`, dataId: externalId }));
+    }
+    expect(logs).toHaveBeenCalledWith(expect.objectContaining({ action: 'order.processed', type: 'order', resultado: 'ok' }));
+    expect(JSON.stringify(logs.mock.calls)).not.toMatch(/test-token|test-secret|test-copy-code|test-base64/);
+    expect(JSON.stringify(logs.mock.calls)).not.toContain(signature()['x-signature']);
+    expect(await (await fetch(`${base}/poc/mercado-pago/pix/${pix.id}/status`)).json()).toMatchObject({ status: 'APROVADO' });
+  });
   it('health público não consulta API externa', async () => {
     expect(await (await fetch(`${base}/poc/mercado-pago/health`)).json()).toEqual({ status: 'ok', mercadoPagoConfigured: true });
     expect(create).not.toHaveBeenCalled(); expect(get).not.toHaveBeenCalled();
@@ -129,6 +160,9 @@ describe('POC PIX isolada: HTTP, SDK e memória, sem banco', () => {
     current = { id: externalId, status: 'processed' } as OrderResult;
     expect((await webhook()).status).toBe(200);
     expect(get).toHaveBeenCalledTimes(1); expect(create).not.toHaveBeenCalled();
+    expect(logs).toHaveBeenCalledWith(expect.objectContaining({
+      event: '[POC MercadoPago] Order ausente da memória; nenhuma transação criada', dataId: externalId,
+    }));
   });
   it('erro externo é seguro e webhook retorna erro para permitir reenvio', async () => {
     const pix = await newPix();
@@ -171,6 +205,19 @@ describe('POC PIX isolada: HTTP, SDK e memória, sem banco', () => {
 
 describe('Configuração e transporte do SDK', () => {
   afterEach(() => { jest.restoreAllMocks(); jest.useRealTimers(); });
+  it.each([
+    [undefined, 'MissingSignatureHeader'], ['garbage', 'MalformedSignatureHeader'],
+    [signature(externalId, 'wrong')['x-signature'], 'SignatureMismatch'],
+  ])('diagnostica assinatura inválida sem revelar seu conteúdo: %s', (header, reason) => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const client = new MercadoPagoClient(new ConfigService(settings));
+    expect(() => client.validateSignature(header, 'request-1', externalId)).toThrow('Assinatura do webhook inválida');
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ reason, dataId: externalId,
+      signaturePresent: Boolean(header), requestIdPresent: true }));
+    const output = JSON.stringify(warn.mock.calls);
+    expect(output).not.toContain(settings.MERCADO_PAGO_WEBHOOK_SECRET);
+    if (header) expect(output).not.toContain(header);
+  });
   it.each(Object.keys(settings))('ausência de %s desabilita somente POC', (key) => {
     const client = new MercadoPagoClient(new ConfigService({ ...settings, [key]: '' }));
     expect(client.configured()).toBe(false);
@@ -213,5 +260,6 @@ describe('Configuração e transporte do SDK', () => {
     ['expired', 'expired', 'EXPIRADO'], ['failed', 'failed', 'REJEITADO'], ['failed', 'processing_error', 'ERRO'],
     ['refunded', 'refunded', 'REEMBOLSADO'], ['charged_back', 'in_process', 'CONTESTADO'],
     ['unknown', '', 'ERRO'], ['processed', '', 'ERRO'],
+    ['approved', '', 'APROVADO'], ['rejected', '', 'REJEITADO'], ['cancelled', '', 'CANCELADO'],
   ])('mapeia %s/%s para %s', (status, detail, expected) => expect(mapOrderStatus(status, detail)).toBe(expected));
 });

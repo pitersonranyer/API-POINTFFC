@@ -11,7 +11,10 @@ export function mapOrderStatus(status?: string, detail?: string): PocPixStatus {
     case 'action_required': return PocPixStatus.PENDENTE;
     case 'processed': return detail === 'accredited' ? PocPixStatus.APROVADO
       : detail === 'partially_refunded' ? PocPixStatus.REEMBOLSADO_PARCIALMENTE : PocPixStatus.ERRO;
-    case 'canceled': return PocPixStatus.CANCELADO;
+    // Compatibility aliases only when returned by the official Order query.
+    case 'approved': return PocPixStatus.APROVADO;
+    case 'rejected': return PocPixStatus.REJEITADO;
+    case 'canceled': case 'cancelled': return PocPixStatus.CANCELADO;
     case 'expired': return PocPixStatus.EXPIRADO;
     case 'failed': return detail === 'processing_error' ? PocPixStatus.ERRO : PocPixStatus.REJEITADO;
     case 'refunded': return PocPixStatus.REEMBOLSADO;

@@ -99,6 +99,7 @@ Dois Maps indexam UUID -> registro e Order ID -> UUID. Um terceiro reúne consul
 | action_required | PENDENTE |
 | processed / accredited | APROVADO |
 | canceled | CANCELADO |
+| approved, rejected, cancelled (aliases de compatibilidade) | APROVADO, REJEITADO, CANCELADO |
 | expired | EXPIRADO |
 | failed | REJEITADO (processing_error -> ERRO) |
 | refunded | REEMBOLSADO |
@@ -107,6 +108,14 @@ Dois Maps indexam UUID -> registro e Order ID -> UUID. Um terceiro reúne consul
 | desconhecido ou processed sem detalhe reconhecido | ERRO |
 
 O mapeamento é centralizado em `mercado-pago-status.ts`; reembolso/contestação não dispara efeito financeiro. [Status oficiais](https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/payment-management/status/order-status)
+
+Os aliases de compatibilidade acima são aceitos somente da resposta oficial de criação/consulta, não do corpo do webhook. O vocabulário canônico de Orders continua sendo `processed/accredited`, `failed` e `canceled`. `processed` sem detalhe reconhecido não aprova o PIX. Se a criação já retornar aprovação, ela é aplicada imediatamente, antes do webhook.
+
+### Diagnóstico do webhook
+
+Logs registram recebimento, action/type reconhecidos, data.id da query, validação da assinatura, consulta da Order com status oficial/interno, localização do UUID, transição e finalização com resultado. Metadados do body são apenas informativos; valores desconhecidos são substituídos por marcadores. Order ausente do Map gera log informativo e ACK 200 após consulta bem-sucedida, sem recriar estado.
+
+Falhas de assinatura registram `reason` do SDK (por exemplo `MissingSignatureHeader`, `MalformedSignatureHeader`, `SignatureMismatch`) e os indicadores `signaturePresent`/`requestIdPresent`. Não são registrados assinatura completa, secret, token, QR ou copia e cola. `SignatureMismatch` identifica divergência da assinatura, mas isoladamente não prova que o secret foi configurado incorretamente.
 
 ## Limitações e remoção
 
@@ -132,4 +141,4 @@ npm run build
 
 Os testes iniciam somente o módulo da POC em porta local temporária e simulam a API externa. Incluem validação de valores/campos extras, QR assíncrono, configuração ausente, status, IDs desconhecidos, assinatura válida/inválida, duplicidade, aprovação, falhas, concorrência, timeout, transporte do SDK e mapeamento de status.
 
-Validação executada nesta implementação: 43 testes da POC aprovados; suíte completa com 25 suítes e 270 testes aprovados, 5 suítes/7 testes ignorados pela configuração existente. Lint, typecheck, build e `git diff --check` aprovados. Não houve deploy, chamada autenticada real ao Mercado Pago ou teste no painel/Render; essa etapa depende das credenciais e da implantação, conforme o roteiro acima.
+Validação da revisão final: 53 testes da POC aprovados; suíte completa com 25 suítes e 280 testes aprovados, 5 suítes/7 testes ignorados pela configuração existente. Lint, typecheck, build e `git diff --check` aprovados. O responsável reportou criação real de Order de teste com QR, polling aprovado e simulador do webhook com HTTP 200. Nesta revisão não foi feito novo deploy nem nova chamada autenticada ao provedor. Os ajustes de diagnóstico precisam ser implantados para aparecer nos logs do Render.

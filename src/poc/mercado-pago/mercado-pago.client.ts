@@ -45,7 +45,9 @@ export class MercadoPagoClient {
         dataId, secret: this.value('MERCADO_PAGO_WEBHOOK_SECRET') });
     } catch (error) {
       if (!(error instanceof InvalidWebhookSignatureError)) throw error;
-      this.logger.warn('[POC MercadoPago] assinatura de webhook inválida');
+      this.logger.warn({ event: '[POC MercadoPago] assinatura de webhook inválida',
+        reason: error.reason, dataId: ORDER_ID.test(dataId) ? dataId : 'invalido',
+        signaturePresent: Boolean(signature?.trim()), requestIdPresent: Boolean(requestId?.trim()) });
       throw new UnauthorizedException('Assinatura do webhook inválida');
     }
   }
