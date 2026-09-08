@@ -18,4 +18,7 @@ export const environmentValidationSchema = Joi.object({
   REDIS_SCORED_STALE_TTL_SECONDS: Joi.number().integer().min(60).default(86400),
   REDIS_LOCK_TTL_MS: Joi.number().integer().min(1000).max(60000).default(10000),
   REDIS_LOCK_WAIT_MS: Joi.number().integer().min(100).max(30000).default(5000),
+  MERCADO_PAGO_ACCESS_TOKEN: Joi.string().optional().allow(''),
+  MERCADO_PAGO_WEBHOOK_SECRET: Joi.string().optional().allow(''),
+  MERCADO_PAGO_POC_PAYER_EMAIL: Joi.string().optional().allow(''),
 });

@@ -29,6 +29,7 @@
     "firebase-admin": "^12.7.0",
     "ioredis": "^5.11.1",
     "joi": "^17.13.3",
+    "mercadopago": "3.6.0",
     "prisma": "^5.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2"

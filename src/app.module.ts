@@ -14,6 +14,7 @@ import { ParciaisModule } from './parciais/parciais.module';
 import { SubstitutionModule } from './substitutions/substitution.module';
 import { RankingGeralModule } from './ranking-geral/ranking-geral.module';
 import { RoundProcessingModule } from './round-processing/round-processing.module';
+import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { RoundProcessingModule } from './round-processing/round-processing.modul
     SubstitutionModule,
     RankingGeralModule,
     RoundProcessingModule,
+    PocMercadoPagoModule,
   ],
 })
 export class AppModule {}
