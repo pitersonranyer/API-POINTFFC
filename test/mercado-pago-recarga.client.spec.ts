@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { Order } from 'mercadopago';
 import { MercadoPagoRecargaClient } from '../src/carteira/mercado-pago-recarga.client';
@@ -6,6 +7,7 @@ import { MercadoPagoRecargaClient } from '../src/carteira/mercado-pago-recarga.c
 describe('MercadoPagoRecargaClient - SDK sem rede', () => {
   const settings: Record<string, string> = { MERCADO_PAGO_ACCESS_TOKEN: 'test-token', MERCADO_PAGO_WEBHOOK_SECRET: 'test-secret' };
   const client = new MercadoPagoRecargaClient({ get: (key: string) => settings[key] ?? '' } as ConfigService);
+  beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined));
   afterEach(() => jest.restoreAllMocks());
 
   it('retry de criação mantém chave, corpo e pagador autenticado', async () => {
@@ -39,5 +41,51 @@ describe('MercadoPagoRecargaClient - SDK sem rede', () => {
     const create = jest.spyOn(Order.prototype, 'create').mockRejectedValue(new Error('test-secret'));
     await expect(client.create('1.00', 'stable', 'user@example.com')).rejects.toThrow('Falha ao consultar ou criar Order');
     expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it('registra classe, status e causas do SDK mantendo a resposta pública', async () => {
+    const error = Object.assign(new Error('Invalid request parameters'), {
+      name: 'MPBadRequestError', status: 400, error: 'bad_request',
+      causes: [{ code: 'invalid_parameter', description: 'Missing required field' }],
+    });
+    jest.spyOn(Order.prototype, 'create').mockRejectedValue(error);
+    await expect(client.create('10.00', 'stable-reference', 'user@example.com')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
+    expect(Logger.prototype.warn).toHaveBeenCalledWith({ event: 'Falha na Order Mercado Pago',
+      name: 'MPBadRequestError', message: 'Invalid request parameters', status: 400, error: 'bad_request',
+      causes: [{ code: 'invalid_parameter', description: 'Missing required field' }],
+    });
+  });
+
+  it('omite credenciais, PIX, pagador, headers e payload mesmo em campos de mensagem', async () => {
+    const error = Object.assign(new Error('test-token test-secret user@example.com'), {
+      name: 'MPValidationError', code: 'validation_error',
+      cause: [{ code: 'invalid_data', message: 'payer John Silva CPF 123.456.789-00 QR qr-secret PIX copy-secret' }],
+      response: { status: 422, headers: { authorization: 'Bearer test-token' }, data: {
+        error: 'validation_error', message: 'Invalid data for user@example.com',
+        cause: [{ code: 'bad_field', description: 'qr_code_base64=qr-secret pixCopiaCola=copy-secret' }],
+        access_token: 'test-token', webhook_secret: 'test-secret', qr_code: 'copy-secret', qr_code_base64: 'qr-secret',
+        payer: { email: 'user@example.com', first_name: 'John', last_name: 'Silva', identification: { number: '12345678900' } },
+      } },
+      request: { body: 'payload completo', headers: { authorization: 'Bearer test-token' } },
+    });
+    jest.spyOn(Order.prototype, 'get').mockRejectedValue(error);
+    await expect(client.get('ORD1')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
+    const logs = JSON.stringify(jest.mocked(Logger.prototype.warn).mock.calls);
+    for (const secret of ['test-token', 'test-secret', 'user@example.com', 'qr-secret', 'copy-secret', 'John', 'Silva', '12345678900', '123.456.789-00', 'payload completo']) {
+      expect(logs).not.toContain(secret);
+    }
+    expect(logs).not.toMatch(/authorization|"headers"|"request"|"stack"/);
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(expect.objectContaining({ status: 422, code: 'validation_error',
+      response: expect.objectContaining({ error: 'validation_error', message: 'Invalid data for [email omitido]' }) }));
+  });
+
+  it('limita tamanho, profundidade e quantidade de causas e tolera causa circular', async () => {
+    const error: any = { name: 'Error', message: 'timeout '.repeat(200), causes: Array.from({ length: 20 }, () => ({ code: 'timeout' })) };
+    error.cause = error;
+    jest.spyOn(Order.prototype, 'get').mockRejectedValue(error);
+    await expect(client.get('ORD1')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
+    const log = jest.mocked(Logger.prototype.warn).mock.calls[0][0];
+    expect(log.message.length).toBeLessThanOrEqual(400);
+    expect(log.causes).toHaveLength(5);
   });
 });
