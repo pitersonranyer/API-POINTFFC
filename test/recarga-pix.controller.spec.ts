@@ -61,9 +61,17 @@ describe('Endpoints reais PIX', () => {
       body: JSON.stringify({ status: 'approved', data: { id: 'ORDOTHER' } }) });
     expect(response.status).toBe(200);
     expect(service.webhook).toHaveBeenCalledWith('sig', 'req', 'ORD1');
+    expect(console.error).toHaveBeenCalledTimes(1);
+    const [line] = jest.mocked(console.error).mock.calls[0];
+    expect(line).not.toMatch(/[\r\n]/);
+    expect(JSON.parse(line)).toEqual({ marker: 'WEBHOOK_CARTEIRA_RECEBIDO', level: 'error',
+      timestamp: expect.any(String), signaturePresent: true, requestIdPresent: true });
+    expect(jest.mocked(console.error).mock.invocationCallOrder[0]).toBeLessThan(service.webhook.mock.invocationCallOrder[0]);
   });
   it('assinatura inválida retorna 401', async () => {
     service.webhook.mockRejectedValueOnce(new UnauthorizedException('Assinatura inválida'));
     expect((await fetch(`${base}/webhooks/mercado-pago/carteira?data.id=ORD1`, { method: 'POST' })).status).toBe(401);
+    expect(JSON.parse(jest.mocked(console.error).mock.calls[0][0])).toMatchObject({
+      signaturePresent: false, requestIdPresent: false });
   });
 });

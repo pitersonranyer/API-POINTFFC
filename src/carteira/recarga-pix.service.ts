@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, ConflictException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { Prisma, RecargaCarteira, Usuario } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -63,16 +63,50 @@ export class RecargaPixService {
 
   webhook(signature: string | undefined, requestId: string | undefined, dataId: unknown) {
     return this.executar(async () => {
-      this.client.validateSignature(signature, requestId, dataId);
-      const order = await this.client.get(dataId);
-      if (order.id !== dataId) throw new BadGatewayException('Order retornada não corresponde à solicitada');
-      const recarga = await this.recargas.consultarPorIdPagamentoExterno(dataId);
-      if (!recarga) {
-        this.logger.log({ event: 'Order sem recarga vinculada; ignorada', orderId: dataId });
+      let etapa = 'assinatura';
+      const context: { orderId?: string; recargaId?: number } = {};
+      const log = (marker: string, fields: Record<string, unknown> = {}) => {
+        console.error(JSON.stringify({ marker, level: 'error', timestamp: new Date().toISOString(), ...context, ...fields }));
+      };
+      const statusSeguro = (value: unknown) => typeof value === 'string' && [
+        'created', 'processing', 'in_process', 'action_required', 'waiting_transfer', 'processed', 'accredited',
+        'approved', 'rejected', 'failed', 'processing_error', 'canceled', 'cancelled', 'expired', 'refunded',
+        'partially_refunded', 'charged_back', 'ATIVA', 'PENDENTE', 'PROCESSANDO', 'APROVADA', 'REJEITADA',
+        'CANCELADA', 'EXPIRADA', 'REEMBOLSADA',
+      ].includes(value) ? value : value == null ? 'ausente' : 'desconhecido';
+      try {
+        if (typeof dataId === 'string' && RECARGA_ORDER_ID.test(dataId)) {
+          context.orderId = dataId;
+          log('WEBHOOK_CARTEIRA_ORDER_ID');
+        }
+        this.client.validateSignature(signature, requestId, dataId);
+        log('WEBHOOK_CARTEIRA_ASSINATURA_OK');
+        etapa = 'consulta_order';
+        const order = await this.client.get(dataId);
+        log('WEBHOOK_CARTEIRA_ORDER_CONSULTADA');
+        log('WEBHOOK_CARTEIRA_STATUS', { status: statusSeguro(order.status), status_detail: statusSeguro(order.status_detail) });
+        etapa = 'validacao_order_id';
+        if (order.id !== dataId) throw new BadGatewayException('Order retornada não corresponde à solicitada');
+        etapa = 'localizacao_recarga';
+        const recarga = await this.recargas.consultarPorIdPagamentoExterno(dataId);
+        if (recarga) context.recargaId = recarga.id;
+        log('WEBHOOK_CARTEIRA_RECARGA_LOCALIZADA', { localizada: Boolean(recarga) });
+        if (!recarga) {
+          this.logger.log({ event: 'Order sem recarga vinculada; ignorada', orderId: dataId });
+          log('WEBHOOK_CARTEIRA_PROCESSADA', { resultado: 'ignorada_sem_recarga' });
+          return { received: true };
+        }
+        etapa = 'validacao_order';
+        const oficial = this.validarOrder(recarga, order);
+        etapa = 'processamento_recarga';
+        const resultado = await this.carteiras.aplicarRecargaPix(recarga.id, oficial);
+        log('WEBHOOK_CARTEIRA_PROCESSADA', { resultado: 'ok', status: statusSeguro(resultado.status) });
         return { received: true };
+      } catch (error) {
+        log('WEBHOOK_CARTEIRA_ERRO', { etapa, httpStatus: error instanceof HttpException ? error.getStatus() : 503,
+          categoria: error instanceof UnauthorizedException ? 'assinatura_invalida' : error instanceof HttpException ? 'erro_http' : 'erro_interno' });
+        throw error;
       }
-      await this.carteiras.aplicarRecargaPix(recarga.id, this.validarOrder(recarga, order));
-      return { received: true };
     });
   }
 

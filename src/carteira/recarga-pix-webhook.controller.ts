@@ -10,6 +10,9 @@ export class RecargaPixWebhookController {
   @HttpCode(200)
   receber(@Headers('x-signature') signature: string | undefined,
     @Headers('x-request-id') requestId: string | undefined, @Query('data.id') dataId: unknown) {
+    console.error(JSON.stringify({ marker: 'WEBHOOK_CARTEIRA_RECEBIDO', level: 'error',
+      timestamp: new Date().toISOString(), signaturePresent: typeof signature === 'string' && Boolean(signature.trim()),
+      requestIdPresent: typeof requestId === 'string' && Boolean(requestId.trim()) }));
     return this.service.webhook(signature, requestId, dataId);
   }
 }

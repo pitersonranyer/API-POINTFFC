@@ -30,6 +30,53 @@ describe('RecargaPixService', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
+  const events = () => jest.mocked(console.error).mock.calls.map(([line]) => JSON.parse(line));
+
+  it('registra etapas do webhook em linhas JSON sem dados sensiveis', async () => {
+    order.status = 'processed'; order.status_detail = 'accredited';
+    order.payer = { email: 'sensitive@example.com' };
+    await service.webhook('signature-secret', 'request-secret', 'ORD1');
+    expect(events().map((event) => event.marker)).toEqual([
+      'WEBHOOK_CARTEIRA_ORDER_ID', 'WEBHOOK_CARTEIRA_ASSINATURA_OK', 'WEBHOOK_CARTEIRA_ORDER_CONSULTADA',
+      'WEBHOOK_CARTEIRA_STATUS', 'WEBHOOK_CARTEIRA_RECARGA_LOCALIZADA', 'WEBHOOK_CARTEIRA_PROCESSADA',
+    ]);
+    expect(events()[3]).toMatchObject({ orderId: 'ORD1', status: 'processed', status_detail: 'accredited' });
+    expect(events()[5]).toMatchObject({ recargaId: 7, resultado: 'ok', status: 'APROVADA' });
+    for (const args of jest.mocked(console.error).mock.calls) {
+      expect(args).toHaveLength(1);
+      expect(args[0]).not.toMatch(/[\r\n]|signature-secret|request-secret|copy-secret|qr-secret|sensitive@example.com/);
+      expect(JSON.parse(args[0])).toMatchObject({ level: 'error', timestamp: expect.any(String) });
+    }
+  });
+
+  it.each(['assinatura', 'consulta_order', 'localizacao_recarga', 'processamento_recarga'])('registra falha em %s sem mascarar erro', async (etapa) => {
+    const error = etapa === 'assinatura' ? new UnauthorizedException('token-secret')
+      : etapa === 'consulta_order' ? new BadGatewayException('pix-secret') : new Error('query qr-secret');
+    if (etapa === 'assinatura') client.validateSignature.mockImplementation(() => { throw error; });
+    if (etapa === 'consulta_order') client.get.mockRejectedValue(error);
+    if (etapa === 'localizacao_recarga') recargas.consultarPorIdPagamentoExterno.mockRejectedValue(error);
+    if (etapa === 'processamento_recarga') carteiras.aplicarRecargaPix.mockRejectedValue(error);
+    const result = service.webhook('signature-secret', 'request-secret', 'ORD1');
+    if (etapa === 'assinatura' || etapa === 'consulta_order') await expect(result).rejects.toBe(error);
+    else await expect(result).rejects.toMatchObject({ status: 503 });
+    expect(events().at(-1)).toMatchObject({ marker: 'WEBHOOK_CARTEIRA_ERRO', etapa,
+      httpStatus: etapa === 'assinatura' ? 401 : etapa === 'consulta_order' ? 502 : 503 });
+    expect(events().some((event) => event.marker === 'WEBHOOK_CARTEIRA_PROCESSADA')).toBe(false);
+    if (etapa === 'assinatura') expect(events().some((event) => event.marker === 'WEBHOOK_CARTEIRA_ASSINATURA_OK')).toBe(false);
+    expect(JSON.stringify(events())).not.toMatch(/token-secret|pix-secret|qr-secret|signature-secret|request-secret/);
+  });
+
+  it('omite ID invalido e status inesperado dos logs', async () => {
+    client.validateSignature.mockImplementationOnce(() => { throw new UnauthorizedException(); });
+    await expect(service.webhook('sig', 'req', 'sensitive@example.com')).rejects.toThrow();
+    expect(JSON.stringify(events())).not.toContain('sensitive@example.com');
+    jest.mocked(console.error).mockClear();
+    order.status = 'sensitive@example.com'; order.status_detail = 'qr-secret';
+    await service.webhook('sig', 'req', 'ORD1');
+    expect(events().find((event) => event.marker === 'WEBHOOK_CARTEIRA_STATUS')).toMatchObject({ status: 'desconhecido', status_detail: 'desconhecido' });
+    expect(JSON.stringify(events())).not.toMatch(/sensitive@example.com|qr-secret/);
+  });
+
   it('persiste pendente antes de criar Order e vincula PIX', async () => {
     const result = await service.criar(user, '10.00', key);
     expect(recargas.criar).toHaveBeenCalledWith({ carteiraId: 2, valor: '10.00', provedor: 'MERCADO_PAGO', externalReference: expect.any(String) });
@@ -118,6 +165,7 @@ describe('RecargaPixService', () => {
       expect(await service.webhook('sig', 'req', 'ORD1')).toEqual({ received: true });
       expect(recargas.criar).not.toHaveBeenCalled();
       expect(carteiras.aplicarRecargaPix).not.toHaveBeenCalled();
+      expect(events().at(-1)).toMatchObject({ marker: 'WEBHOOK_CARTEIRA_PROCESSADA', resultado: 'ignorada_sem_recarga' });
       expect(log).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'ORD1' }));
       expect(JSON.stringify(log.mock.calls)).not.toMatch(/copy-secret|qr-secret/);
     } finally { log.mockRestore(); }
