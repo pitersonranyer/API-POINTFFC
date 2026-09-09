@@ -26,6 +26,7 @@ export class MercadoPagoClient {
     this.assertConfigured();
     return this.request(() => this.order().create({ body: {
       type: 'online', processing_mode: 'automatic', total_amount: valor, external_reference: referencia,
+      items: [{ title: 'Recarga carteira PointFFC', quantity: 1, unit_price: valor, category_id: 'services' }],
       // Official PIX test scenario. This payer is exclusively for this removable POC.
       payer: { email: this.value('MERCADO_PAGO_POC_PAYER_EMAIL'), first_name: 'APRO' },
       transactions: { payments: [{ amount: valor, payment_method: { id: 'pix', type: 'bank_transfer' } }] },

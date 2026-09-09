@@ -109,6 +109,7 @@ describe('POC PIX isolada: HTTP, SDK e memória, sem banco', () => {
     expect(pix).toMatchObject({ status: 'PROCESSANDO', valor: 10, pix: {} });
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({ total_amount: '10.00', external_reference: `poc-pix-${pix.id}`,
+        items: [{ title: 'Recarga carteira PointFFC', quantity: 1, unit_price: '10.00', category_id: 'services' }],
         payer: { email: settings.MERCADO_PAGO_POC_PAYER_EMAIL, first_name: 'APRO' } }),
       requestOptions: { timeout: 5000, maxRetries: 0, idempotencyKey: pix.id },
     }));
@@ -235,9 +236,18 @@ describe('Configuração e transporte do SDK', () => {
   it('SDK envia Orders API com idempotência e separa criações concorrentes', async () => {
     const spy = jest.spyOn(global, 'fetch').mockImplementation(async () => new Response(JSON.stringify({ id: externalId }), { status: 201 }));
     const client = new MercadoPagoClient(new ConfigService(settings));
-    await Promise.all([client.create('10.00', 'poc-pix-a', 'a'), client.create('20.00', 'poc-pix-b', 'b')]);
+    await Promise.all([client.create('10.00', 'poc-pix-a', 'a'), client.create('20.25', 'poc-pix-b', 'b')]);
     expect(spy.mock.calls.map(([url]) => url)).toEqual(['https://api.mercadopago.com/v1/orders', 'https://api.mercadopago.com/v1/orders']);
     expect(spy.mock.calls.map(([, options]) => new Headers(options?.headers).get('X-Idempotency-Key'))).toEqual(['a', 'b']);
+    const bodies = spy.mock.calls.map(([, options]) => JSON.parse(String(options?.body)));
+    expect(bodies.map((body) => body.items)).toEqual(['10.00', '20.25'].map((valor) => [
+      { title: 'Recarga carteira PointFFC', quantity: 1, unit_price: valor, category_id: 'services' },
+    ]));
+    for (const body of bodies) {
+      expect(body.items[0].unit_price).toBe(body.total_amount);
+      expect(body.items[0].unit_price).toBe(body.transactions.payments[0].amount);
+      expect(body.payer).toEqual({ email: settings.MERCADO_PAGO_POC_PAYER_EMAIL, first_name: 'APRO' });
+    }
   });
   it('não repete automaticamente erro HTTP externo', async () => {
     const spy = jest.spyOn(global, 'fetch').mockImplementation(async () => new Response('{}', { status: 500 }));
