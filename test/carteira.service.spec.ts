@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { CarteiraService } from '../src/carteira/carteira.service';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { RecargaCarteiraService } from '../src/carteira/recarga-carteira.service';
 
 describe('CarteiraService', () => {
   const decimal = (value: string) => new Prisma.Decimal(value);
@@ -22,7 +23,7 @@ describe('CarteiraService', () => {
   });
 
   it('cria sob demanda usando usuarioId único e defaults do banco', async () => {
-    expect(await service.obterOuCriar(1)).toBe(carteira);
+    expect(await service.obterOuCriar(1)).toEqual(carteira);
     expect(tx.carteira.upsert).toHaveBeenCalledWith({ where: { usuarioId: 1 }, create: { usuarioId: 1 }, update: {} });
     expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
     expect(tx.$queryRaw.mock.calls.every(([sql]: [TemplateStringsArray]) => sql.join('').includes('FOR UPDATE'))).toBe(true);
@@ -95,6 +96,36 @@ describe('CarteiraService', () => {
     await expect(service.creditar({ ...input, origem: 'RECARGA_PIX' })).rejects.toThrow('PIX exige crédito vinculado');
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
+
+  it('normaliza carteira raw bigint e permite criar a recarga sem ID inválido', async () => {
+    carteira.id = 1n;
+    carteira.usuarioId = 1n;
+    tx.$queryRaw.mockReset().mockResolvedValueOnce([{ id_usuario: 1n }]).mockResolvedValueOnce([carteira]);
+    prisma.recargaCarteira = { create: jest.fn().mockImplementation(async ({ data }: any) => ({ id: 2, ...data })) };
+    const normalizada = await service.obterOuCriar(1);
+    expect(normalizada.id).toBe(1);
+    expect(normalizada.usuarioId).toBe(1);
+    expect(normalizada.saldoDisponivel).toBe(carteira.saldoDisponivel);
+    expect(normalizada.saldoBloqueado).toBe(carteira.saldoBloqueado);
+    const recarga = await new RecargaCarteiraService(prisma as PrismaService).criar({
+      carteiraId: normalizada.id, valor: '10.00', provedor: 'MERCADO_PAGO',
+    });
+    expect(recarga.carteiraId).toBe(normalizada.id);
+  });
+
+  it('crédito comum usa ID normalizado no update e na movimentação', async () => {
+    carteira.id = 10n; carteira.usuarioId = 1n;
+    await service.creditar(input);
+    expect(tx.carteira.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 10 } }));
+    expect(tx.movimentacaoCarteira.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ carteiraId: 10 }) }));
+  });
+
+  it.each(['id', 'usuarioId'])('rejeita %s raw fora da faixa antes de alterar saldo', async (campo) => {
+    carteira[campo] = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+    await expect(service.creditar(input)).rejects.toThrow('ID inválido');
+    expect(tx.carteira.update).not.toHaveBeenCalled();
+    expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
+  });
 });
 
 describe('CarteiraService - crédito PIX vinculado', () => {
@@ -107,7 +138,7 @@ describe('CarteiraService - crédito PIX vinculado', () => {
   beforeEach(() => {
     recarga = { id: 3, carteiraId: 2, valor: new Prisma.Decimal('7.25'), provedor: 'MERCADO_PAGO',
       externalReference: 'ref', idPagamentoExterno: 'ORD1', status: 'PENDENTE', aprovadoEm: null };
-    carteira = { id: 2, status: 'ATIVA', saldoDisponivel: new Prisma.Decimal('10'), saldoBloqueado: new Prisma.Decimal('0') };
+    carteira = { id: 2, usuarioId: 1, status: 'ATIVA', saldoDisponivel: new Prisma.Decimal('10'), saldoBloqueado: new Prisma.Decimal('0') };
     movimento = null;
     tx = {
       $queryRaw: jest.fn(async (sql: TemplateStringsArray) => sql.join('').includes('RECARGA_CARTEIRA') ? [{ ...recarga }] : [{ ...carteira }]),
@@ -182,5 +213,25 @@ describe('CarteiraService - crédito PIX vinculado', () => {
     recarga.externalReference = 'alterada';
     await expect(service.aplicarRecargaPix(3, oficial)).rejects.toThrow('Order incompatível');
     expect(tx.carteira.update).not.toHaveBeenCalled();
+  });
+
+  it('normaliza IDs raw de recarga e carteira no crédito PIX', async () => {
+    recarga.id = 3n; recarga.carteiraId = 2n;
+    carteira.id = 2n; carteira.usuarioId = 1n;
+    await service.aplicarRecargaPix(3, oficial);
+    expect(tx.$queryRaw.mock.calls[1][1]).toBe(2);
+    expect(tx.carteira.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 2 } }));
+    expect(movimento).toMatchObject({ carteiraId: 2, recargaId: 3, referenciaId: '3' });
+    expect(movimento.valor).toBeInstanceOf(Prisma.Decimal);
+    expect(movimento.saldoAnterior.toString()).toBe('10');
+    expect(movimento.saldoPosterior.toString()).toBe('17.25');
+  });
+
+  it.each(['id', 'carteiraId'])('rejeita %s raw da recarga fora da faixa antes de creditar', async (campo) => {
+    recarga[campo] = BigInt(Number.MAX_SAFE_INTEGER) + 1n;
+    await expect(service.aplicarRecargaPix(3, oficial)).rejects.toThrow('ID inválido');
+    expect(tx.carteira.update).not.toHaveBeenCalled();
+    expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
+    expect(tx.recargaCarteira.update).not.toHaveBeenCalled();
   });
 });

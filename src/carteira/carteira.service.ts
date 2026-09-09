@@ -2,6 +2,7 @@ import { BadGatewayException, BadRequestException, Injectable, NotFoundException
 import { Carteira, MovimentacaoCarteiraOrigem, MovimentacaoCarteiraTipo, Prisma, RecargaCarteira, RecargaCarteiraStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { OperacaoCarteira } from './carteira.types';
+import { normalizarIdsRaw, RawIds } from './raw-ids';
 
 const LIMITE = new Prisma.Decimal('9999999999.99');
 
@@ -44,9 +45,9 @@ export class CarteiraService {
   // Recarga -> carteira é a ordem de locks; nenhuma chamada externa ocorre aqui.
   aplicarRecargaPix(recargaId: number, oficial: RecargaPixOficial) {
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<RecargaCarteira[]>`
+      const rows = await tx.$queryRaw<RawIds<RecargaCarteira, 'id' | 'carteiraId'>[]>`
         SELECT * FROM RECARGA_CARTEIRA WHERE id = ${recargaId} FOR UPDATE`;
-      const recarga = rows[0];
+      const recarga = rows[0] && normalizarIdsRaw(rows[0], ['id', 'carteiraId']);
       if (!recarga) throw new NotFoundException('Recarga não encontrada');
       if (recarga.provedor !== 'MERCADO_PAGO' || recarga.externalReference !== oficial.externalReference ||
         !recarga.valor.equals(oficial.valor) ||
@@ -58,9 +59,9 @@ export class CarteiraService {
       const status = recarga.status === 'REEMBOLSADA' ? recarga.status
         : movimento && oficial.status !== 'REEMBOLSADA' ? 'APROVADA' : oficial.status ?? recarga.status;
       if (status === 'APROVADA' && oficial.status === 'APROVADA' && !movimento) {
-        const carteiras = await tx.$queryRaw<Carteira[]>`
+        const carteiras = await tx.$queryRaw<RawIds<Carteira, 'id' | 'usuarioId'>[]>`
           SELECT * FROM CARTEIRA WHERE id = ${recarga.carteiraId} FOR UPDATE`;
-        const carteira = carteiras[0];
+        const carteira = carteiras[0] && normalizarIdsRaw(carteiras[0], ['id', 'usuarioId']);
         if (!carteira || carteira.status !== 'ATIVA') {
           throw new ServiceUnavailableException('Crédito pendente: carteira indisponível');
         }
@@ -87,13 +88,14 @@ export class CarteiraService {
   private async obterComBloqueio(tx: Prisma.TransactionClient, usuarioId: number): Promise<Carteira> {
     if (!Number.isSafeInteger(usuarioId) || usuarioId <= 0) throw new BadRequestException('Usuário inválido');
     // A linha de usuário existe antes da carteira: serializa também a primeira criação.
-    const usuarios = await tx.$queryRaw<{ id_usuario: number }[]>`
+    const usuarios = await tx.$queryRaw<{ id_usuario: number | bigint }[]>`
       SELECT id_usuario FROM USUARIO WHERE id_usuario = ${usuarioId} FOR UPDATE`;
     if (!usuarios.length) throw new NotFoundException('Usuário não encontrado');
+    normalizarIdsRaw(usuarios[0], ['id_usuario']);
     await tx.carteira.upsert({ where: { usuarioId }, create: { usuarioId }, update: {} });
-    const carteiras = await tx.$queryRaw<Carteira[]>`
+    const carteiras = await tx.$queryRaw<RawIds<Carteira, 'id' | 'usuarioId'>[]>`
       SELECT * FROM CARTEIRA WHERE usuarioId = ${usuarioId} FOR UPDATE`;
-    return carteiras[0];
+    return normalizarIdsRaw(carteiras[0], ['id', 'usuarioId']);
   }
 
   private validarValor(valor: string | Prisma.Decimal): Prisma.Decimal {
