@@ -74,8 +74,96 @@ model Usuario {
   authAccounts    AuthAccount[]
   resetTokens     PasswordResetToken[]
   times           TimeUsuario[]
+  carteira        Carteira?
 
   @@map("USUARIO")
+}
+
+enum CarteiraStatus {
+  ATIVA
+  BLOQUEADA
+}
+
+enum MovimentacaoCarteiraTipo {
+  CREDITO
+  DEBITO
+}
+
+enum MovimentacaoCarteiraOrigem {
+  RECARGA_PIX
+  INSCRICAO
+  ESTORNO
+  AJUSTE
+}
+
+enum MovimentacaoCarteiraStatus {
+  CONFIRMADA
+}
+
+model Carteira {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  usuarioId Int @unique @db.UnsignedInt
+  saldoDisponivel Decimal @default(0) @db.Decimal(12, 2)
+  saldoBloqueado Decimal @default(0) @db.Decimal(12, 2)
+  status CarteiraStatus @default(ATIVA)
+  criadoEm DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  movimentacoes MovimentacaoCarteira[]
+  recargas RecargaCarteira[]
+
+  @@map("CARTEIRA")
+}
+
+enum RecargaCarteiraStatus {
+  PENDENTE
+  PROCESSANDO
+  APROVADA
+  REJEITADA
+  CANCELADA
+  EXPIRADA
+  REEMBOLSADA
+}
+
+model RecargaCarteira {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  carteiraId Int @db.UnsignedInt
+  valor Decimal @db.Decimal(12, 2)
+  provedor String @db.VarChar(50)
+  idPagamentoExterno String? @unique @db.VarChar(255)
+  externalReference String @unique @db.VarChar(255)
+  status RecargaCarteiraStatus @default(PENDENTE)
+  pixCopiaCola String? @db.Text
+  qrCode String? @db.MediumText
+  expiracao DateTime?
+  criadoEm DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  aprovadoEm DateTime?
+  movimentacao MovimentacaoCarteira?
+  carteira Carteira @relation(fields: [carteiraId], references: [id], onDelete: Restrict)
+
+  @@index([carteiraId])
+  @@map("RECARGA_CARTEIRA")
+}
+
+model MovimentacaoCarteira {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  recargaId Int? @unique @db.UnsignedInt
+  recarga RecargaCarteira? @relation(fields: [recargaId], references: [id], onDelete: Restrict)
+  carteiraId Int @db.UnsignedInt
+  tipo MovimentacaoCarteiraTipo
+  origem MovimentacaoCarteiraOrigem
+  valor Decimal @db.Decimal(12, 2)
+  saldoAnterior Decimal @db.Decimal(12, 2)
+  saldoPosterior Decimal @db.Decimal(12, 2)
+  referenciaId String? @db.VarChar(255)
+  descricao String? @db.Text
+  status MovimentacaoCarteiraStatus @default(CONFIRMADA)
+  criadoEm DateTime @default(now())
+  carteira Carteira @relation(fields: [carteiraId], references: [id], onDelete: Restrict)
+
+  @@index([carteiraId, criadoEm, id])
+  @@map("MOVIMENTACAO_CARTEIRA")
 }
 
 model TimeUsuario {

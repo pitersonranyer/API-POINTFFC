@@ -13,7 +13,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: config.getOrThrow<string>('FRONTEND_URL'),
     methods: ['GET', 'POST', 'DELETE'],
-    allowedHeaders: ['Authorization', 'Content-Type'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
     credentials: true,
   });
   const swaggerConfig = new DocumentBuilder()

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { CarteiraModule } from './carteira/carteira.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { environmentValidationSchema } from './config/environment.validation';
@@ -20,6 +21,7 @@ import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module
   imports: [
     ConfigModule.forRoot({ isGlobal: true, validationSchema: environmentValidationSchema }),
     PrismaModule,
+    CarteiraModule,
     UsersModule,
     AuthModule,
     HealthModule,
