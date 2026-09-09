@@ -17,8 +17,20 @@ describe('MercadoPagoRecargaClient - SDK sem rede', () => {
     expect(create.mock.calls[0]).toEqual(create.mock.calls[1]);
     expect(create).toHaveBeenCalledWith({ body: {
       type: 'online', processing_mode: 'automatic', total_amount: '10.00', external_reference: 'stable-reference',
+      items: [{ title: 'Recarga carteira PointFFC', quantity: 1, unit_price: '10.00', category_id: 'services' }],
       payer: { email: 'user@example.com' }, transactions: { payments: [{ amount: '10.00', payment_method: { id: 'pix', type: 'bank_transfer' } }] },
     }, requestOptions: { timeout: 5000, maxRetries: 0, idempotencyKey: 'stable-reference' } });
+  });
+
+  it.each(['0.01', '10.25', '9999999999.99'])('item preserva exatamente o valor textual %s', async (valor) => {
+    const create = jest.spyOn(Order.prototype, 'create').mockResolvedValue({ id: 'ORD1', api_response: { status: 201, headers: [] as never } });
+    await client.create(valor, 'stable-reference', 'user@example.com');
+    const body = create.mock.calls[0][0].body;
+    expect(body.items).toEqual([{ title: 'Recarga carteira PointFFC', quantity: 1, unit_price: valor, category_id: 'services' }]);
+    expect(body.items![0].unit_price).toBe(body.total_amount);
+    expect(body.items![0].unit_price).toBe(body.transactions!.payments![0].amount);
+    expect(body.payer).toEqual({ email: 'user@example.com' });
+    expect(body.payer).not.toHaveProperty('last_name');
   });
 
   it('valida assinatura oficial e rejeita assinatura inválida', () => {

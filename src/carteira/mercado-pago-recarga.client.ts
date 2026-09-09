@@ -22,6 +22,7 @@ export class MercadoPagoRecargaClient {
     if (!isEmail(email)) throw new BadRequestException('E-mail do usuário inválido');
     // As duas tentativas usam exatamente o mesmo corpo e a mesma chave persistida.
     const body = { type: 'online', processing_mode: 'automatic', total_amount: valor, external_reference: externalReference,
+      items: [{ title: 'Recarga carteira PointFFC', quantity: 1, unit_price: valor, category_id: 'services' }],
       payer: { email }, transactions: { payments: [{ amount: valor, payment_method: { id: 'pix', type: 'bank_transfer' } }] } };
     const create = () => this.request(() => this.order().create({ body,
       requestOptions: { ...OPTIONS, idempotencyKey: externalReference } }));
