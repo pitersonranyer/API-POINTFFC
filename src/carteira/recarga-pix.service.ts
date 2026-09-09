@@ -42,6 +42,8 @@ export class RecargaPixService {
       }
       if (recarga.idPagamentoExterno) return this.sincronizar(recarga);
       if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
+      console.error(JSON.stringify({ marker: 'RECARGA_PIX_BEFORE_MP_CREATE', level: 'error',
+        timestamp: new Date().toISOString(), usuarioId: usuario.idUsuario, recargaId: recarga.id }));
       const order = await this.client.create(recarga.valor.toFixed(2), recarga.externalReference, usuario.email);
       const oficial = this.validarOrder(recarga, order);
       // Guarda o vínculo antes do crédito, para permitir retry de webhook se o crédito falhar.

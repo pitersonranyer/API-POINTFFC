@@ -21,7 +21,8 @@ describe('Endpoints reais PIX', () => {
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
     await app.listen(0, '127.0.0.1'); base = await app.getUrl();
   });
-  beforeEach(() => { jest.clearAllMocks(); service.criar.mockResolvedValue({ id: 1 }); service.consultar.mockResolvedValue({ id: 1 }); service.webhook.mockResolvedValue({ received: true }); });
+  beforeEach(() => { jest.clearAllMocks(); jest.spyOn(console, 'error').mockImplementation(() => undefined); service.criar.mockResolvedValue({ id: 1 }); service.consultar.mockResolvedValue({ id: 1 }); service.webhook.mockResolvedValue({ received: true }); });
+  afterEach(() => jest.restoreAllMocks());
   afterAll(() => app.close());
 
   async function post(body: unknown, authenticated = true) {
@@ -33,6 +34,14 @@ describe('Endpoints reais PIX', () => {
   it('POST usa usuário autenticado e valor textual', async () => {
     expect((await post({ valor: '10.00' })).status).toBe(201);
     expect(service.criar).toHaveBeenCalledWith(user, '10.00', 'same-request-key-1234');
+    expect(console.error).toHaveBeenCalledTimes(1);
+    const args = jest.mocked(console.error).mock.calls[0];
+    expect(args).toHaveLength(1);
+    expect(args[0]).not.toMatch(/[\r\n]/);
+    expect(JSON.parse(args[0])).toEqual({ marker: 'RECARGA_PIX_ENDPOINT_ENTER', level: 'error',
+      timestamp: expect.any(String), usuarioId: 12 });
+    expect(Number.isFinite(Date.parse(JSON.parse(args[0]).timestamp))).toBe(true);
+    expect(jest.mocked(console.error).mock.invocationCallOrder[0]).toBeLessThan(service.criar.mock.invocationCallOrder[0]);
   });
   it('POST e GET sem autenticação retornam 401', async () => {
     expect((await post({ valor: '10.00' }, false)).status).toBe(401);

@@ -13,6 +13,7 @@ describe('RecargaPixService', () => {
   const user = { idUsuario: 1, email: 'user@example.com' };
   const key = 'same-request-key-1234';
   beforeEach(() => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
     recarga = { id: 7, carteiraId: 2, valor: new Prisma.Decimal('10'), provedor: 'MERCADO_PAGO',
       externalReference: 'ref', idPagamentoExterno: 'ORD1', status: 'PENDENTE' };
     order = { id: 'ORD1', total_amount: '10.00', external_reference: 'ref', status: 'action_required',
@@ -27,6 +28,7 @@ describe('RecargaPixService', () => {
       create: jest.fn().mockImplementation(async (_valor: string, ref: string) => ({ ...order, external_reference: ref })) };
     service = new RecargaPixService(prisma, carteiras, recargas, client);
   });
+  afterEach(() => jest.restoreAllMocks());
 
   it('persiste pendente antes de criar Order e vincula PIX', async () => {
     const result = await service.criar(user, '10.00', key);
@@ -34,6 +36,14 @@ describe('RecargaPixService', () => {
     expect(recargas.criar.mock.invocationCallOrder[0]).toBeLessThan(client.create.mock.invocationCallOrder[0]);
     expect(prisma.recargaCarteira.updateMany).toHaveBeenCalledWith({ where: { id: 7, idPagamentoExterno: null }, data: { idPagamentoExterno: 'ORD1' } });
     expect(result).toMatchObject({ valor: '10.00', status: 'PENDENTE', pixCopiaCola: 'copy-secret', qrCode: 'qr-secret' });
+    expect(console.error).toHaveBeenCalledTimes(1);
+    const args = jest.mocked(console.error).mock.calls[0];
+    expect(args).toHaveLength(1);
+    expect(args[0]).not.toMatch(/[\r\n]/);
+    expect(JSON.parse(args[0])).toEqual({ marker: 'RECARGA_PIX_BEFORE_MP_CREATE', level: 'error',
+      timestamp: expect.any(String), usuarioId: 1, recargaId: 7 });
+    expect(Number.isFinite(Date.parse(JSON.parse(args[0]).timestamp))).toBe(true);
+    expect(jest.mocked(console.error).mock.invocationCallOrder[0]).toBeLessThan(client.create.mock.invocationCallOrder[0]);
   });
 
   it('PIX já aprovado na criação usa o mesmo caminho de crédito', async () => {
@@ -81,6 +91,7 @@ describe('RecargaPixService', () => {
     await service.criar(user, '10.00', key);
     expect(client.create).not.toHaveBeenCalled();
     expect(client.get).toHaveBeenCalledWith('ORD1');
+    expect(console.error).not.toHaveBeenCalled();
   });
 
   it('carteira bloqueada impede retry de criação ainda sem Order', async () => {

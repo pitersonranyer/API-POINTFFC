@@ -16,6 +16,8 @@ export class RecargaPixController {
   @ApiHeader({ name: 'Idempotency-Key', required: true, description: '16 a 128 caracteres; reutilizar em retries da mesma recarga' })
   criar(@AuthenticatedUser() usuario: Usuario, @Body() body: CriarRecargaPixDto,
     @Headers('idempotency-key') key: string | undefined) {
+    console.error(JSON.stringify({ marker: 'RECARGA_PIX_ENDPOINT_ENTER', level: 'error',
+      timestamp: new Date().toISOString(), usuarioId: usuario.idUsuario }));
     return this.service.criar(usuario, body.valor, key);
   }
   @Get(':id')
