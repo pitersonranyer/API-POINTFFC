@@ -1,5 +1,4 @@
 import { ConfigService } from '@nestjs/config';
-import { Logger } from '@nestjs/common';
 import { createHmac } from 'node:crypto';
 import { Order } from 'mercadopago';
 import { MercadoPagoRecargaClient } from '../src/carteira/mercado-pago-recarga.client';
@@ -7,7 +6,7 @@ import { MercadoPagoRecargaClient } from '../src/carteira/mercado-pago-recarga.c
 describe('MercadoPagoRecargaClient - SDK sem rede', () => {
   const settings: Record<string, string> = { MERCADO_PAGO_ACCESS_TOKEN: 'test-token', MERCADO_PAGO_WEBHOOK_SECRET: 'test-secret' };
   const client = new MercadoPagoRecargaClient({ get: (key: string) => settings[key] ?? '' } as ConfigService);
-  beforeEach(() => jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined));
+  beforeEach(() => jest.spyOn(console, 'error').mockImplementation(() => undefined));
   afterEach(() => jest.restoreAllMocks());
 
   it('retry de criação mantém chave, corpo e pagador autenticado', async () => {
@@ -50,10 +49,16 @@ describe('MercadoPagoRecargaClient - SDK sem rede', () => {
     });
     jest.spyOn(Order.prototype, 'create').mockRejectedValue(error);
     await expect(client.create('10.00', 'stable-reference', 'user@example.com')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
-    expect(Logger.prototype.warn).toHaveBeenCalledWith({ event: 'Falha na Order Mercado Pago',
+    expect(console.error).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(jest.mocked(console.error).mock.calls[0][0])).toEqual({ event: 'MERCADO_PAGO_ORDER_ERROR', level: 'error',
       name: 'MPBadRequestError', message: 'Invalid request parameters', status: 400, error: 'bad_request',
       causes: [{ code: 'invalid_parameter', description: 'Missing required field' }],
     });
+    for (const args of jest.mocked(console.error).mock.calls) {
+      expect(args).toHaveLength(1);
+      expect(typeof args[0]).toBe('string');
+      expect(args[0]).not.toMatch(/[\r\n]/);
+    }
   });
 
   it('omite credenciais, PIX, pagador, headers e payload mesmo em campos de mensagem', async () => {
@@ -70,12 +75,12 @@ describe('MercadoPagoRecargaClient - SDK sem rede', () => {
     });
     jest.spyOn(Order.prototype, 'get').mockRejectedValue(error);
     await expect(client.get('ORD1')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
-    const logs = JSON.stringify(jest.mocked(Logger.prototype.warn).mock.calls);
+    const logs = jest.mocked(console.error).mock.calls.map(([line]) => line).join('\n');
     for (const secret of ['test-token', 'test-secret', 'user@example.com', 'qr-secret', 'copy-secret', 'John', 'Silva', '12345678900', '123.456.789-00', 'payload completo']) {
       expect(logs).not.toContain(secret);
     }
     expect(logs).not.toMatch(/authorization|"headers"|"request"|"stack"/);
-    expect(Logger.prototype.warn).toHaveBeenCalledWith(expect.objectContaining({ status: 422, code: 'validation_error',
+    expect(JSON.parse(jest.mocked(console.error).mock.calls[0][0])).toEqual(expect.objectContaining({ status: 422, code: 'validation_error',
       response: expect.objectContaining({ error: 'validation_error', message: 'Invalid data for [email omitido]' }) }));
   });
 
@@ -84,8 +89,16 @@ describe('MercadoPagoRecargaClient - SDK sem rede', () => {
     error.cause = error;
     jest.spyOn(Order.prototype, 'get').mockRejectedValue(error);
     await expect(client.get('ORD1')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
-    const log = jest.mocked(Logger.prototype.warn).mock.calls[0][0];
+    const log = JSON.parse(jest.mocked(console.error).mock.calls[0][0]);
     expect(log.message.length).toBeLessThanOrEqual(400);
     expect(log.causes).toHaveLength(5);
+  });
+
+  it('fallback emite somente JSON seguro em uma linha e preserva 502', async () => {
+    const error = Object.defineProperty({}, 'response', { get() { throw new Error('detalhe privado'); } });
+    jest.spyOn(Order.prototype, 'get').mockRejectedValue(error);
+    await expect(client.get('ORD1')).rejects.toThrow('Falha ao consultar ou criar Order Mercado Pago');
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith(JSON.stringify({ event: 'MERCADO_PAGO_ORDER_ERROR', level: 'error', message: 'Detalhes do erro indisponíveis' }));
   });
 });

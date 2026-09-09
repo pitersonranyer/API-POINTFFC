@@ -1,4 +1,4 @@
-import { BadGatewayException, BadRequestException, Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, Injectable, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { isEmail } from 'class-validator';
 import { InvalidWebhookSignatureError, MercadoPagoConfig, Order, WebhookSignatureValidator } from 'mercadopago';
@@ -9,7 +9,6 @@ const OPTIONS = { timeout: 5000, maxRetries: 0 };
 
 @Injectable()
 export class MercadoPagoRecargaClient {
-  private readonly logger = new Logger(MercadoPagoRecargaClient.name);
   constructor(private readonly config: ConfigService) {}
 
   assertConfigured() {
@@ -102,14 +101,14 @@ export class MercadoPagoRecargaClient {
       const body = record(response.data ?? response.body ?? root.body);
       const status = [root.status, root.statusCode, response.status, body.status]
         .find((value) => typeof value === 'number' && Number.isInteger(value) && value >= 100 && value <= 599);
-      this.logger.warn({ event: 'Falha na Order Mercado Pago',
+      console.error(JSON.stringify({ event: 'MERCADO_PAGO_ORDER_ERROR', level: 'error',
         ...record(fields(error)), name: text(root.name ?? (error instanceof Error ? error.constructor.name : 'UnknownError')),
         ...(status !== undefined ? { status } : {}),
         ...(Object.keys(body).length ? { response: fields(body) } : {}),
-      });
+      }));
     } catch {
       // Erros inesperados na inspeção não devem substituir a resposta pública original.
-      this.logger.warn({ event: 'Falha na Order Mercado Pago', message: 'Detalhes do erro indisponíveis' });
+      console.error(JSON.stringify({ event: 'MERCADO_PAGO_ORDER_ERROR', level: 'error', message: 'Detalhes do erro indisponíveis' }));
     }
   }
 }
