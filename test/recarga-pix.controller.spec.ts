@@ -61,23 +61,12 @@ describe('Endpoints reais PIX', () => {
       body: JSON.stringify({ status: 'approved', data: { id: 'ORDOTHER' } }) });
     expect(response.status).toBe(200);
     expect(service.webhook).toHaveBeenCalledWith('sig', 'req', 'ORD1');
-    expect(console.error).toHaveBeenCalledTimes(2);
-    const entry = jest.mocked(console.error).mock.calls[0];
-    expect(entry).toHaveLength(1);
-    expect(entry[0]).not.toMatch(/[\r\n]/);
-    expect(JSON.parse(entry[0])).toEqual({ marker: 'WEBHOOK_CARTEIRA_CONTROLLER_ENTROU', timestamp: expect.any(String) });
-    expect(Number.isFinite(Date.parse(JSON.parse(entry[0]).timestamp))).toBe(true);
-    const [line] = jest.mocked(console.error).mock.calls[1];
-    expect(line).not.toMatch(/[\r\n]/);
-    expect(JSON.parse(line)).toEqual({ marker: 'WEBHOOK_CARTEIRA_RECEBIDO', level: 'error',
-      timestamp: expect.any(String), signaturePresent: true, requestIdPresent: true });
-    expect(jest.mocked(console.error).mock.invocationCallOrder[0]).toBeLessThan(service.webhook.mock.invocationCallOrder[0]);
+    expect(console.error).not.toHaveBeenCalled();
   });
   it('assinatura inválida retorna 401', async () => {
     service.webhook.mockRejectedValueOnce(new UnauthorizedException('Assinatura inválida'));
     expect((await fetch(`${base}/webhooks/mercado-pago/carteira?data.id=ORD1`, { method: 'POST' })).status).toBe(401);
-    expect(JSON.parse(jest.mocked(console.error).mock.calls[0][0])).toMatchObject({ marker: 'WEBHOOK_CARTEIRA_CONTROLLER_ENTROU' });
-    expect(JSON.parse(jest.mocked(console.error).mock.calls[1][0])).toMatchObject({
-      signaturePresent: false, requestIdPresent: false });
+    expect(service.webhook).toHaveBeenCalledWith(undefined, undefined, 'ORD1');
+    expect(console.error).not.toHaveBeenCalled();
   });
 });
