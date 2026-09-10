@@ -1,10 +1,12 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { Usuario } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/authenticated-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CarteiraService } from './carteira.service';
 import { CarteiraResponseDto } from './dto/carteira-response.dto';
+import { ExtratoQueryDto } from './dto/extrato-query.dto';
+import { ExtratoResponseDto } from './dto/extrato-response.dto';
 
 @ApiTags('carteira')
 @ApiBearerAuth('jwt')
@@ -12,6 +14,15 @@ import { CarteiraResponseDto } from './dto/carteira-response.dto';
 @Controller('carteira')
 export class CarteiraController {
   constructor(private readonly service: CarteiraService) {}
+
+  @Get('extrato')
+  @ApiOkResponse({ type: ExtratoResponseDto })
+  consultarExtrato(
+    @AuthenticatedUser() usuario: Usuario,
+    @Query() query: ExtratoQueryDto,
+  ): Promise<ExtratoResponseDto> {
+    return this.service.consultarExtratoPaginado(usuario.idUsuario, query.page, query.limit);
+  }
 
   @Get()
   @ApiOkResponse({ type: CarteiraResponseDto })

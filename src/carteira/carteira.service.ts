@@ -3,6 +3,7 @@ import { Carteira, MovimentacaoCarteiraOrigem, MovimentacaoCarteiraTipo, Prisma,
 import { PrismaService } from '../prisma/prisma.service';
 import { OperacaoCarteira } from './carteira.types';
 import { normalizarIdsRaw, RawIds } from './raw-ids';
+import { ExtratoResponseDto } from './dto/extrato-response.dto';
 
 const LIMITE = new Prisma.Decimal('9999999999.99');
 
@@ -31,6 +32,35 @@ export class CarteiraService {
     return this.prisma.movimentacaoCarteira.findMany({
       where: { carteiraId: carteira.id }, orderBy: [{ criadoEm: 'asc' }, { id: 'asc' }],
     });
+  }
+
+  async consultarExtratoPaginado(usuarioId: number, page: number, limit: number): Promise<ExtratoResponseDto> {
+    const skip = (page - 1) * limit;
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100 ||
+      !Number.isSafeInteger(skip)) {
+      throw new BadRequestException('Paginacao invalida');
+    }
+    const carteira = await this.obterOuCriar(usuarioId);
+    const where = { carteiraId: carteira.id };
+    return this.prisma.$transaction(async (tx) => {
+      const total = await tx.movimentacaoCarteira.count({ where });
+      const movimentos = await tx.movimentacaoCarteira.findMany({
+        where, skip, take: limit, orderBy: [{ criadoEm: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true, tipo: true, origem: true, valor: true, saldoAnterior: true,
+          saldoPosterior: true, descricao: true, status: true, criadoEm: true,
+        },
+      });
+      return {
+        items: movimentos.map((movimento) => ({
+          id: movimento.id, tipo: movimento.tipo, origem: movimento.origem,
+          valor: movimento.valor.toFixed(2), saldoAnterior: movimento.saldoAnterior.toFixed(2),
+          saldoPosterior: movimento.saldoPosterior.toFixed(2), descricao: movimento.descricao,
+          status: movimento.status, criadoEm: movimento.criadoEm.toISOString(),
+        })),
+        page, limit, total, totalPages: Math.ceil(total / limit),
+      };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
   creditar(input: OperacaoCarteira) {

@@ -26,6 +26,34 @@ integration('Carteira - transações reais MySQL', () => {
   afterAll(() => prisma.$disconnect());
   const input = (valor: string) => ({ usuarioId, valor, origem: 'AJUSTE' as const });
 
+  it('pagina extrato por data e desempata por ID sem incluir outra carteira', async () => {
+    const outro = await prisma.usuario.create({ data: { email: `carteira-test-${randomUUID()}@example.invalid` } });
+    try {
+      await service.creditar({ usuarioId: outro.idUsuario, valor: '99', origem: 'AJUSTE' });
+      const a = await service.creditar(input('1'));
+      const b = await service.creditar(input('2'));
+      const c = await service.creditar(input('3'));
+      await prisma.movimentacaoCarteira.updateMany({ where: { id: { in: [a.id, c.id] } }, data: { criadoEm: new Date('2026-01-01T00:00:00Z') } });
+      await prisma.movimentacaoCarteira.update({ where: { id: b.id }, data: { criadoEm: new Date('2026-01-02T00:00:00Z') } });
+      const primeira = await service.consultarExtratoPaginado(usuarioId, 1, 2);
+      const segunda = await service.consultarExtratoPaginado(usuarioId, 2, 2);
+      expect(primeira.items.map((item) => item.id)).toEqual([b.id, c.id]);
+      expect(segunda.items.map((item) => item.id)).toEqual([a.id]);
+      expect(primeira).toMatchObject({ page: 1, limit: 2, total: 3, totalPages: 2 });
+      expect(segunda).toMatchObject({ page: 2, limit: 2, total: 3, totalPages: 2 });
+    } finally {
+      await prisma.movimentacaoCarteira.deleteMany({ where: { carteira: { usuarioId: outro.idUsuario } } });
+      await prisma.carteira.deleteMany({ where: { usuarioId: outro.idUsuario } });
+      await prisma.usuario.delete({ where: { idUsuario: outro.idUsuario } });
+    }
+  });
+
+  it('extrato vazio cria carteira sob demanda sem movimentacao', async () => {
+    expect(await service.consultarExtratoPaginado(usuarioId, 1, 20)).toEqual({ items: [], page: 1, limit: 20, total: 0, totalPages: 0 });
+    expect(await prisma.carteira.count({ where: { usuarioId } })).toBe(1);
+    expect(await prisma.movimentacaoCarteira.count({ where: { carteira: { usuarioId } } })).toBe(0);
+  });
+
   it('cria uma única carteira sob demanda mesmo com chamadas concorrentes', async () => {
     expect(await prisma.carteira.count({ where: { usuarioId } })).toBe(0);
     const [a, b] = await Promise.all([service.obterOuCriar(usuarioId), service.obterOuCriar(usuarioId)]);
