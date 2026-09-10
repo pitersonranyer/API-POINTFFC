@@ -1,5 +1,8 @@
 import { BadGatewayException, ConflictException, Logger, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { createHmac } from 'node:crypto';
+import { MercadoPagoRecargaClient } from '../src/carteira/mercado-pago-recarga.client';
 import { RecargaPixService } from '../src/carteira/recarga-pix.service';
 
 describe('RecargaPixService', () => {
@@ -31,6 +34,26 @@ describe('RecargaPixService', () => {
   afterEach(() => jest.restoreAllMocks());
 
   const events = () => jest.mocked(console.error).mock.calls.map(([line]) => JSON.parse(line));
+
+  it('valida HMAC com ID lowercase e preserva a Order original nas etapas seguintes', async () => {
+    const dataId = 'ORD01M25RYSMJ2WFJBQYJV8PAW94Q';
+    const settings = { MERCADO_PAGO_ACCESS_TOKEN: 'test-token', MERCADO_PAGO_WEBHOOK_SECRET: 'test-secret' };
+    const signatureClient = new MercadoPagoRecargaClient(new ConfigService(settings));
+    client.validateSignature.mockImplementation(signatureClient.validateSignature.bind(signatureClient));
+    order.id = dataId;
+    recarga.idPagamentoExterno = dataId;
+    const ts = '1742505638683';
+    const hash = createHmac('sha256', settings.MERCADO_PAGO_WEBHOOK_SECRET)
+      .update(`id:ord01m25rysmj2wfjbqyjv8paw94q;request-id:req-1;ts:${ts};`).digest('hex');
+
+    await expect(service.webhook(`ts=${ts},v1=${hash}`, 'req-1', dataId)).resolves.toEqual({ received: true });
+
+    expect(client.get).toHaveBeenCalledWith(dataId);
+    expect(recargas.consultarPorIdPagamentoExterno).toHaveBeenCalledWith(dataId);
+    expect(carteiras.aplicarRecargaPix).toHaveBeenCalledWith(7, expect.objectContaining({ idPagamentoExterno: dataId }));
+    expect(events().filter((event) => event.orderId).every((event) => event.orderId === dataId)).toBe(true);
+    expect(events().some((event) => event.marker === 'WEBHOOK_CARTEIRA_ASSINATURA_OK')).toBe(true);
+  });
 
   it('registra etapas do webhook em linhas JSON sem dados sensiveis', async () => {
     order.status = 'processed'; order.status_detail = 'accredited';

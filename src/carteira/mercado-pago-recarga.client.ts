@@ -40,7 +40,7 @@ export class MercadoPagoRecargaClient {
     if (typeof dataId !== 'string' || !RECARGA_ORDER_ID.test(dataId)) throw new BadRequestException('data.id de Order inválido');
     try {
       WebhookSignatureValidator.validate({ xSignature: signature, xRequestId: requestId,
-        dataId, secret: this.value('MERCADO_PAGO_WEBHOOK_SECRET') });
+        dataId: dataId.toLowerCase(), secret: this.value('MERCADO_PAGO_WEBHOOK_SECRET') });
     } catch (error) {
       if (!(error instanceof InvalidWebhookSignatureError)) throw error;
       throw new UnauthorizedException('Assinatura do webhook inválida');

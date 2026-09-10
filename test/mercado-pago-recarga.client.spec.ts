@@ -35,7 +35,7 @@ describe('MercadoPagoRecargaClient - SDK sem rede', () => {
 
   it('valida assinatura oficial e rejeita assinatura inválida', () => {
     const ts = '1742505638683';
-    const hash = createHmac('sha256', settings.MERCADO_PAGO_WEBHOOK_SECRET).update(`id:ORD1;request-id:req-1;ts:${ts};`).digest('hex');
+    const hash = createHmac('sha256', settings.MERCADO_PAGO_WEBHOOK_SECRET).update(`id:ord1;request-id:req-1;ts:${ts};`).digest('hex');
     expect(() => client.validateSignature(`ts=${ts},v1=${hash}`, 'req-1', 'ORD1')).not.toThrow();
     expect(() => client.validateSignature(`ts=${ts},v1=invalid`, 'req-1', 'ORD1')).toThrow('Assinatura');
     expect(() => client.validateSignature(undefined, undefined, 'ORD1')).toThrow('Assinatura');
