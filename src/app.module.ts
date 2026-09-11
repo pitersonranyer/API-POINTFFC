@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { FutebolQueryModule } from './futebol/futebol-query.module';
 import { CarteiraModule } from './carteira/carteira.module';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
@@ -19,6 +20,7 @@ import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module
 
 @Module({
   imports: [
+    FutebolQueryModule,
     ConfigModule.forRoot({ isGlobal: true, validationSchema: environmentValidationSchema }),
     PrismaModule,
     CarteiraModule,

@@ -5,6 +5,7 @@
   "description": "Api-Pointffc — backend do Fantasy Point do Jogador",
   "license": "UNLICENSED",
   "scripts": {
+    "futebol:sync": "node scripts/sync-brasileirao.cjs",
     "build": "prisma generate && nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",

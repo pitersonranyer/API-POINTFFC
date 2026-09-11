@@ -2,6 +2,67 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model FutebolCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
+  codigo String @unique @map("CODIGO") @db.VarChar(10)
+  nome String @map("NOME") @db.VarChar(255)
+  pais String @map("PAIS") @db.VarChar(100)
+  tipo String @map("TIPO") @db.VarChar(50)
+  emblemaUrl String? @map("EMBLEMA_URL") @db.Text
+  temporadaAtual Int @map("TEMPORADA_ATUAL") @db.UnsignedSmallInt
+  ativa Boolean @default(true) @map("ATIVA")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  partidas FutebolPartida[]
+  @@map("FUTEBOL_COMPETICAO")
+}
+
+model FutebolTime {
+  nomeOriginal String @map("NOME_ORIGINAL") @db.VarChar(255)
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  nomeCurto String? @map("NOME_CURTO") @db.VarChar(255)
+  sigla String? @map("SIGLA") @db.VarChar(10)
+  escudoUrl String? @map("ESCUDO_URL") @db.Text
+  pais String @map("PAIS") @db.VarChar(100)
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  partidasMandante FutebolPartida[] @relation("Mandante")
+  partidasVisitante FutebolPartida[] @relation("Visitante")
+  @@map("FUTEBOL_TIME")
+}
+
+model FutebolPartida {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int? @map("RODADA") @db.UnsignedSmallInt
+  fase String? @map("FASE") @db.VarChar(100)
+  grupo String? @map("GRUPO") @db.VarChar(100)
+  timeMandanteId Int @map("TIME_MANDANTE_ID") @db.UnsignedInt
+  timeVisitanteId Int @map("TIME_VISITANTE_ID") @db.UnsignedInt
+  dataHoraUtc DateTime @map("DATA_HORA_UTC")
+  status String @map("STATUS") @db.VarChar(50)
+  vencedor String? @map("VENCEDOR") @db.VarChar(50)
+  placarMandante Int? @map("PLACAR_MANDANTE") @db.UnsignedSmallInt
+  placarVisitante Int? @map("PLACAR_VISITANTE") @db.UnsignedSmallInt
+  placarIntervaloMandante Int? @map("PLACAR_INTERVALO_MANDANTE") @db.UnsignedSmallInt
+  placarIntervaloVisitante Int? @map("PLACAR_INTERVALO_VISITANTE") @db.UnsignedSmallInt
+  ultimaAtualizacaoApi DateTime @map("ULTIMA_ATUALIZACAO_API")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  competicao FutebolCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  timeMandante FutebolTime @relation("Mandante", fields: [timeMandanteId], references: [id], onDelete: Restrict)
+  timeVisitante FutebolTime @relation("Visitante", fields: [timeVisitanteId], references: [id], onDelete: Restrict)
+  @@index([competicaoId, temporada, rodada])
+  @@index([timeMandanteId])
+  @@index([timeVisitanteId])
+  @@map("FUTEBOL_PARTIDA")
+}
+
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")

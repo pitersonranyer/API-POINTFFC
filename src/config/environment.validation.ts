@@ -1,6 +1,7 @@
 import * as Joi from 'joi';
 
 export const environmentValidationSchema = Joi.object({
+  FOOTBALL_DATA_API_TOKEN: Joi.string().optional().allow(''),
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   PORT: Joi.number().port().default(3001),
   FRONTEND_URL: Joi.string().uri({ scheme: ['http', 'https'] }).required(),
