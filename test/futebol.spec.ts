@@ -101,6 +101,7 @@ describe('FutebolSyncService com persistência em memória', () => {
     expect(tx.futebolCompeticao.data.size).toBe(1); expect(tx.futebolTime.data.size).toBe(2); expect(tx.futebolPartida.data.size).toBe(1);
     expect(tx.futebolPartida.data.get(100)).toMatchObject({ competicaoId: 1, timeMandanteId: 1, timeVisitanteId: 2, placarMandante: null });
     expect(tx.futebolTime.data.get(10).cartolaClubeId).toBeNull();
+    expect(tx.futebolCompeticao.data.get(2013).ultimoSyncEm).toBeInstanceOf(Date);
   });
   it('sincronização posterior mantém nome amigável e atualiza original sem duplicar clube', async () => {
     const { service, tx, client } = setup();
@@ -146,6 +147,22 @@ describe('FutebolSyncService com persistência em memória', () => {
   it('compartilha execução simultânea no mesmo processo', async () => {
     const { service, client } = setup(); await Promise.all([service.syncBrasileirao(), service.syncBrasileirao()]);
     expect(client.getCompetition).toHaveBeenCalledTimes(1); expect(client.getTeams).toHaveBeenCalledTimes(1); expect(client.getMatches).toHaveBeenCalledTimes(1);
+  });
+  it('persiste o início do sucesso e preserva o timestamp se o próximo fetch falhar', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date('2026-09-11T09:00:00Z'));
+      const { service, tx, client, prisma } = setup();
+      await service.syncBrasileirao();
+      expect(tx.futebolCompeticao.data.get(2013).ultimoSyncEm).toEqual(new Date('2026-09-11T09:00:00Z'));
+      jest.setSystemTime(new Date('2026-09-11T21:00:00Z'));
+      client.getMatches.mockRejectedValueOnce(new Error('429'));
+      await expect(service.syncBrasileirao()).rejects.toThrow('429');
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+      expect(tx.futebolCompeticao.data.get(2013).ultimoSyncEm).toEqual(new Date('2026-09-11T09:00:00Z'));
+      await service.syncBrasileirao();
+      expect(tx.futebolCompeticao.data.get(2013).ultimoSyncEm).toEqual(new Date('2026-09-11T21:00:00Z'));
+    } finally { jest.useRealTimers(); }
   });
   it('desconhecido com nome Flamengo não recebe vínculo inferido e preserva vínculo administrativo posterior', async () => {
     const { service, tx, client } = setup();

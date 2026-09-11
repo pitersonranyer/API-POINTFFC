@@ -3,6 +3,7 @@ generator client {
 }
 
 model FutebolCompeticao {
+  ultimoSyncEm DateTime? @map("ULTIMO_SYNC_EM")
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
   externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
   codigo String @unique @map("CODIGO") @db.VarChar(10)

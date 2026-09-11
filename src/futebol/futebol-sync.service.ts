@@ -13,6 +13,9 @@ export class FutebolSyncService {
     return this.running;
   }
   private async sync() {
+    // Persisted only if the entire transaction commits. Start time is conservative
+    // when a scheduling boundary is crossed while fetching the provider.
+    const ultimoSyncEm = new Date();
     const competition = mapCompetition(await this.client.getCompetition('BSA'));
     const year = competition.temporadaAtual;
     const teams = parseList(await this.client.getTeams('BSA', year), 'teams', competition.externalId, year).map(mapTeam);
@@ -20,7 +23,8 @@ export class FutebolSyncService {
     const teamIds = new Set(teams.map(team => team.externalId));
     if (matches.some(match => !teamIds.has(match.mandanteExternalId) || !teamIds.has(match.visitanteExternalId))) throw new FootballDataError('football-data: partida com clube ausente na temporada.');
     return this.prisma.$transaction(async tx => {
-      const saved = await tx.futebolCompeticao.upsert({ where: { externalId: competition.externalId }, create: competition, update: competition });
+      const dataCompeticao = { ...competition, ultimoSyncEm };
+      const saved = await tx.futebolCompeticao.upsert({ where: { externalId: competition.externalId }, create: dataCompeticao, update: dataCompeticao });
       const localIds = new Map<number, number>();
       for (const team of teams) {
         const vinculo = vinculoCartola(competition.codigo, team.externalId);
