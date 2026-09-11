@@ -19,6 +19,7 @@ model FutebolCompeticao {
 }
 
 model FutebolTime {
+  cartolaClubeId Int? @map("CARTOLA_CLUBE_ID") @db.UnsignedInt
   nomeOriginal String @map("NOME_ORIGINAL") @db.VarChar(255)
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
   externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt

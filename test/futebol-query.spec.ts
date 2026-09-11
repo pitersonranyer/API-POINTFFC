@@ -6,7 +6,7 @@ import { FutebolQueryModule } from '../src/futebol/futebol-query.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { FootballDataClient } from '../src/futebol/football-data.client';
 
-const team = (id: number) => ({ id, externalId: 1000 + id, nome: 'Clube ' + id, nomeCurto: 'C' + id, sigla: 'C' + id, escudoUrl: 'https://crests.example/' + id + '.svg' });
+const team = (id: number) => ({ id, externalId: 1000 + id, cartolaClubeId: id === 1 ? 262 : 264, nome: 'Clube ' + id, nomeCurto: 'C' + id, sigla: 'C' + id, escudoUrl: 'https://crests.example/' + id + '.svg' });
 const game = (id: number, rodada: number | null, status = 'TIMED', date = '2026-09-12T19:00:00Z') => ({
   id, externalId: 10000 + id, competicaoId: 1, temporada: 2026, rodada, fase: 'REGULAR_SEASON', grupo: null,
   dataHoraUtc: new Date(date), status, vencedor: null, placarMandante: null, placarVisitante: null,
@@ -185,5 +185,26 @@ describe('Futebol API pública de leitura', () => {
     for (const path of ['', '/BSA/jogos', '/BSA/rodadas/24', '/BSA/rodada-atual']) expect((await request('/futebol/competicoes' + path)).status).toBe(200);
     expect(() => app.get(FootballDataClient)).toThrow();
     for (const spy of externalSpies) expect(spy).not.toHaveBeenCalled();
+  });
+  it.each(['/BSA/jogos', '/BSA/rodadas/24', '/BSA/rodada-atual'])('retorna vínculos persistidos sem consultas adicionais em %s', async path => {
+    const { body } = await request('/futebol/competicoes' + path);
+    expect(body.jogos[0].mandante.cartolaClubeId).toBe(262);
+    expect(body.jogos[0].visitante.cartolaClubeId).toBe(264);
+    expect(prisma.futebolPartida.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.futebolPartida.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      select: expect.objectContaining({ timeMandante: { select: expect.objectContaining({ cartolaClubeId: true }) } }),
+    }));
+    expect(body.jogos[0]).not.toHaveProperty('atletas');
+  });
+  it('clube BSA desconhecido pode retornar vínculo null', async () => {
+    games[2].timeMandante.cartolaClubeId = null;
+    expect((await request('/futebol/competicoes/BSA/jogos')).body.jogos[0].mandante.cartolaClubeId).toBeNull();
+  });
+  it('não expõe vínculo Cartola fora de BSA mesmo para clube compartilhado', async () => {
+    games = [{ ...game(1, 1), competicaoId: 3 }];
+    const { status, body } = await request('/futebol/competicoes/AAA/jogos');
+    expect(status).toBe(200);
+    expect(body.jogos[0].mandante.cartolaClubeId).toBeNull();
+    expect(body.jogos[0].visitante.cartolaClubeId).toBeNull();
   });
 });

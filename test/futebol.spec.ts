@@ -100,6 +100,7 @@ describe('FutebolSyncService com persistência em memória', () => {
     const { service, tx } = setup(); await service.syncBrasileirao();
     expect(tx.futebolCompeticao.data.size).toBe(1); expect(tx.futebolTime.data.size).toBe(2); expect(tx.futebolPartida.data.size).toBe(1);
     expect(tx.futebolPartida.data.get(100)).toMatchObject({ competicaoId: 1, timeMandanteId: 1, timeVisitanteId: 2, placarMandante: null });
+    expect(tx.futebolTime.data.get(10).cartolaClubeId).toBeNull();
   });
   it('sincronização posterior mantém nome amigável e atualiza original sem duplicar clube', async () => {
     const { service, tx, client } = setup();
@@ -107,10 +108,10 @@ describe('FutebolSyncService com persistência em memória', () => {
     response.teams.push({ ...team, id: 1766, name: 'CA Mineiro' });
     client.getTeams.mockResolvedValue(response);
     await service.syncBrasileirao();
-    expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'Atlético-MG', nomeOriginal: 'CA Mineiro' });
+    expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'Atlético-MG', nomeOriginal: 'CA Mineiro', cartolaClubeId: 282 });
     response.teams[2].name = 'CA Mineiro atualizado';
     await service.syncBrasileirao();
-    expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'Atlético-MG', nomeCurto: 'Atlético-MG', nomeOriginal: 'CA Mineiro atualizado' });
+    expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'Atlético-MG', nomeCurto: 'Atlético-MG', nomeOriginal: 'CA Mineiro atualizado', cartolaClubeId: 282 });
     expect(tx.futebolTime.data.size).toBe(3);
   });
   it('atualiza placar/status e não duplica na segunda execução', async () => {
@@ -145,5 +146,18 @@ describe('FutebolSyncService com persistência em memória', () => {
   it('compartilha execução simultânea no mesmo processo', async () => {
     const { service, client } = setup(); await Promise.all([service.syncBrasileirao(), service.syncBrasileirao()]);
     expect(client.getCompetition).toHaveBeenCalledTimes(1); expect(client.getTeams).toHaveBeenCalledTimes(1); expect(client.getMatches).toHaveBeenCalledTimes(1);
+  });
+  it('desconhecido com nome Flamengo não recebe vínculo inferido e preserva vínculo administrativo posterior', async () => {
+    const { service, tx, client } = setup();
+    const response = await client.getTeams();
+    response.teams[0] = { ...response.teams[0], name: 'CR Flamengo', shortName: 'Flamengo', tla: 'FLA' };
+    client.getTeams.mockResolvedValue(response);
+    await service.syncBrasileirao();
+    expect(tx.futebolTime.data.get(10).cartolaClubeId).toBeNull();
+    tx.futebolTime.data.get(10).cartolaClubeId = 999;
+    await service.syncBrasileirao();
+    expect(tx.futebolTime.data.get(10).cartolaClubeId).toBe(999);
+    expect(tx.futebolTime.data.size).toBe(2);
+    expect(tx.futebolPartida.data.size).toBe(1);
   });
 });

@@ -10,6 +10,7 @@ export class FutebolCompeticaoResponseDto extends FutebolCompeticaoResumoDto {
   @ApiProperty() temporadaAtual!: number;
 }
 export class FutebolTimeResponseDto {
+  @ApiProperty({ type: Number, nullable: true, description: 'ID do clube Cartola, disponível somente no contexto BSA' }) cartolaClubeId!: number | null;
   @ApiProperty() id!: number;
   @ApiProperty() externalId!: number;
   @ApiProperty() nome!: string;

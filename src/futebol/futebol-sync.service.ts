@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FootballDataClient } from './football-data.client';
+import { vinculoCartola } from './futebol-cartola';
 import { FootballDataError, mapCompetition, mapMatch, mapTeam, parseList } from './football-data.normalizer';
 
 @Injectable()
@@ -22,7 +23,10 @@ export class FutebolSyncService {
       const saved = await tx.futebolCompeticao.upsert({ where: { externalId: competition.externalId }, create: competition, update: competition });
       const localIds = new Map<number, number>();
       for (const team of teams) {
-        const row = await tx.futebolTime.upsert({ where: { externalId: team.externalId }, create: team, update: team });
+        const vinculo = vinculoCartola(competition.codigo, team.externalId);
+        const row = await tx.futebolTime.upsert({ where: { externalId: team.externalId },
+          create: { ...team, cartolaClubeId: vinculo.cartolaClubeId ?? null },
+          update: { ...team, ...vinculo } });
         localIds.set(team.externalId, row.id);
       }
       for (const match of matches) {
