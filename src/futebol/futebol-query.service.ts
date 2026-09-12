@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FutebolJogosQueryDto } from './dto/futebol-query.dto';
@@ -23,6 +23,7 @@ function mapGame(row: GameRow, codigo: string): FutebolJogoResponseDto {
 
 @Injectable()
 export class FutebolQueryService {
+  private readonly logger = new Logger(FutebolQueryService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   listarCompeticoes(): Promise<FutebolCompeticaoResponseDto[]> {
@@ -79,6 +80,9 @@ export class FutebolQueryService {
     const rows = await this.prisma.futebolPartida.findMany({
       where, select: gameSelect, orderBy: [{ dataHoraUtc: 'asc' }, { id: 'asc' }],
     });
-    return rows.map(row => mapGame(row, codigo));
+    const jogos = rows.map(row => mapGame(row, codigo));
+    this.logger.log(JSON.stringify({ event: 'futebol.get.read', at: new Date().toISOString(), codigo,
+      partidas: jogos.map(jogo => ({ externalId: jogo.externalId, status: jogo.status, placar: jogo.placar })) }));
+    return jogos;
   }
 }

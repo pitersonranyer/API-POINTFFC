@@ -35,7 +35,12 @@ base atrasada recupera a última janela vencida, sem repetir todas as janelas pe
 | TIMED/SCHEDULED com início já atingido | 5 minutos enquanto início <= agora < início + 3h |
 | Reconciliação final | primeiro tick elegível após último início do dia + 3h; mínimo 5 minutos desde último sucesso |
 
-Os intervalos são mínimos; a execução ocorre no próximo tick de cinco minutos.
+Os intervalos são contados em janelas do cron de cinco minutos. A comparação usa
+o índice da janela do tick e da janela de ULTIMO_SYNC_EM, evitando perder um tick
+por milissegundos gastos nas consultas anteriores ao sync. Não há execução em
+intervalos menores do cron: ele permanece a cada cinco minutos. Uma carga manual
+ou de startup no meio da janela pode ser seguida pelo próximo tick elegível;
+ULTIMO_SYNC_EM continua armazenando o início real, sem arredondamento no banco.
 Jogos próximos ou em andamento atravessando meia-noite continuam sendo considerados.
 Depois da janela conservadora de três horas, o timestamp de sucesso marca a
 reconciliação final como atendida, inclusive quando o provedor mantém TIMED/SCHEDULED.
@@ -125,6 +130,23 @@ Dados locais atrasados podem atrasar a detecção de jogos recém-remarcados at�
 próxima janela; esse é o custo da política de economia de chamadas solicitada.
 
 ## Arquivos
+
+### Observabilidade e atualização da tela
+
+O frontend usa polling de cinco minutos no hook useFutebolRodada, exclusivamente
+contra o backend, sem sobrepor consultas. Atualizações em segundo plano preservam
+os dados visíveis se houver erro e tentam novamente no próximo intervalo.
+
+Logs JSON: futebol.tick registra inclusive flag/lock/cooldown; futebol.decision
+registra cenário, elegibilidade e último sucesso; futebol.provider.request registra
+tempos e HTTP sem credenciais; futebol.sync.start e futebol.provider.received
+delimitam a carga. futebol.provider.match registra placares alterados/ativos ou
+descartados por timestamp antigo. futebol.sync.committed só é emitido após commit,
+com syncId, duração e partidas observadas. futebol.get.read registra o placar lido
+para a resposta, sem consultar o provider. Correlacionar externalId e horários UTC
+entre provider.match, sync.committed e get.read; os eventos de sync compartilham syncId.
+GET read indica a leitura do backend, não confirmação de entrega/renderização no navegador.
+Não há migração nova. Publicar backend e frontend para ativar a correção completa.
 
 Criados: futebol-scheduler.module.ts, futebol-scheduler.service.ts,
 futebol-sync-policy.ts, test/futebol-scheduler.spec.ts, migration 0016 e este documento.

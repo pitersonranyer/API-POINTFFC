@@ -21,7 +21,9 @@ function slot(date: Date, hour: number) {
 export interface SyncMatch { dataHoraUtc: Date; status: string }
 export function futebolSyncDecision(now: Date, last: Date | null, matches: SyncMatch[]) {
   const time = now.getTime();
-  const elapsed = last ? time - last.getTime() : Infinity;
+  // Compare cron windows, not milliseconds spent querying MySQL before sync.
+  const tickWindow = 5 * MINUTE;
+  const elapsed = last ? (Math.floor(time / tickWindow) - Math.floor(last.getTime() / tickWindow)) * tickWindow : Infinity;
   if (!matches.length) return { due: true, reason: 'carga-inicial', interval: 5 * MINUTE };
   const today = localParts(now).day;
   const todaysMatches = matches.filter(m => localParts(m.dataHoraUtc).day === today);

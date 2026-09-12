@@ -38,12 +38,17 @@ describe('Futebol scheduling policy (America/Sao_Paulo)', () => {
   ])('%s interval %s: %s minutes', (status, kickoff, minutes) => {
     const now = '2026-09-11T18:00:00Z';
     const matches = [match(kickoff, status)];
-    expect(decision(now, new Date(date(now).getTime() - minutes * 60_000 + 1).toISOString(), matches)).toBe(false);
+    expect(decision(now, new Date(date(now).getTime() - minutes * 60_000 + 5 * 60_000).toISOString(), matches)).toBe(false);
     expect(decision(now, new Date(date(now).getTime() - minutes * 60_000).toISOString(), matches)).toBe(true);
   });
   it('handles near/live matches across local midnight', () => {
     expect(decision('2026-09-12T02:30:00Z', '2026-09-12T02:20:00Z', [match('2026-09-12T03:15:00Z')])).toBe(true);
     expect(decision('2026-09-12T03:30:00Z', '2026-09-12T03:25:00Z', [match('2026-09-12T02:00:00Z')])).toBe(true);
+  });
+  it('does not skip a cron window because sync started milliseconds after the tick', () => {
+    const matches = [match('2026-09-11T17:00:00Z', 'IN_PLAY')];
+    expect(decision('2026-09-11T17:05:00.005Z', '2026-09-11T17:00:00.150Z', matches)).toBe(true);
+    expect(decision('2026-09-11T17:05:59Z', '2026-09-11T17:05:00.150Z', matches)).toBe(false);
   });
   it.each(['TIMED', 'SCHEDULED', 'FINISHED'])('reconciles after 3h once, including stale %s', status => {
     const matches = [match('2026-09-11T22:00:00Z', status)];
