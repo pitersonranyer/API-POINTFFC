@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { FutebolSyncService } from './futebol-sync.service';
 import { futebolSyncDecision, FUTEBOL_TIMEZONE } from './futebol-sync-policy';
+import { FootballDataError } from './football-data.normalizer';
 
 @Injectable()
 export class FutebolSchedulerService implements OnApplicationBootstrap {
@@ -40,9 +41,17 @@ export class FutebolSchedulerService implements OnApplicationBootstrap {
       const result = await this.sync.syncBrasileirao();
       this.retryAfter = 0;
       this.logger.log(`BSA sync concluido: ${JSON.stringify(result, ['competicao', 'temporada', 'clubesProcessados', 'partidasRecebidas', 'partidasPersistidas'])}`);
-    } catch {
+    } catch (error) {
       this.retryAfter = Date.now() + retryInterval;
-      this.logger.warn('BSA sync falhou; nova tentativa automatica posterior. Verifique provedor, token, banco e migrations.');
+      // Provider errors are sanitized by the client/normalizer. Never log raw
+      // database errors: they may contain connection details or query values.
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      const reason = error instanceof FootballDataError ? error.message
+        : code === 'P2022' ? 'Coluna ausente no banco. Aplique as migrations pendentes com prisma migrate deploy (incluindo 0016_futebol_ultimo_sync).'
+        : code === 'P2021' ? 'Tabela ausente no banco. Aplique as migrations pendentes com prisma migrate deploy.'
+        : typeof code === 'string' && /^P\d{4}$/.test(code) ? `Falha no banco (${code}).`
+        : 'Falha interna; verifique a conexao com o banco e as migrations.';
+      this.logger.warn(`BSA sync falhou: ${reason} Nova tentativa a partir de ${new Date(this.retryAfter).toISOString()}.`);
     } finally {
       // In-process only; not a distributed lock.
       this.running = false;

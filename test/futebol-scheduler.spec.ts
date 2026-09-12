@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { FutebolSyncService } from '../src/futebol/futebol-sync.service';
 import { FutebolSchedulerService } from '../src/futebol/futebol-scheduler.service';
@@ -106,5 +107,17 @@ describe('FutebolSchedulerService', () => {
     await expect(service.evaluate()).resolves.toBeUndefined();
     await jest.advanceTimersByTimeAsync(5 * 60_000); await service.evaluate();
     expect(sync.syncBrasileirao).toHaveBeenCalledTimes(1);
+  });
+  it('reports missing migrations without exposing raw database errors', async () => {
+    const { service, prisma } = setup();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      prisma.futebolCompeticao.findUnique.mockRejectedValueOnce(
+        Object.assign(new Error('mysql://private-credentials'), { code: 'P2022' }),
+      );
+      await service.evaluate();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('0016_futebol_ultimo_sync'));
+      expect(warn.mock.calls.flat().join(' ')).not.toContain('private-credentials');
+    } finally { warn.mockRestore(); }
   });
 });
