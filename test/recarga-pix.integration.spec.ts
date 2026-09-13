@@ -66,6 +66,7 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
     expect(movimentos[0].saldoPosterior.toString()).toBe('17.25');
     expect(movimentos[0].referenciaId).toBe(String(recarga.id));
     const { id: _id, ...duplicate } = movimentos[0];
+    expect(_id).toBeGreaterThan(0);
     await expect(prisma.movimentacaoCarteira.create({ data: duplicate })).rejects.toMatchObject({ code: 'P2002' });
   });
 

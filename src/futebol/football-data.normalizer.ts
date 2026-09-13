@@ -1,5 +1,6 @@
 import * as Joi from 'joi';
 import { nomesClube } from './futebol-clubes';
+import { FUTEBOL_COMPETICOES, FutebolCodigo } from './futebol-competicoes';
 
 export class FootballDataError extends Error {}
 const id = Joi.number().integer().positive().max(4294967295).required();
@@ -7,7 +8,7 @@ const str = (max = 255) => Joi.string().max(max).required();
 const optional = (max = 255) => Joi.string().max(max).allow(null).required();
 const date = Joi.string().isoDate().pattern(/Z$/).required();
 const season = Joi.object({ startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).isoDate().required() }).unknown(true).required();
-const competition = Joi.object({ id, code: Joi.valid('BSA').required() }).unknown(true).required();
+const competition = Joi.object({ id, code: Joi.valid(...FUTEBOL_COMPETICOES).required() }).unknown(true).required();
 const score = Joi.number().integer().min(0).max(65535).allow(null).required();
 const pair = Joi.object({ home: score, away: score }).unknown(true).required();
 function parse<T>(schema: Joi.Schema, input: unknown): T {
@@ -20,10 +21,10 @@ export function mapCompetition(input: unknown) {
     competition.keys({ name: str(), area: Joi.object({ name: str(100) }).unknown(true).required(), type: str(50), emblem: optional(65535), currentSeason: season }), input);
   return { externalId: value.id, codigo: value.code, nome: value.name, pais: value.area.name, tipo: value.type, emblemaUrl: value.emblem, temporadaAtual: Number(value.currentSeason.startDate.slice(0, 4)), ativa: true };
 }
-export function mapTeam(input: unknown) {
+export function mapTeam(input: unknown, code: FutebolCodigo = 'BSA') {
   const value = parse<{ id: number; name: string; shortName: string | null; tla: string | null; crest: string | null; area: { name: string } }>(
     Joi.object({ id, name: str(), shortName: optional(), tla: optional(10), crest: optional(65535), area: Joi.object({ name: str(100) }).unknown(true).required() }).unknown(true), input);
-  return { externalId: value.id, ...nomesClube(value.id, value.name, value.shortName), sigla: value.tla, escudoUrl: value.crest, pais: value.area.name };
+  return { externalId: value.id, ...(code === 'BSA' ? nomesClube(value.id, value.name, value.shortName) : { nomeOriginal: value.name, nome: value.name, nomeCurto: value.shortName ?? value.name }), sigla: value.tla, escudoUrl: value.crest, pais: value.area.name };
 }
 export function mapMatch(input: unknown, competitionId: number, year: number) {
   const value = parse<{ id: number; competition: { id: number }; season: { startDate: string }; matchday: number | null; stage: string | null; group: string | null; homeTeam: { id: number }; awayTeam: { id: number }; utcDate: string; status: string; lastUpdated: string; score: { winner: string | null; fullTime: { home: number | null; away: number | null }; halfTime: { home: number | null; away: number | null } } }>(

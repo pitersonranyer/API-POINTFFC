@@ -24,12 +24,16 @@ describe('football-data normalização', () => {
     expect(mapTeam({ ...team, shortName })).toMatchObject({ nomeOriginal: 'Clube A', nome: 'Clube A', nomeCurto: shortName ?? 'Clube A' });
   });
   it('mapeia competição e temporada corrente', () => expect(mapCompetition(competition)).toMatchObject({ externalId: 2013, codigo: 'BSA', temporadaAtual: 2026 }));
+  it('aceita ligas internacionais sem aplicar nomes da BSA', () => {
+    expect(mapCompetition({ ...competition, code: 'PL' }).codigo).toBe('PL');
+    expect(mapTeam({ ...team, id: 1766, name: 'International Club' }, 'PL')).toMatchObject({ nome: 'International Club', nomeOriginal: 'International Club' });
+  });
   it('preserva URL original do escudo', () => expect(mapTeam(team).escudoUrl).toBe(team.crest));
   it('mapeia partida com UTC e placares nulos', () => {
     expect(mapMatch(fixture(), 2013, 2026)).toMatchObject({ rodada: 1, dataHoraUtc: new Date('2026-09-12T00:30:00Z'), placarMandante: null, placarVisitante: null, status: 'TIMED' });
   });
   it.each([
-    { ...competition, code: 'PL' }, { ...competition, currentSeason: null }, { ...competition, id: '2013' },
+    { ...competition, code: 'WC' }, { ...competition, currentSeason: null }, { ...competition, id: '2013' },
   ])('rejeita competição inválida', value => expect(() => mapCompetition(value)).toThrow('resposta inválida'));
   it('rejeita temporada divergente', () => expect(() => mapMatch(fixture(), 2013, 2025)).toThrow('divergentes'));
   it('rejeita placar inválido sem convertê-lo para zero', () => {
@@ -55,6 +59,12 @@ describe('FootballDataClient', () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
     await client.getMatches('BSA', 2026);
     expect(fetchMock).toHaveBeenCalledWith('https://api.football-data.org/v4/competitions/BSA/matches?season=2026', expect.objectContaining({ headers: { 'X-Auth-Token': 'secret-test-token' } }));
+  });
+  it('aceita PL e rejeita competições fora da lista antes da chamada', async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({}) });
+    await client.getCompetition('PL');
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/competitions/PL'), expect.anything());
+    await expect(client.getCompetition('WC' as 'PL')).rejects.toThrow('consulta inválida');
   });
   it.each([401, 403, 404, 429, 500, 503])('trata HTTP %s sem retry nem exposição de resposta', async status => {
     const json = jest.fn();
@@ -102,6 +112,18 @@ describe('FutebolSyncService com persistência em memória', () => {
     expect(tx.futebolPartida.data.get(100)).toMatchObject({ competicaoId: 1, timeMandanteId: 1, timeVisitanteId: 2, placarMandante: null });
     expect(tx.futebolTime.data.get(10).cartolaClubeId).toBeNull();
     expect(tx.futebolCompeticao.data.get(2013).ultimoSyncEm).toBeInstanceOf(Date);
+  });
+  it('persiste PL sem vínculo Cartola e mantém idempotência', async () => {
+    const { service, tx, client } = setup();
+    client.getCompetition.mockResolvedValue({ ...competition, code: 'PL' });
+    const response = await client.getTeams();
+    response.teams.push({ ...team, id: 1766, name: 'International Club' });
+    client.getTeams.mockResolvedValue(response);
+    await service.syncCompeticao('PL');
+    await service.syncCompeticao('PL');
+    expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'International Club', cartolaClubeId: null });
+    expect(tx.futebolCompeticao.data.size).toBe(1);
+    expect(tx.futebolPartida.data.size).toBe(1);
   });
   it('sincronização posterior mantém nome amigável e atualiza original sem duplicar clube', async () => {
     const { service, tx, client } = setup();

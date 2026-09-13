@@ -6,6 +6,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "futebol:sync": "node scripts/sync-brasileirao.cjs",
+    "futebol:sync:all": "node scripts/sync-competicoes.cjs",
     "build": "prisma generate && nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",

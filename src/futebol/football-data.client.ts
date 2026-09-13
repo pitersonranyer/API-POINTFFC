@@ -1,19 +1,30 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { FootballDataError } from './football-data.normalizer';
+import { FutebolCodigo, isFutebolCodigo } from './futebol-competicoes';
 
 @Injectable()
 export class FootballDataClient {
   private readonly logger = new Logger(FootballDataClient.name);
   constructor(private readonly config: ConfigService) {}
-  getCompetition(code: 'BSA' = 'BSA'): Promise<unknown> { return this.get(code, ''); }
-  getTeams(code: 'BSA', season: number): Promise<unknown> { return this.get(code, '/teams', season); }
-  getMatches(code: 'BSA', season: number): Promise<unknown> { return this.get(code, '/matches', season); }
+  private nextRequestAt = 0;
+  private queue = Promise.resolve();
+  getCompetition(code: FutebolCodigo = 'BSA'): Promise<unknown> { return this.get(code, ''); }
+  getTeams(code: FutebolCodigo, season: number): Promise<unknown> { return this.get(code, '/teams', season); }
+  getMatches(code: FutebolCodigo, season: number): Promise<unknown> { return this.get(code, '/matches', season); }
 
-  private async get(code: 'BSA', path: string, season?: number): Promise<unknown> {
-    if (code !== 'BSA' || (season !== undefined && (!Number.isInteger(season) || season < 1900 || season > 9999))) throw new FootballDataError('football-data: consulta inválida.');
+  private async get(code: FutebolCodigo, path: string, season?: number): Promise<unknown> {
+    if (!isFutebolCodigo(code) || (season !== undefined && (!Number.isInteger(season) || season < 1900 || season > 9999))) throw new FootballDataError('football-data: consulta inválida.');
     const token = this.config.get<string>('FOOTBALL_DATA_API_TOKEN')?.trim();
     if (!token) throw new FootballDataError('FOOTBALL_DATA_API_TOKEN não configurado.');
+    const previous = this.queue;
+    let release!: () => void;
+    this.queue = new Promise<void>(resolve => { release = resolve; });
+    await previous;
+    const wait = Math.max(0, this.nextRequestAt - Date.now());
+    if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+    this.nextRequestAt = Date.now() + 6500;
+    release();
     const controller = new AbortController();
     const startedAt = Date.now();
     let httpStatus: number | undefined;

@@ -4,6 +4,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { FutebolSyncService } from '../src/futebol/futebol-sync.service';
 import { FutebolSchedulerService } from '../src/futebol/futebol-scheduler.service';
 import { futebolSyncDecision } from '../src/futebol/futebol-sync-policy';
+import { FUTEBOL_COMPETICOES } from '../src/futebol/futebol-competicoes';
 
 const date = (value: string) => new Date(value);
 const match = (value: string, status = 'TIMED') => ({ dataHoraUtc: date(value), status });
@@ -62,7 +63,8 @@ describe('FutebolSchedulerService', () => {
   function setup(flag: unknown = true, last: Date | null = null) {
     const prisma = { futebolCompeticao: { findUnique: jest.fn().mockResolvedValue({ id: 1, temporadaAtual: 2026, ultimoSyncEm: last }) },
       futebolPartida: { findMany: jest.fn().mockResolvedValue([future]) } };
-    const sync = { syncBrasileirao: jest.fn().mockResolvedValue({ clubesProcessados: 20, partidasPersistidas: 380 }) };
+    const sync = { syncBrasileirao: jest.fn().mockResolvedValue({ clubesProcessados: 20, partidasPersistidas: 380 }),
+      syncCompeticao: jest.fn().mockResolvedValue({ clubesProcessados: 20, partidasPersistidas: 380 }) };
     const config = { get: jest.fn(() => flag) };
     const service = new FutebolSchedulerService(config as unknown as ConfigService,
       prisma as unknown as PrismaService, sync as unknown as FutebolSyncService);
@@ -81,6 +83,7 @@ describe('FutebolSchedulerService', () => {
     prisma.futebolCompeticao.findUnique.mockResolvedValue(competition); prisma.futebolPartida.findMany.mockResolvedValue([]);
     service.onApplicationBootstrap(); await jest.advanceTimersByTimeAsync(0);
     expect(sync.syncBrasileirao).toHaveBeenCalledTimes(1);
+    expect(sync.syncCompeticao.mock.calls.map(call => call[0])).toEqual(FUTEBOL_COMPETICOES.filter(code => code !== 'BSA'));
   });
   it.each([['2026-09-11T09:00:00Z', 0], ['2026-09-10T09:00:00Z', 1]])('startup freshness %s', async (last, calls) => {
     const { service, sync, prisma } = setup(true, date(last));

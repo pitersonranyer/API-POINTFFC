@@ -4,26 +4,31 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FootballDataClient } from './football-data.client';
 import { vinculoCartola } from './futebol-cartola';
 import { FootballDataError, mapCompetition, mapMatch, mapTeam, parseList } from './football-data.normalizer';
+import { FutebolCodigo } from './futebol-competicoes';
 
 @Injectable()
 export class FutebolSyncService {
   private readonly logger = new Logger(FutebolSyncService.name);
-  private running?: Promise<unknown>;
+  private readonly running = new Map<FutebolCodigo, Promise<unknown>>();
   constructor(private readonly prisma: PrismaService, private readonly client: FootballDataClient) {}
-  syncBrasileirao() {
-    if (!this.running) this.running = this.sync().finally(() => { this.running = undefined; });
-    return this.running;
+  syncBrasileirao() { return this.syncCompeticao('BSA'); }
+  syncCompeticao(code: FutebolCodigo) {
+    if (!this.running.has(code)) this.running.set(code, this.sync(code).finally(() => { this.running.delete(code); }));
+    return this.running.get(code)!;
   }
-  private async sync() {
+  private async sync(code: FutebolCodigo) {
     // Persisted only if the entire transaction commits. Start time is conservative
     // when a scheduling boundary is crossed while fetching the provider.
     const ultimoSyncEm = new Date();
     const syncId = randomUUID();
     this.logger.log(JSON.stringify({ event: 'futebol.sync.start', syncId, at: ultimoSyncEm.toISOString() }));
-    const competition = mapCompetition(await this.client.getCompetition('BSA'));
+    const competition = mapCompetition(await this.client.getCompetition(code));
+    if (competition.codigo !== code) throw new FootballDataError('football-data: competição divergente.');
     const year = competition.temporadaAtual;
-    const teams = parseList(await this.client.getTeams('BSA', year), 'teams', competition.externalId, year).map(mapTeam);
-    const matches = parseList(await this.client.getMatches('BSA', year), 'matches', competition.externalId, year).map(value => mapMatch(value, competition.externalId, year));
+    const teams = parseList(await this.client.getTeams(code, year), 'teams', competition.externalId, year).map(value => mapTeam(value, code));
+    const matches = parseList(await this.client.getMatches(code, year), 'matches', competition.externalId, year)
+      .filter(value => { const match = value as { homeTeam?: { id?: number | null }; awayTeam?: { id?: number | null } }; return code === 'BSA' || (match.homeTeam?.id !== null && match.awayTeam?.id !== null); })
+      .map(value => mapMatch(value, competition.externalId, year));
     this.logger.log(JSON.stringify({ event: 'futebol.provider.received', syncId, at: new Date().toISOString(), partidas: matches.length }));
     const teamIds = new Set(teams.map(team => team.externalId));
     if (matches.some(match => !teamIds.has(match.mandanteExternalId) || !teamIds.has(match.visitanteExternalId))) throw new FootballDataError('football-data: partida com clube ausente na temporada.');
@@ -37,7 +42,7 @@ export class FutebolSyncService {
         const vinculo = vinculoCartola(competition.codigo, team.externalId);
         const row = await tx.futebolTime.upsert({ where: { externalId: team.externalId },
           create: { ...team, cartolaClubeId: vinculo.cartolaClubeId ?? null },
-          update: { ...team, ...vinculo } });
+          update: { ...team, ...(code === 'BSA' ? vinculo : { cartolaClubeId: null }) } });
         localIds.set(team.externalId, row.id);
       }
       for (const match of matches) {
@@ -58,7 +63,7 @@ export class FutebolSyncService {
         await tx.futebolPartida.upsert({ where: { externalId: data.externalId }, create: data, update: data });
       }
       const where = { competicaoId: saved.id, temporada: year };
-      return { competicao: 'BSA', temporada: year, clubesProcessados: teamIds.size, partidasRecebidas: new Set(matches.map(match => match.externalId)).size,
+      return { competicao: code, temporada: year, clubesProcessados: teamIds.size, partidasRecebidas: new Set(matches.map(match => match.externalId)).size,
         partidasPersistidas: await tx.futebolPartida.count({ where }),
         exemplos: await tx.futebolPartida.findMany({ where, take: 3, orderBy: { dataHoraUtc: 'asc' }, include: { timeMandante: true, timeVisitante: true } }) };
     }, { timeout: 120000, isolationLevel: 'Serializable' });
