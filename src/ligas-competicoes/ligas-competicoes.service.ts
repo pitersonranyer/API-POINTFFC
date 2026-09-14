@@ -76,6 +76,19 @@ export class LigasCompeticoesService {
     } catch (error) {
       this.logger.warn(`listarCompeticoes diagnosticoVisiveis falhou: ${error instanceof Error ? error.message : String(error)}`);
     }
+    try {
+      const conexao = await this.prisma.$queryRaw<Array<{ banco: string; servidor: string }>>`
+        SELECT DATABASE() AS banco, @@hostname AS servidor`;
+      const piloto = await this.prisma.$queryRaw<Array<{
+        ID: number | bigint; SLUG: string; VISIVEL_APP: number | boolean; LIGA_MODALIDADE_ID: number | bigint;
+      }>>`SELECT ID, SLUG, VISIVEL_APP, LIGA_MODALIDADE_ID
+        FROM COMPETICAO_LIGA WHERE SLUG = ${'point-ffc-rodada-27'}`;
+      this.logger.log(`listarCompeticoes diagnosticoSql ${JSON.stringify({ conexao,
+        piloto: piloto.map(item => ({ id: Number(item.ID), slug: item.SLUG,
+          visivelApp: Boolean(item.VISIVEL_APP), ligaModalidadeId: Number(item.LIGA_MODALIDADE_ID) })) })}`);
+    } catch (error) {
+      this.logger.warn(`listarCompeticoes diagnosticoSql falhou: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const rows = await this.prisma.competicaoLiga.findMany({
       where, select: competicaoSelect,
       orderBy: [{ destaque: 'desc' }, { valorInscricao: 'asc' }, { nome: 'asc' }, { id: 'asc' }],

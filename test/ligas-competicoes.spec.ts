@@ -20,6 +20,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
 describe('Ligas e competicoes - leitura publica', () => {
   beforeAll(() => Logger.overrideLogger([]));
   const prisma = {
+    $queryRaw: jest.fn(async () => [] as Array<Record<string, unknown>>),
     liga: { findFirst: jest.fn() },
     competicaoLiga: { findMany: jest.fn(), findFirst: jest.fn() },
     inscricaoTimeCompeticao: { count: jest.fn() },
@@ -98,6 +99,7 @@ describe('Ligas e competicoes - leitura publica', () => {
     expect(prisma.competicaoLiga.findMany.mock.calls[0][0]).toEqual({
       where: { visivelApp: true }, select: { id: true, slug: true, ligaModalidadeId: true },
     });
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('falha da consulta diagnostica nao altera a listagem', async () => {
