@@ -6,6 +6,7 @@ import { CartolaService } from '../cartola/cartola.service';
 import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPayload } from '../cartola/cartola.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeSnapshotsService } from '../time-snapshots/time-snapshots.service';
+import { SincronizacaoPontuacoesService } from '../ligas-competicoes/sincronizacao-pontuacoes.service';
 import { effectiveLineup, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore } from './round-calculator';
 
 type RoundKey = { temporada: number; rodada: number };
@@ -22,7 +23,8 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
   private running = false;
 
   constructor(private readonly prisma: PrismaService, private readonly cartola: CartolaService,
-    private readonly snapshots: TimeSnapshotsService, private readonly config: ConfigService) {}
+    private readonly snapshots: TimeSnapshotsService, private readonly config: ConfigService,
+    private readonly sincronizacao: SincronizacaoPontuacoesService) {}
 
   onModuleInit(): void {
     if (this.config.get<string>('NODE_ENV') !== 'test' && this.config.get<boolean>('ROUND_PROCESSING_ENABLED', true)) this.schedule(0);
@@ -108,13 +110,31 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async ensureRound(key: RoundKey): Promise<void> {
-    const [linked, existing] = await Promise.all([
+    const inicioTemporada = new Date(Date.UTC(key.temporada, 0, 1));
+    const fimTemporada = new Date(Date.UTC(key.temporada + 1, 0, 1));
+    const [linked, inscritos, existing] = await Promise.all([
       this.prisma.timeUsuario.findMany({ select: { timeId: true }, distinct: ['timeId'] }),
+      this.prisma.inscricaoTimeCompeticao.findMany({
+        where: { statusInscricao: 'ATIVA', competicaoLiga: {
+          rodadaInicio: { lte: key.rodada }, rodadaFim: { gte: key.rodada },
+          OR: [{ dataInicio: null }, { dataInicio: { gte: inicioTemporada, lt: fimTemporada } }],
+        } },
+        select: { timeIdCartola: true }, distinct: ['timeIdCartola'],
+      }),
       this.prisma.timeRodada.findMany({ where: key, select: { timeId: true } }),
     ]);
-    const ids = [...new Set([...linked, ...existing].map((t) => t.timeId))].sort((a, b) => a - b);
-    await this.prisma.rodadaProcessamento.upsert({ where: { temporada_rodada: key },
-      create: { ...key, timesPrevistos: ids, falhasSnapshot: [] }, update: {} });
+    const ids = [...new Set([...linked, ...existing].map((t) => t.timeId).concat(inscritos.map((t) => t.timeIdCartola)))].sort((a, b) => a - b);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.rodadaProcessamento.upsert({ where: { temporada_rodada: key },
+        create: { ...key, timesPrevistos: ids, falhasSnapshot: [] }, update: {} });
+      await tx.$queryRaw`SELECT temporada FROM RODADA_PROCESSAMENTO WHERE temporada = ${key.temporada} AND rodada = ${key.rodada} FOR UPDATE`;
+      const round = await tx.rodadaProcessamento.findUniqueOrThrow({ where: { temporada_rodada: key }, select: { timesPrevistos: true } });
+      const anteriores = round.timesPrevistos as number[];
+      const merged = [...new Set([...anteriores, ...ids])].sort((a, b) => a - b);
+      if (merged.length !== anteriores.length) await tx.rodadaProcessamento.update({
+        where: { temporada_rodada: key }, data: { timesPrevistos: merged },
+      });
+    });
   }
 
   private async lease(key: RoundKey, token: string): Promise<void> {
@@ -141,6 +161,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       data: { lockToken: token, lockAte: new Date(Date.now() + LEASE_MS) },
     });
     if (!acquired.count) throw new ConflictException('Rodada consolidada ou processamento ja em andamento');
+    let result: Awaited<ReturnType<RoundProcessingService['calculate']>>;
     try {
       const round = await this.prisma.rodadaProcessamento.findUniqueOrThrow({ where: { temporada_rodada: key } });
       try {
@@ -148,11 +169,12 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
         scoreMap(round.pontuados as CartolaScoredAthletesPayload, rodada);
         matchesByClub(round.partidas as unknown as CartolaMatchesResponse, rodada);
       } catch { throw new ConflictException('Envelope persistido indisponivel ou invalido'); }
-      const result = await this.calculate(round, { temporada, rodada_atual: rodada, status_mercado: 2, bola_rolando: true }, token, false, true);
-      return { ...key, status: 'PARCIAL' as const, ...result, duracaoMs: Date.now() - started, processadoEm: new Date().toISOString() };
+      result = await this.calculate(round, { temporada, rodada_atual: rodada, status_mercado: 2, bola_rolando: true }, token, false, true);
     } finally {
       await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { lockToken: null, lockAte: null } });
     }
+    if (result?.timesProcessados) await this.sincronizarCompeticoes(key);
+    return { ...key, status: 'PARCIAL' as const, ...result, duracaoMs: Date.now() - started, processadoEm: new Date().toISOString() };
   }
 
   private async process(key: RoundKey, market: CartolaMarketStatus, final: boolean, force = false): Promise<boolean> {
@@ -164,12 +186,12 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     });
     if (!acquired.count) return false;
     const started = Date.now();
+    let timesProcessados = 0;
     try {
       const round = await this.prisma.rodadaProcessamento.findUniqueOrThrow({ where: { temporada_rodada: key } });
       if (!final) await this.capture(round, token);
-      await this.calculate(round, market, token, final);
+      timesProcessados = (await this.calculate(round, market, token, final))?.timesProcessados ?? 0;
       this.logger.log({ ...key, etapa: final ? 'CONSOLIDACAO' : 'PARCIAL', duracaoMs: Date.now() - started, resultado: 'OK' });
-      return true;
     } catch (error) {
       await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { erro: this.message(error) } });
       this.logger.error({ ...key, etapa: final ? 'CONSOLIDACAO' : 'PARCIAL', duracaoMs: Date.now() - started, resultado: 'ERRO', erro: this.message(error) });
@@ -177,6 +199,13 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     } finally {
       await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { lockToken: null, lockAte: null } });
     }
+    if (timesProcessados) await this.sincronizarCompeticoes(key);
+    return true;
+  }
+
+  private async sincronizarCompeticoes(key: RoundKey): Promise<void> {
+    try { await this.sincronizacao.sincronizarRodada(key.temporada, key.rodada); }
+    catch (error) { this.logger.error({ ...key, etapa: 'SINCRONIZACAO_COMPETICOES', erro: this.message(error) }); }
   }
 
   private async capture(round: RodadaProcessamento, token: string): Promise<void> {

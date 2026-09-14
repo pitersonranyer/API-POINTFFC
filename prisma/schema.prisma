@@ -138,6 +138,7 @@ model Usuario {
   resetTokens     PasswordResetToken[]
   times           TimeUsuario[]
   carteira        Carteira?
+  inscricoesCompeticao InscricaoTimeCompeticao[]
 
   @@map("USUARIO")
 }
@@ -245,6 +246,170 @@ model TimeUsuario {
   @@id([usuarioId, timeId])
   @@index([timeId])
   @@map("TIME_USUARIO")
+}
+
+enum LigaTipo {
+  OFICIAL
+  PRIVADA
+}
+
+enum LigaStatus {
+  ATIVA
+  INATIVA
+}
+
+enum CompeticaoTipoAcesso {
+  FREE
+  PAGO
+}
+
+enum CompeticaoTipoTaxaPlataforma {
+  PERCENTUAL
+  VALOR_FIXO
+}
+
+enum CompeticaoLigaStatus {
+  RASCUNHO
+  INSCRICOES_ABERTAS
+  INSCRICOES_ENCERRADAS
+  EM_ANDAMENTO
+  ENCERRADA
+  CANCELADA
+}
+
+enum PremiacaoCompeticaoTipo {
+  VALOR_FIXO
+  PERCENTUAL
+}
+
+enum InscricaoTimeCompeticaoStatus {
+  ATIVA
+  CANCELADA
+  FINALIZADA
+}
+
+model Liga {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  slug String @unique @map("SLUG") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  imagemUrl String? @map("IMAGEM_URL") @db.Text
+  tipo LigaTipo @map("TIPO")
+  status LigaStatus @default(ATIVA) @map("STATUS")
+  visivelApp Boolean @default(true) @map("VISIVEL_APP")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  modalidades LigaModalidade[]
+
+  @@map("LIGA")
+}
+
+model ModalidadeCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  codigo String @unique @map("CODIGO") @db.VarChar(50)
+  nome String @map("NOME") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  ativa Boolean @default(true) @map("ATIVA")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  ligas LigaModalidade[]
+
+  @@map("MODALIDADE_COMPETICAO")
+}
+
+model LigaModalidade {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  ligaId Int @map("LIGA_ID") @db.UnsignedInt
+  modalidadeId Int @map("MODALIDADE_ID") @db.UnsignedInt
+  ativa Boolean @default(true) @map("ATIVA")
+  ordem Int @default(0) @map("ORDEM") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  liga Liga @relation(fields: [ligaId], references: [id], onDelete: Restrict)
+  modalidade ModalidadeCompeticao @relation(fields: [modalidadeId], references: [id], onDelete: Restrict)
+  competicoes CompeticaoLiga[]
+
+  @@unique([ligaId, modalidadeId])
+  @@index([modalidadeId])
+  @@map("LIGA_MODALIDADE")
+}
+
+model CompeticaoLiga {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  ligaModalidadeId Int @map("LIGA_MODALIDADE_ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  slug String @unique @map("SLUG") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  tipoAcesso CompeticaoTipoAcesso @default(FREE) @map("TIPO_ACESSO")
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  tipoTaxaPlataforma CompeticaoTipoTaxaPlataforma? @map("TIPO_TAXA_PLATAFORMA")
+  valorTaxaPlataforma Decimal? @map("VALOR_TAXA_PLATAFORMA") @db.Decimal(12, 2)
+  rodadaInicio Int? @map("RODADA_INICIO") @db.UnsignedTinyInt
+  rodadaFim Int? @map("RODADA_FIM") @db.UnsignedTinyInt
+  dataInicio DateTime? @map("DATA_INICIO")
+  dataFim DateTime? @map("DATA_FIM")
+  inicioInscricao DateTime? @map("INICIO_INSCRICAO")
+  fimInscricao DateTime? @map("FIM_INSCRICAO")
+  limiteTimesUsuario Int? @map("LIMITE_TIMES_USUARIO") @db.UnsignedInt
+  limiteParticipantes Int? @map("LIMITE_PARTICIPANTES") @db.UnsignedInt
+  status CompeticaoLigaStatus @default(RASCUNHO) @map("STATUS")
+  visivelApp Boolean @default(false) @map("VISIVEL_APP")
+  destaque Boolean @default(false) @map("DESTAQUE")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  ligaModalidade LigaModalidade @relation(fields: [ligaModalidadeId], references: [id], onDelete: Restrict)
+  premiacoes PremiacaoCompeticao[]
+  inscricoes InscricaoTimeCompeticao[]
+
+  @@index([ligaModalidadeId, status, visivelApp])
+  @@index([rodadaInicio])
+  @@index([status, visivelApp])
+  @@map("COMPETICAO_LIGA")
+}
+
+model PremiacaoCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
+  posicaoInicio Int @map("POSICAO_INICIO") @db.UnsignedInt
+  posicaoFim Int @map("POSICAO_FIM") @db.UnsignedInt
+  tipoPremiacao PremiacaoCompeticaoTipo @map("TIPO_PREMIACAO")
+  valor Decimal? @map("VALOR") @db.Decimal(12, 2)
+  percentual Decimal? @map("PERCENTUAL") @db.Decimal(7, 4)
+  ordem Int @default(0) @map("ORDEM") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict)
+
+  @@index([competicaoLigaId, ordem])
+  @@map("PREMIACAO_COMPETICAO")
+}
+
+model InscricaoTimeCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  timeIdCartola Int @map("TIME_ID_CARTOLA") @db.UnsignedInt
+  nomeTime String @map("NOME_TIME") @db.VarChar(255)
+  nomeCartoleiro String? @map("NOME_CARTOLEIRO") @db.VarChar(255)
+  escudoUrl String? @map("ESCUDO_URL") @db.Text
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  statusInscricao InscricaoTimeCompeticaoStatus @default(ATIVA) @map("STATUS_INSCRICAO")
+  pontuacao Decimal? @map("PONTUACAO") @db.Decimal(12, 2)
+  posicao Int? @map("POSICAO") @db.UnsignedInt
+  posicaoAnterior Int? @map("POSICAO_ANTERIOR") @db.UnsignedInt
+  premioApurado Decimal? @map("PREMIO_APURADO") @db.Decimal(12, 2)
+  dataInscricao DateTime @default(now()) @map("DATA_INSCRICAO")
+  canceladaEm DateTime? @map("CANCELADA_EM")
+  finalizadoEm DateTime? @map("FINALIZADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+
+  @@unique([competicaoLigaId, timeIdCartola])
+  @@index([usuarioId, competicaoLigaId])
+  @@index([competicaoLigaId, statusInscricao, posicao])
+  @@map("INSCRICAO_TIME_COMPETICAO")
 }
 
 model TimeCartola {

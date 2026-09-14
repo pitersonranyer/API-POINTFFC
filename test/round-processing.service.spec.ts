@@ -6,6 +6,7 @@ import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPaylo
 import { PrismaService } from '../src/prisma/prisma.service';
 import { RoundProcessingService } from '../src/round-processing/round-processing.service';
 import { TimeSnapshotsService } from '../src/time-snapshots/time-snapshots.service';
+import { SincronizacaoPontuacoesService } from '../src/ligas-competicoes/sincronizacao-pontuacoes.service';
 
 function setup() {
   let round: any = null;
@@ -24,6 +25,7 @@ function setup() {
   });
   const prisma = {
     timeUsuario: { findMany: jest.fn(async () => [{ timeId: 1 }, { timeId: 2 }, { timeId: 3 }, { timeId: 1 }]) },
+    inscricaoTimeCompeticao: { findMany: jest.fn(async () => [] as Array<{ timeIdCartola: number }>) },
     timeRodada: { findMany: jest.fn(async (args: any = {}) => {
       if (args.select?._count) return teams.map((t) => ({ ...t, _count: { escalacao: t.escalacao.filter((a: any) => a.titular).length } }));
       if (args.where?.OR) {
@@ -69,6 +71,7 @@ function setup() {
       }
       return 1;
     }),
+    $queryRaw: jest.fn(async () => []),
     $transaction: jest.fn(async (callback: (tx: any) => Promise<unknown>): Promise<unknown> => {
       const oldRound = { ...round }; const oldTeams = teams.map((t) => ({ ...t }));
       try { return await callback(prisma); }
@@ -88,9 +91,11 @@ function setup() {
     loadFinalScoredAthletesFresh: jest.fn(async () => { events.push('finais'); return points; }),
     loadMatchesFresh: jest.fn(async () => matches),
   };
+  const sincronizacao = { sincronizarRodada: jest.fn(async () => { events.push('sincronizacao'); }) };
   const create = () => new RoundProcessingService(prisma as unknown as PrismaService, cartola as unknown as CartolaService,
-    snapshots as unknown as TimeSnapshotsService, { get: (_key: string, fallback: unknown) => fallback } as ConfigService);
-  return { prisma, snapshots, cartola, events, failures, create, get round() { return round; }, get teams() { return teams; },
+    snapshots as unknown as TimeSnapshotsService, { get: (_key: string, fallback: unknown) => fallback } as ConfigService,
+    sincronizacao as unknown as SincronizacaoPontuacoesService);
+  return { prisma, snapshots, cartola, sincronizacao, events, failures, create, get round() { return round; }, get teams() { return teams; },
     closed: () => { market = { ...market, status_mercado: 2, bola_rolando: true }; },
     maintenance: () => { market = { ...market, status_mercado: 4, bola_rolando: false }; },
     open: () => { market = { ...market, status_mercado: 1, rodada_atual: 26, bola_rolando: false }; },
@@ -175,11 +180,61 @@ describe('Ciclo persistido de rodadas', () => {
     const f = setup(); const worker = f.create();
     await worker.tick(); expect(f.snapshots.criarSnapshot).not.toHaveBeenCalled();
     f.closed(); await worker.tick();
-    expect(f.events).toEqual(['snapshot:1', 'snapshot:2', 'snapshot:3', 'pontuados']);
+    expect(f.events).toEqual(['snapshot:1', 'snapshot:2', 'snapshot:3', 'pontuados', 'sincronizacao']);
     expect(f.round.timesPrevistos).toEqual([1, 2, 3]);
     expect(f.round.status).toBe('EM_ANDAMENTO');
     expect(f.teams.map((t) => t.pontuacao.pontuacao.toNumber())).toEqual([15, 15, 6]);
     await worker.tick(); expect(f.snapshots.criarSnapshot).toHaveBeenCalledTimes(3);
+  });
+  it('sincroniza apos persistir PARCIAL, uma vez por lote alterado', async () => {
+    const f = setup(); f.closed();
+    f.sincronizacao.sincronizarRodada.mockImplementation(async () => {
+      expect(f.teams.every(team => team.pontuacao?.status === 'PARCIAL')).toBe(true);
+      expect(f.round.lockToken).toBeNull();
+    });
+    await f.create().tick();
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledWith(2026, 25);
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+    await f.create().tick();
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+  });
+  it('sincroniza novamente apos consolidar FINAL', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.sincronizacao.sincronizarRodada.mockClear();
+    f.sincronizacao.sincronizarRodada.mockImplementation(async () => {
+      expect(f.teams.every(team => team.pontuacao?.status === 'FINAL')).toBe(true);
+      expect(f.round.lockToken).toBeNull();
+    });
+    f.open(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+  });
+  it('falha da sincronizacao nao desfaz pontuacao nem estado da rodada', async () => {
+    const f = setup(); f.closed();
+    f.sincronizacao.sincronizarRodada.mockRejectedValueOnce(new Error('Falha da competicao'));
+    await f.create().tick();
+    expect(f.round.status).toBe('EM_ANDAMENTO');
+    expect(f.teams.every(team => team.pontuacao?.status === 'PARCIAL')).toBe(true);
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+  });
+  it('inclui times com inscricao ativa mesmo sem vinculo em TIME_USUARIO', async () => {
+    const f = setup();
+    f.prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([{ timeIdCartola: 4 }]);
+    f.closed();
+    await f.create().tick();
+    expect(f.round.timesPrevistos).toEqual([1, 2, 3, 4]);
+    expect(f.snapshots.criarSnapshot).toHaveBeenCalledWith(expect.objectContaining({ timeId: 4, rodada: 25, temporada: 2026 }));
+    expect(f.prisma.inscricaoTimeCompeticao.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ statusInscricao: 'ATIVA' }),
+    }));
+  });
+  it('incorpora inscricao nova quando a rodada ja existe', async () => {
+    const f = setup(); f.closed();
+    await f.create().tick();
+    f.prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([{ timeIdCartola: 4 }]);
+    await f.create().tick();
+    expect(f.round.timesPrevistos).toEqual([1, 2, 3, 4]);
+    expect(f.snapshots.criarSnapshot.mock.calls.map(([arg]) => arg.timeId)).toEqual([1, 2, 3, 4]);
   });
   it('falha de captura nao pontua time ausente; reinicio retenta somente pendente', async () => {
     const f = setup(); f.closed(); f.failures.add(2);

@@ -19,6 +19,7 @@ import { SubstitutionModule } from './substitutions/substitution.module';
 import { RankingGeralModule } from './ranking-geral/ranking-geral.module';
 import { RoundProcessingModule } from './round-processing/round-processing.module';
 import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module';
+import { LigasCompeticoesModule } from './ligas-competicoes/ligas-competicoes.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module
     RankingGeralModule,
     RoundProcessingModule,
     PocMercadoPagoModule,
+    LigasCompeticoesModule,
   ],
 })
 export class AppModule {}
