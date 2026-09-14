@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListarCompeticoesQueryDto } from './dto/ligas-competicoes-query.dto';
@@ -30,6 +30,7 @@ function resumo(row: CompeticaoRow): CompeticaoResumoDto {
 
 @Injectable()
 export class LigasCompeticoesService {
+  private readonly logger = new Logger(LigasCompeticoesService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async buscarLiga(slug: string): Promise<LigaResponseDto> {
@@ -50,8 +51,11 @@ export class LigasCompeticoesService {
   }
 
   async listarCompeticoes(slug: string, query: ListarCompeticoesQueryDto): Promise<CompeticaoResumoDto[]> {
+    this.logger.log(`listarCompeticoes entrada ${JSON.stringify({ slug, modalidade: query.modalidade ?? null,
+      rodada: query.rodada ?? null, status: query.status ?? null })}`);
     const liga = await this.prisma.liga.findFirst({ where: { slug, ...publicLiga }, select: { id: true } });
     if (!liga) throw new NotFoundException('Liga nao encontrada.');
+    this.logger.log(`listarCompeticoes liga ${JSON.stringify({ ligaId: liga.id })}`);
 
     const where: Prisma.CompeticaoLigaWhereInput = {
       visivelApp: true,
@@ -63,10 +67,21 @@ export class LigasCompeticoesService {
       ...(query.rodada !== undefined ? { rodadaInicio: { lte: query.rodada }, rodadaFim: { gte: query.rodada } } : {}),
       ...(query.status ? { status: query.status } : {}),
     };
+    this.logger.log(`listarCompeticoes where ${JSON.stringify(where)}`);
+    try {
+      const visiveis = await this.prisma.competicaoLiga.findMany({
+        where: { visivelApp: true }, select: { id: true, slug: true, ligaModalidadeId: true },
+      });
+      this.logger.log(`listarCompeticoes diagnosticoVisiveis ${JSON.stringify(visiveis)}`);
+    } catch (error) {
+      this.logger.warn(`listarCompeticoes diagnosticoVisiveis falhou: ${error instanceof Error ? error.message : String(error)}`);
+    }
     const rows = await this.prisma.competicaoLiga.findMany({
       where, select: competicaoSelect,
       orderBy: [{ destaque: 'desc' }, { valorInscricao: 'asc' }, { nome: 'asc' }, { id: 'asc' }],
     });
+    this.logger.log(`listarCompeticoes resultado ${JSON.stringify({ quantidade: rows.length,
+      competicoes: rows.map(({ id, slug }) => ({ id, slug })) })}`);
     return rows.map(resumo);
   }
 

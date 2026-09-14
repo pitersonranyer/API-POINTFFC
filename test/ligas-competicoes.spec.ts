@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { CompeticaoLigaStatus, Prisma } from '@prisma/client';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { CompeticoesController, LigasController } from '../src/ligas-competicoes/ligas-competicoes.controller';
@@ -18,6 +18,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe('Ligas e competicoes - leitura publica', () => {
+  beforeAll(() => Logger.overrideLogger([]));
   const prisma = {
     liga: { findFirst: jest.fn() },
     competicaoLiga: { findMany: jest.fn(), findFirst: jest.fn() },
@@ -28,7 +29,8 @@ describe('Ligas e competicoes - leitura publica', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     prisma.liga.findFirst.mockResolvedValue({ ...liga, modalidades: [{ modalidade }] });
-    prisma.competicaoLiga.findMany.mockResolvedValue([row()]);
+    prisma.competicaoLiga.findMany.mockImplementation(async ({ where }) => where.ligaModalidade
+      ? [row()] : [{ id: 1, slug: 'point-ffc-rodada-27', ligaModalidadeId: 1 }]);
     prisma.competicaoLiga.findFirst.mockResolvedValue(row());
     prisma.inscricaoTimeCompeticao.count.mockResolvedValue(0);
   });
@@ -61,8 +63,8 @@ describe('Ligas e competicoes - leitura publica', () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ nome: 'POINT FFC - Rodada 27', valorInscricao: 0, modalidade });
     expect(result[0]).not.toHaveProperty('ligaModalidade');
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].where.ligaModalidade).toMatchObject({ ligaId: 2, ativa: true, modalidade: { ativa: true } });
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].orderBy).toEqual([
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].where.ligaModalidade).toMatchObject({ ligaId: 2, ativa: true, modalidade: { ativa: true } });
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].orderBy).toEqual([
       { destaque: 'desc' }, { valorInscricao: 'asc' }, { nome: 'asc' }, { id: 'asc' },
     ]);
   });
@@ -70,29 +72,41 @@ describe('Ligas e competicoes - leitura publica', () => {
   it('filtra pelo codigo da modalidade', async () => {
     prisma.liga.findFirst.mockResolvedValue({ id: 2 });
     await service.listarCompeticoes('point-ffc', { modalidade: 'RODADA' });
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].where.ligaModalidade.modalidade).toEqual({ ativa: true, codigo: 'RODADA' });
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].where.ligaModalidade.modalidade).toEqual({ ativa: true, codigo: 'RODADA' });
   });
 
   it('filtra rodada inclusivamente pela faixa e exclui faixas nulas', async () => {
     prisma.liga.findFirst.mockResolvedValue({ id: 2 });
     await service.listarCompeticoes('point-ffc', { rodada: 27 });
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].where).toMatchObject({ rodadaInicio: { lte: 27 }, rodadaFim: { gte: 27 } });
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].where).toMatchObject({ rodadaInicio: { lte: 27 }, rodadaFim: { gte: 27 } });
     jest.clearAllMocks();
     prisma.liga.findFirst.mockResolvedValue({ id: 2 });
     await service.listarCompeticoes('point-ffc', {});
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].where).not.toHaveProperty('rodadaInicio');
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].where).not.toHaveProperty('rodadaInicio');
   });
 
   it('filtra status quando informado', async () => {
     prisma.liga.findFirst.mockResolvedValue({ id: 2 });
     await service.listarCompeticoes('point-ffc', { status: CompeticaoLigaStatus.INSCRICOES_ABERTAS });
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].where.status).toBe('INSCRICOES_ABERTAS');
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].where.status).toBe('INSCRICOES_ABERTAS');
   });
 
   it('nao inclui competicoes invisiveis na listagem publica', async () => {
     prisma.liga.findFirst.mockResolvedValue({ id: 2 });
     await service.listarCompeticoes('point-ffc', {});
-    expect(prisma.competicaoLiga.findMany.mock.calls[0][0].where.visivelApp).toBe(true);
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].where.visivelApp).toBe(true);
+    expect(prisma.competicaoLiga.findMany.mock.calls[0][0]).toEqual({
+      where: { visivelApp: true }, select: { id: true, slug: true, ligaModalidadeId: true },
+    });
+  });
+
+  it('falha da consulta diagnostica nao altera a listagem', async () => {
+    prisma.liga.findFirst.mockResolvedValue({ id: 2 });
+    prisma.competicaoLiga.findMany.mockRejectedValueOnce(new Error('diagnostico indisponivel'));
+    const result = await service.listarCompeticoes('point-ffc', { modalidade: 'RODADA' });
+    expect(result).toHaveLength(1);
+    expect(result[0].slug).toBe('point-ffc-rodada-27');
+    expect(prisma.competicaoLiga.findMany).toHaveBeenCalledTimes(2);
   });
 
   it('retorna detalhe com liga, modalidade, datas e premiação vazia', async () => {
