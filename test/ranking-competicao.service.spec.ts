@@ -23,6 +23,8 @@ describe('RankingCompeticaoService', () => {
   const prisma = {
     competicaoLiga: { findFirst: jest.fn() },
     inscricaoTimeCompeticao: { findMany: jest.fn() },
+    timeRodada: { findMany: jest.fn() },
+    escalacaoTimeRodada: { findMany: jest.fn() },
     $transaction: jest.fn(),
   };
   const service = new RankingCompeticaoService(prisma as unknown as PrismaService);
@@ -33,8 +35,11 @@ describe('RankingCompeticaoService', () => {
       makeRow(3, '2026-09-03T00:00:00Z', null, null),
       makeRow(4, '2026-09-01T00:00:00Z', '99.00', 1, 'CANCELADA')];
     failAt = null;
-    prisma.competicaoLiga.findFirst.mockResolvedValue({ id: 1, nome: 'POINT FFC - Rodada 27' });
+    prisma.competicaoLiga.findFirst.mockResolvedValue({ id: 1, nome: 'POINT FFC - Rodada 27',
+      rodadaInicio: null, rodadaFim: null, dataInicio: null });
     prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([]);
+    prisma.timeRodada.findMany.mockResolvedValue([]);
+    prisma.escalacaoTimeRodada.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(async (callback: (client: typeof tx) => Promise<unknown>) => {
       const working = state.map(row => ({ ...row }));
       tx.$queryRaw.mockResolvedValue([{ ID: 1 }]);
@@ -79,11 +84,53 @@ describe('RankingCompeticaoService', () => {
     expect(await service.consultar(1)).toEqual({ competicaoId: 1, nomeCompeticao: 'POINT FFC - Rodada 27', quantidadeParticipantes: 2,
       ranking: [
         { inscricaoId: 2, timeIdCartola: 200, nomeTime: 'Snapshot B', nomeCartoleiro: 'B', escudoUrl: null,
-          pontuacao: 20.25, posicao: 1, posicaoAnterior: 3, premioApurado: null },
+          pontuacao: 20.25, posicao: 1, posicaoAnterior: 3, premioApurado: null, capitao: null },
         { inscricaoId: 1, timeIdCartola: 100, nomeTime: 'Snapshot A', nomeCartoleiro: null, escudoUrl: 'escudo',
-          pontuacao: null, posicao: null, posicaoAnterior: null, premioApurado: null },
+          pontuacao: null, posicao: null, posicaoAnterior: null, premioApurado: null, capitao: null },
       ] });
     expect(prisma.inscricaoTimeCompeticao.findMany.mock.calls[0][0].select).not.toHaveProperty('timeUsuario');
+  });
+
+  it('associa capitoes pelos snapshots da rodada em consultas de lote e preserva a ordem', async () => {
+    prisma.competicaoLiga.findFirst.mockResolvedValue({ id: 1, nome: 'Rodada 27', rodadaInicio: 27,
+      rodadaFim: 27, dataInicio: new Date('2026-09-01T00:00:00Z') });
+    prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([200, 100, 300].map((timeIdCartola, index) => ({
+      id: index + 1, timeIdCartola, nomeTime: `Time ${timeIdCartola}`, nomeCartoleiro: null,
+      escudoUrl: null, pontuacao: null, posicao: null, posicaoAnterior: null, premioApurado: null,
+    })));
+    prisma.timeRodada.findMany.mockResolvedValue([
+      { id: 10, timeId: 100, capitaoId: 91 }, { id: 20, timeId: 200, capitaoId: 92 },
+    ]);
+    prisma.escalacaoTimeRodada.findMany.mockResolvedValue([
+      { timeRodadaId: 10, atletaId: 91, nome: 'Capitao A' },
+      { timeRodadaId: 20, atletaId: 92, nome: 'Capitao B' },
+    ]);
+    const result = await service.consultar(1);
+    expect(result.ranking.map(item => [item.timeIdCartola, item.capitao?.apelido ?? null])).toEqual([
+      [200, 'Capitao B'], [100, 'Capitao A'], [300, null],
+    ]);
+    expect(prisma.timeRodada.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.escalacaoTimeRodada.findMany).toHaveBeenCalledTimes(1);
+    expect(prisma.timeRodada.findMany.mock.calls[0][0].where).toEqual({ temporada: 2026, rodada: 27,
+      timeId: { in: [200, 100, 300] } });
+  });
+
+  it('retorna capitao nulo quando nao ha contexto de rodada unica', async () => {
+    prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([{ id: 1, timeIdCartola: 100, nomeTime: 'A',
+      nomeCartoleiro: null, escudoUrl: null, pontuacao: null, posicao: null, posicaoAnterior: null, premioApurado: null }]);
+    const result = await service.consultar(1);
+    expect(result.ranking[0].capitao).toBeNull();
+    expect(prisma.timeRodada.findMany).not.toHaveBeenCalled();
+  });
+
+  it('retorna capitao nulo se escalacao nao confirma o atleta do snapshot', async () => {
+    prisma.competicaoLiga.findFirst.mockResolvedValue({ id: 1, nome: 'Rodada 27', rodadaInicio: 27,
+      rodadaFim: 27, dataInicio: new Date('2026-09-01T00:00:00Z') });
+    prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([{ id: 1, timeIdCartola: 100, nomeTime: 'A',
+      nomeCartoleiro: null, escudoUrl: null, pontuacao: null, posicao: null, posicaoAnterior: null, premioApurado: null }]);
+    prisma.timeRodada.findMany.mockResolvedValue([{ id: 10, timeId: 100, capitaoId: 91 }]);
+    prisma.escalacaoTimeRodada.findMany.mockResolvedValue([{ timeRodadaId: 10, atletaId: 92, nome: 'Outro' }]);
+    expect((await service.consultar(1)).ranking[0].capitao).toBeNull();
   });
 
   it('nao revela competicao invisivel ou com vinculos inativos', async () => {

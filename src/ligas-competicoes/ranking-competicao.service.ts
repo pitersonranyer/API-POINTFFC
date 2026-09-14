@@ -16,7 +16,7 @@ export class RankingCompeticaoService {
     const competicao = await this.prisma.competicaoLiga.findFirst({
       where: { id: competicaoId, visivelApp: true,
         ligaModalidade: { ativa: true, liga: { status: 'ATIVA', visivelApp: true }, modalidade: { ativa: true } } },
-      select: { id: true, nome: true },
+      select: { id: true, nome: true, rodadaInicio: true, rodadaFim: true, dataInicio: true },
     });
     if (!competicao) throw new NotFoundException('Competicao nao encontrada.');
 
@@ -27,6 +27,30 @@ export class RankingCompeticaoService {
       orderBy: [{ posicao: { sort: 'asc', nulls: 'last' } },
         { pontuacao: { sort: 'desc', nulls: 'last' } }, { dataInscricao: 'asc' }, { id: 'asc' }],
     });
+    const capitoes = new Map<number, { atletaId: number; apelido: string }>();
+    // Mesmo contexto de rodada unica usado pelo diagnostico de escalacoes.
+    if (rows.length && competicao.rodadaInicio !== null && competicao.rodadaInicio === competicao.rodadaFim
+      && competicao.dataInicio !== null) {
+      const snapshots = await this.prisma.timeRodada.findMany({
+        where: { temporada: competicao.dataInicio.getUTCFullYear(), rodada: competicao.rodadaInicio,
+          timeId: { in: [...new Set(rows.map(row => row.timeIdCartola))] } },
+        select: { id: true, timeId: true, capitaoId: true },
+      });
+      const comCapitao = snapshots.filter(snapshot => snapshot.capitaoId !== null);
+      if (comCapitao.length) {
+        const escalacoes = await this.prisma.escalacaoTimeRodada.findMany({
+          where: { timeRodadaId: { in: comCapitao.map(snapshot => snapshot.id) }, capitao: true },
+          select: { timeRodadaId: true, atletaId: true, nome: true },
+        });
+        const porSnapshot = new Map(escalacoes.map(escalacao => [escalacao.timeRodadaId, escalacao]));
+        for (const snapshot of comCapitao) {
+          const escalacao = porSnapshot.get(snapshot.id);
+          if (escalacao && escalacao.atletaId === snapshot.capitaoId && escalacao.nome?.trim()) {
+            capitoes.set(snapshot.timeId, { atletaId: escalacao.atletaId, apelido: escalacao.nome });
+          }
+        }
+      }
+    }
     return {
       competicaoId: competicao.id,
       nomeCompeticao: competicao.nome,
@@ -36,6 +60,7 @@ export class RankingCompeticaoService {
         nomeTime: row.nomeTime, nomeCartoleiro: row.nomeCartoleiro, escudoUrl: row.escudoUrl,
         pontuacao: row.pontuacao?.toNumber() ?? null, posicao: row.posicao,
         posicaoAnterior: row.posicaoAnterior, premioApurado: row.premioApurado?.toNumber() ?? null,
+        capitao: capitoes.get(row.timeIdCartola) ?? null,
       })),
     };
   }

@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+export class RankingCompeticaoCapitaoDto {
+  @ApiProperty() atletaId!: number;
+  @ApiProperty() apelido!: string;
+}
+
 export class RankingCompeticaoItemDto {
   @ApiProperty() inscricaoId!: number;
   @ApiProperty() timeIdCartola!: number;
@@ -10,6 +15,7 @@ export class RankingCompeticaoItemDto {
   @ApiProperty({ type: Number, nullable: true }) posicao!: number | null;
   @ApiProperty({ type: Number, nullable: true }) posicaoAnterior!: number | null;
   @ApiProperty({ type: Number, nullable: true }) premioApurado!: number | null;
+  @ApiProperty({ type: RankingCompeticaoCapitaoDto, nullable: true }) capitao!: RankingCompeticaoCapitaoDto | null;
 }
 
 export class RankingCompeticaoResponseDto {
