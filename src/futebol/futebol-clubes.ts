@@ -1,3 +1,5 @@
+import { NOMES_CLUBES_INTERNACIONAIS } from './futebol-clubes-internacionais';
+
 // IDs conferidos nos 20 clubes BSA persistidos. Não depende do texto do provedor.
 export const NOMES_CLUBES_BSA: Readonly<Record<number, string>> = Object.freeze({
   "1765": "Fluminense",
@@ -23,5 +25,7 @@ export const NOMES_CLUBES_BSA: Readonly<Record<number, string>> = Object.freeze(
 });
 export function nomesClube(externalId: number, original: string, curto: string | null) {
   const nome = NOMES_CLUBES_BSA[externalId];
-  return { nomeOriginal: original, nome: nome ?? original, nomeCurto: nome ?? curto ?? original };
+  const internacional = NOMES_CLUBES_INTERNACIONAIS[externalId];
+  return { nomeOriginal: original, nome: nome ?? internacional?.nome ?? original,
+    nomeCurto: nome ?? internacional?.nomeCurto ?? curto ?? original };
 }

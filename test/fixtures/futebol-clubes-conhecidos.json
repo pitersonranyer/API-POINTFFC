@@ -1,0 +1,1215 @@
+{
+  "source": "Inventario somente leitura do banco de desenvolvimento configurado no workspace; nao representa cobertura de producao",
+  "collectedOn": "2026-09-15",
+  "competitions": [
+    {
+      "code": "BL1",
+      "season": 2026,
+      "externalIds": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        10,
+        12,
+        15,
+        16,
+        17,
+        18,
+        19,
+        28,
+        29,
+        719,
+        721
+      ]
+    },
+    {
+      "code": "BSA",
+      "season": 2026,
+      "externalIds": [
+        1765,
+        1766,
+        1767,
+        1768,
+        1769,
+        1770,
+        1771,
+        1772,
+        1776,
+        1777,
+        1779,
+        1780,
+        1782,
+        1783,
+        4241,
+        4286,
+        4287,
+        4364,
+        6684,
+        6685
+      ]
+    },
+    {
+      "code": "CL",
+      "season": 2026,
+      "externalIds": [
+        4,
+        5,
+        10,
+        57,
+        58,
+        64,
+        65,
+        66,
+        78,
+        81,
+        86,
+        90,
+        94,
+        100,
+        108,
+        113,
+        498,
+        503,
+        521,
+        524,
+        546,
+        610,
+        613,
+        674,
+        675,
+        721,
+        851,
+        930,
+        1887,
+        1899,
+        2016,
+        5720,
+        5721,
+        7397,
+        7509,
+        10233
+      ]
+    },
+    {
+      "code": "DED",
+      "season": 2026,
+      "externalIds": [
+        666,
+        670,
+        672,
+        673,
+        674,
+        675,
+        676,
+        677,
+        678,
+        680,
+        682,
+        684,
+        718,
+        1909,
+        1912,
+        1915,
+        1920,
+        6806
+      ]
+    },
+    {
+      "code": "ELC",
+      "season": 2026,
+      "externalIds": [
+        59,
+        60,
+        68,
+        69,
+        70,
+        72,
+        74,
+        76,
+        325,
+        328,
+        332,
+        340,
+        342,
+        343,
+        346,
+        348,
+        356,
+        384,
+        387,
+        404,
+        563,
+        715,
+        1081,
+        1126
+      ]
+    },
+    {
+      "code": "FL1",
+      "season": 2026,
+      "externalIds": [
+        511,
+        512,
+        516,
+        519,
+        521,
+        522,
+        523,
+        524,
+        525,
+        529,
+        531,
+        532,
+        533,
+        535,
+        546,
+        548,
+        576,
+        1045
+      ]
+    },
+    {
+      "code": "PD",
+      "season": 2026,
+      "externalIds": [
+        77,
+        78,
+        79,
+        80,
+        81,
+        82,
+        84,
+        86,
+        87,
+        88,
+        90,
+        92,
+        94,
+        95,
+        263,
+        285,
+        558,
+        559,
+        560,
+        5335
+      ]
+    },
+    {
+      "code": "PL",
+      "season": 2026,
+      "externalIds": [
+        57,
+        58,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        71,
+        73,
+        322,
+        341,
+        349,
+        351,
+        354,
+        397,
+        402,
+        1044,
+        1076
+      ]
+    },
+    {
+      "code": "PPL",
+      "season": 2026,
+      "externalIds": [
+        496,
+        498,
+        503,
+        582,
+        583,
+        712,
+        1903,
+        5527,
+        5529,
+        5530,
+        5531,
+        5533,
+        5543,
+        5575,
+        5613,
+        6618,
+        7822,
+        9136
+      ]
+    },
+    {
+      "code": "SA",
+      "season": 2026,
+      "externalIds": [
+        98,
+        99,
+        100,
+        102,
+        103,
+        104,
+        107,
+        108,
+        109,
+        110,
+        112,
+        113,
+        115,
+        454,
+        470,
+        471,
+        586,
+        5890,
+        5911,
+        7397
+      ]
+    }
+  ],
+  "teams": [
+    {
+      "externalId": 1,
+      "nomeOriginal": "1. FC Köln",
+      "nomeCurtoPersistido": "1. FC Köln"
+    },
+    {
+      "externalId": 2,
+      "nomeOriginal": "TSG 1899 Hoffenheim",
+      "nomeCurtoPersistido": "Hoffenheim"
+    },
+    {
+      "externalId": 3,
+      "nomeOriginal": "Bayer 04 Leverkusen",
+      "nomeCurtoPersistido": "Leverkusen"
+    },
+    {
+      "externalId": 4,
+      "nomeOriginal": "Borussia Dortmund",
+      "nomeCurtoPersistido": "Dortmund"
+    },
+    {
+      "externalId": 5,
+      "nomeOriginal": "FC Bayern München",
+      "nomeCurtoPersistido": "Bayern"
+    },
+    {
+      "externalId": 6,
+      "nomeOriginal": "FC Schalke 04",
+      "nomeCurtoPersistido": "Schalke"
+    },
+    {
+      "externalId": 7,
+      "nomeOriginal": "Hamburger SV",
+      "nomeCurtoPersistido": "HSV"
+    },
+    {
+      "externalId": 10,
+      "nomeOriginal": "VfB Stuttgart",
+      "nomeCurtoPersistido": "Stuttgart"
+    },
+    {
+      "externalId": 12,
+      "nomeOriginal": "SV Werder Bremen",
+      "nomeCurtoPersistido": "Bremen"
+    },
+    {
+      "externalId": 15,
+      "nomeOriginal": "1. FSV Mainz 05",
+      "nomeCurtoPersistido": "Mainz"
+    },
+    {
+      "externalId": 16,
+      "nomeOriginal": "FC Augsburg",
+      "nomeCurtoPersistido": "Augsburg"
+    },
+    {
+      "externalId": 17,
+      "nomeOriginal": "SC Freiburg",
+      "nomeCurtoPersistido": "Freiburg"
+    },
+    {
+      "externalId": 18,
+      "nomeOriginal": "Borussia Mönchengladbach",
+      "nomeCurtoPersistido": "M'gladbach"
+    },
+    {
+      "externalId": 19,
+      "nomeOriginal": "Eintracht Frankfurt",
+      "nomeCurtoPersistido": "Frankfurt"
+    },
+    {
+      "externalId": 28,
+      "nomeOriginal": "1. FC Union Berlin",
+      "nomeCurtoPersistido": "Union Berlin"
+    },
+    {
+      "externalId": 29,
+      "nomeOriginal": "SC Paderborn 07",
+      "nomeCurtoPersistido": "SC Paderborn"
+    },
+    {
+      "externalId": 57,
+      "nomeOriginal": "Arsenal FC",
+      "nomeCurtoPersistido": "Arsenal"
+    },
+    {
+      "externalId": 58,
+      "nomeOriginal": "Aston Villa FC",
+      "nomeCurtoPersistido": "Aston Villa"
+    },
+    {
+      "externalId": 59,
+      "nomeOriginal": "Blackburn Rovers FC",
+      "nomeCurtoPersistido": "Blackburn"
+    },
+    {
+      "externalId": 60,
+      "nomeOriginal": "Bolton Wanderers FC",
+      "nomeCurtoPersistido": "Bolton"
+    },
+    {
+      "externalId": 61,
+      "nomeOriginal": "Chelsea FC",
+      "nomeCurtoPersistido": "Chelsea"
+    },
+    {
+      "externalId": 62,
+      "nomeOriginal": "Everton FC",
+      "nomeCurtoPersistido": "Everton"
+    },
+    {
+      "externalId": 63,
+      "nomeOriginal": "Fulham FC",
+      "nomeCurtoPersistido": "Fulham"
+    },
+    {
+      "externalId": 64,
+      "nomeOriginal": "Liverpool FC",
+      "nomeCurtoPersistido": "Liverpool"
+    },
+    {
+      "externalId": 65,
+      "nomeOriginal": "Manchester City FC",
+      "nomeCurtoPersistido": "Man City"
+    },
+    {
+      "externalId": 66,
+      "nomeOriginal": "Manchester United FC",
+      "nomeCurtoPersistido": "Man United"
+    },
+    {
+      "externalId": 67,
+      "nomeOriginal": "Newcastle United FC",
+      "nomeCurtoPersistido": "Newcastle"
+    },
+    {
+      "externalId": 68,
+      "nomeOriginal": "Norwich City FC",
+      "nomeCurtoPersistido": "Norwich"
+    },
+    {
+      "externalId": 69,
+      "nomeOriginal": "Queens Park Rangers FC",
+      "nomeCurtoPersistido": "QPR"
+    },
+    {
+      "externalId": 70,
+      "nomeOriginal": "Stoke City FC",
+      "nomeCurtoPersistido": "Stoke"
+    },
+    {
+      "externalId": 71,
+      "nomeOriginal": "Sunderland AFC",
+      "nomeCurtoPersistido": "Sunderland"
+    },
+    {
+      "externalId": 72,
+      "nomeOriginal": "Swansea City AFC",
+      "nomeCurtoPersistido": "Swansea"
+    },
+    {
+      "externalId": 73,
+      "nomeOriginal": "Tottenham Hotspur FC",
+      "nomeCurtoPersistido": "Tottenham"
+    },
+    {
+      "externalId": 74,
+      "nomeOriginal": "West Bromwich Albion FC",
+      "nomeCurtoPersistido": "West Brom"
+    },
+    {
+      "externalId": 76,
+      "nomeOriginal": "Wolverhampton Wanderers FC",
+      "nomeCurtoPersistido": "Wolverhampton"
+    },
+    {
+      "externalId": 77,
+      "nomeOriginal": "Athletic Club",
+      "nomeCurtoPersistido": "Athletic"
+    },
+    {
+      "externalId": 78,
+      "nomeOriginal": "Club Atlético de Madrid",
+      "nomeCurtoPersistido": "Atleti"
+    },
+    {
+      "externalId": 79,
+      "nomeOriginal": "CA Osasuna",
+      "nomeCurtoPersistido": "Osasuna"
+    },
+    {
+      "externalId": 80,
+      "nomeOriginal": "RCD Espanyol de Barcelona",
+      "nomeCurtoPersistido": "Espanyol"
+    },
+    {
+      "externalId": 81,
+      "nomeOriginal": "FC Barcelona",
+      "nomeCurtoPersistido": "Barça"
+    },
+    {
+      "externalId": 82,
+      "nomeOriginal": "Getafe CF",
+      "nomeCurtoPersistido": "Getafe"
+    },
+    {
+      "externalId": 84,
+      "nomeOriginal": "Málaga CF",
+      "nomeCurtoPersistido": "Málaga"
+    },
+    {
+      "externalId": 86,
+      "nomeOriginal": "Real Madrid CF",
+      "nomeCurtoPersistido": "Real Madrid"
+    },
+    {
+      "externalId": 87,
+      "nomeOriginal": "Rayo Vallecano de Madrid",
+      "nomeCurtoPersistido": "Rayo Vallecano"
+    },
+    {
+      "externalId": 88,
+      "nomeOriginal": "Levante UD",
+      "nomeCurtoPersistido": "Levante"
+    },
+    {
+      "externalId": 90,
+      "nomeOriginal": "Real Betis Balompié",
+      "nomeCurtoPersistido": "Real Betis"
+    },
+    {
+      "externalId": 92,
+      "nomeOriginal": "Real Sociedad de Fútbol",
+      "nomeCurtoPersistido": "Real Sociedad"
+    },
+    {
+      "externalId": 94,
+      "nomeOriginal": "Villarreal CF",
+      "nomeCurtoPersistido": "Villarreal"
+    },
+    {
+      "externalId": 95,
+      "nomeOriginal": "Valencia CF",
+      "nomeCurtoPersistido": "Valencia"
+    },
+    {
+      "externalId": 98,
+      "nomeOriginal": "AC Milan",
+      "nomeCurtoPersistido": "Milan"
+    },
+    {
+      "externalId": 99,
+      "nomeOriginal": "ACF Fiorentina",
+      "nomeCurtoPersistido": "Fiorentina"
+    },
+    {
+      "externalId": 100,
+      "nomeOriginal": "AS Roma",
+      "nomeCurtoPersistido": "Roma"
+    },
+    {
+      "externalId": 102,
+      "nomeOriginal": "Atalanta BC",
+      "nomeCurtoPersistido": "Atalanta"
+    },
+    {
+      "externalId": 103,
+      "nomeOriginal": "Bologna FC 1909",
+      "nomeCurtoPersistido": "Bologna"
+    },
+    {
+      "externalId": 104,
+      "nomeOriginal": "Cagliari Calcio",
+      "nomeCurtoPersistido": "Cagliari"
+    },
+    {
+      "externalId": 107,
+      "nomeOriginal": "Genoa CFC",
+      "nomeCurtoPersistido": "Genoa"
+    },
+    {
+      "externalId": 108,
+      "nomeOriginal": "FC Internazionale Milano",
+      "nomeCurtoPersistido": "Inter"
+    },
+    {
+      "externalId": 109,
+      "nomeOriginal": "Juventus FC",
+      "nomeCurtoPersistido": "Juventus"
+    },
+    {
+      "externalId": 110,
+      "nomeOriginal": "SS Lazio",
+      "nomeCurtoPersistido": "Lazio"
+    },
+    {
+      "externalId": 112,
+      "nomeOriginal": "Parma Calcio 1913",
+      "nomeCurtoPersistido": "Parma"
+    },
+    {
+      "externalId": 113,
+      "nomeOriginal": "SSC Napoli",
+      "nomeCurtoPersistido": "Napoli"
+    },
+    {
+      "externalId": 115,
+      "nomeOriginal": "Udinese Calcio",
+      "nomeCurtoPersistido": "Udinese"
+    },
+    {
+      "externalId": 263,
+      "nomeOriginal": "Deportivo Alavés",
+      "nomeCurtoPersistido": "Alavés"
+    },
+    {
+      "externalId": 285,
+      "nomeOriginal": "Elche CF",
+      "nomeCurtoPersistido": "Elche"
+    },
+    {
+      "externalId": 322,
+      "nomeOriginal": "Hull City AFC",
+      "nomeCurtoPersistido": "Hull City"
+    },
+    {
+      "externalId": 325,
+      "nomeOriginal": "Portsmouth FC",
+      "nomeCurtoPersistido": "Portsmouth"
+    },
+    {
+      "externalId": 328,
+      "nomeOriginal": "Burnley FC",
+      "nomeCurtoPersistido": "Burnley"
+    },
+    {
+      "externalId": 332,
+      "nomeOriginal": "Birmingham City FC",
+      "nomeCurtoPersistido": "Birmingham"
+    },
+    {
+      "externalId": 340,
+      "nomeOriginal": "Southampton FC",
+      "nomeCurtoPersistido": "Southampton"
+    },
+    {
+      "externalId": 341,
+      "nomeOriginal": "Leeds United FC",
+      "nomeCurtoPersistido": "Leeds United"
+    },
+    {
+      "externalId": 342,
+      "nomeOriginal": "Derby County FC",
+      "nomeCurtoPersistido": "Derby County"
+    },
+    {
+      "externalId": 343,
+      "nomeOriginal": "Middlesbrough FC",
+      "nomeCurtoPersistido": "Middlesbrough"
+    },
+    {
+      "externalId": 346,
+      "nomeOriginal": "Watford FC",
+      "nomeCurtoPersistido": "Watford"
+    },
+    {
+      "externalId": 348,
+      "nomeOriginal": "Charlton Athletic FC",
+      "nomeCurtoPersistido": "Charlton"
+    },
+    {
+      "externalId": 349,
+      "nomeOriginal": "Ipswich Town FC",
+      "nomeCurtoPersistido": "Ipswich Town"
+    },
+    {
+      "externalId": 351,
+      "nomeOriginal": "Nottingham Forest FC",
+      "nomeCurtoPersistido": "Nottingham"
+    },
+    {
+      "externalId": 354,
+      "nomeOriginal": "Crystal Palace FC",
+      "nomeCurtoPersistido": "Crystal Palace"
+    },
+    {
+      "externalId": 356,
+      "nomeOriginal": "Sheffield United FC",
+      "nomeCurtoPersistido": "Sheffield Utd"
+    },
+    {
+      "externalId": 384,
+      "nomeOriginal": "Millwall FC",
+      "nomeCurtoPersistido": "Millwall"
+    },
+    {
+      "externalId": 387,
+      "nomeOriginal": "Bristol City FC",
+      "nomeCurtoPersistido": "Bristol City"
+    },
+    {
+      "externalId": 397,
+      "nomeOriginal": "Brighton & Hove Albion FC",
+      "nomeCurtoPersistido": "Brighton Hove"
+    },
+    {
+      "externalId": 402,
+      "nomeOriginal": "Brentford FC",
+      "nomeCurtoPersistido": "Brentford"
+    },
+    {
+      "externalId": 404,
+      "nomeOriginal": "Wrexham AFC",
+      "nomeCurtoPersistido": "Wrexham"
+    },
+    {
+      "externalId": 454,
+      "nomeOriginal": "Venezia FC",
+      "nomeCurtoPersistido": "Venezia FC"
+    },
+    {
+      "externalId": 470,
+      "nomeOriginal": "Frosinone Calcio",
+      "nomeCurtoPersistido": "Frosinone"
+    },
+    {
+      "externalId": 471,
+      "nomeOriginal": "US Sassuolo Calcio",
+      "nomeCurtoPersistido": "Sassuolo"
+    },
+    {
+      "externalId": 496,
+      "nomeOriginal": "Rio Ave FC",
+      "nomeCurtoPersistido": "Rio Ave"
+    },
+    {
+      "externalId": 498,
+      "nomeOriginal": "Sporting Clube de Portugal",
+      "nomeCurtoPersistido": "Sporting CP"
+    },
+    {
+      "externalId": 503,
+      "nomeOriginal": "FC Porto",
+      "nomeCurtoPersistido": "Porto"
+    },
+    {
+      "externalId": 511,
+      "nomeOriginal": "Toulouse FC",
+      "nomeCurtoPersistido": "Toulouse"
+    },
+    {
+      "externalId": 512,
+      "nomeOriginal": "Stade Brestois 29",
+      "nomeCurtoPersistido": "Brest"
+    },
+    {
+      "externalId": 516,
+      "nomeOriginal": "Olympique de Marseille",
+      "nomeCurtoPersistido": "Marseille"
+    },
+    {
+      "externalId": 519,
+      "nomeOriginal": "AJ Auxerre",
+      "nomeCurtoPersistido": "Auxerre"
+    },
+    {
+      "externalId": 521,
+      "nomeOriginal": "Lille OSC",
+      "nomeCurtoPersistido": "Lille"
+    },
+    {
+      "externalId": 522,
+      "nomeOriginal": "OGC Nice",
+      "nomeCurtoPersistido": "Nice"
+    },
+    {
+      "externalId": 523,
+      "nomeOriginal": "Olympique Lyonnais",
+      "nomeCurtoPersistido": "Olympique Lyon"
+    },
+    {
+      "externalId": 524,
+      "nomeOriginal": "Paris Saint-Germain FC",
+      "nomeCurtoPersistido": "PSG"
+    },
+    {
+      "externalId": 525,
+      "nomeOriginal": "FC Lorient",
+      "nomeCurtoPersistido": "Lorient"
+    },
+    {
+      "externalId": 529,
+      "nomeOriginal": "Stade Rennais FC 1901",
+      "nomeCurtoPersistido": "Stade Rennais"
+    },
+    {
+      "externalId": 531,
+      "nomeOriginal": "ES Troyes AC",
+      "nomeCurtoPersistido": "Troyes"
+    },
+    {
+      "externalId": 532,
+      "nomeOriginal": "Angers SCO",
+      "nomeCurtoPersistido": "Angers SCO"
+    },
+    {
+      "externalId": 533,
+      "nomeOriginal": "Le Havre AC",
+      "nomeCurtoPersistido": "Le Havre"
+    },
+    {
+      "externalId": 535,
+      "nomeOriginal": "Le Mans FC",
+      "nomeCurtoPersistido": "Le Mans"
+    },
+    {
+      "externalId": 546,
+      "nomeOriginal": "Racing Club de Lens",
+      "nomeCurtoPersistido": "RC Lens"
+    },
+    {
+      "externalId": 548,
+      "nomeOriginal": "AS Monaco FC",
+      "nomeCurtoPersistido": "Monaco"
+    },
+    {
+      "externalId": 558,
+      "nomeOriginal": "RC Celta de Vigo",
+      "nomeCurtoPersistido": "Celta"
+    },
+    {
+      "externalId": 559,
+      "nomeOriginal": "Sevilla FC",
+      "nomeCurtoPersistido": "Sevilla FC"
+    },
+    {
+      "externalId": 560,
+      "nomeOriginal": "RC Deportivo La Coruña",
+      "nomeCurtoPersistido": "Deportivo"
+    },
+    {
+      "externalId": 563,
+      "nomeOriginal": "West Ham United FC",
+      "nomeCurtoPersistido": "West Ham"
+    },
+    {
+      "externalId": 576,
+      "nomeOriginal": "RC Strasbourg Alsace",
+      "nomeCurtoPersistido": "Strasbourg"
+    },
+    {
+      "externalId": 582,
+      "nomeOriginal": "GD Estoril Praia",
+      "nomeCurtoPersistido": "Estoril Praia"
+    },
+    {
+      "externalId": 583,
+      "nomeOriginal": "Moreirense FC",
+      "nomeCurtoPersistido": "Moreirense"
+    },
+    {
+      "externalId": 586,
+      "nomeOriginal": "Torino FC",
+      "nomeCurtoPersistido": "Torino"
+    },
+    {
+      "externalId": 610,
+      "nomeOriginal": "Galatasaray SK",
+      "nomeCurtoPersistido": "Galatasaray"
+    },
+    {
+      "externalId": 613,
+      "nomeOriginal": "Fenerbahçe SK",
+      "nomeCurtoPersistido": "Fenerbahçe"
+    },
+    {
+      "externalId": 666,
+      "nomeOriginal": "FC Twente '65",
+      "nomeCurtoPersistido": "Twente"
+    },
+    {
+      "externalId": 670,
+      "nomeOriginal": "SBV Excelsior",
+      "nomeCurtoPersistido": "Excelsior"
+    },
+    {
+      "externalId": 672,
+      "nomeOriginal": "Willem II Tilburg",
+      "nomeCurtoPersistido": "Willem II"
+    },
+    {
+      "externalId": 673,
+      "nomeOriginal": "SC Heerenveen",
+      "nomeCurtoPersistido": "Heerenveen"
+    },
+    {
+      "externalId": 674,
+      "nomeOriginal": "PSV",
+      "nomeCurtoPersistido": "PSV"
+    },
+    {
+      "externalId": 675,
+      "nomeOriginal": "Feyenoord Rotterdam",
+      "nomeCurtoPersistido": "Feyenoord"
+    },
+    {
+      "externalId": 676,
+      "nomeOriginal": "FC Utrecht",
+      "nomeCurtoPersistido": "Utrecht"
+    },
+    {
+      "externalId": 677,
+      "nomeOriginal": "FC Groningen",
+      "nomeCurtoPersistido": "Groningen"
+    },
+    {
+      "externalId": 678,
+      "nomeOriginal": "AFC Ajax",
+      "nomeCurtoPersistido": "Ajax"
+    },
+    {
+      "externalId": 680,
+      "nomeOriginal": "ADO Den Haag",
+      "nomeCurtoPersistido": "Den Haag"
+    },
+    {
+      "externalId": 682,
+      "nomeOriginal": "AZ",
+      "nomeCurtoPersistido": "AZ"
+    },
+    {
+      "externalId": 684,
+      "nomeOriginal": "PEC Zwolle",
+      "nomeCurtoPersistido": "Zwolle"
+    },
+    {
+      "externalId": 712,
+      "nomeOriginal": "FC Arouca",
+      "nomeCurtoPersistido": "Arouca"
+    },
+    {
+      "externalId": 715,
+      "nomeOriginal": "Cardiff City FC",
+      "nomeCurtoPersistido": "Cardiff"
+    },
+    {
+      "externalId": 718,
+      "nomeOriginal": "Go Ahead Eagles",
+      "nomeCurtoPersistido": "Go Ahead"
+    },
+    {
+      "externalId": 719,
+      "nomeOriginal": "SV 07 Elversberg",
+      "nomeCurtoPersistido": "Elversberg"
+    },
+    {
+      "externalId": 721,
+      "nomeOriginal": "RB Leipzig",
+      "nomeCurtoPersistido": "RB Leipzig"
+    },
+    {
+      "externalId": 851,
+      "nomeOriginal": "Club Brugge KV",
+      "nomeCurtoPersistido": "Club Brugge"
+    },
+    {
+      "externalId": 930,
+      "nomeOriginal": "SK Slavia Praha",
+      "nomeCurtoPersistido": "Slavia Praha"
+    },
+    {
+      "externalId": 1044,
+      "nomeOriginal": "AFC Bournemouth",
+      "nomeCurtoPersistido": "Bournemouth"
+    },
+    {
+      "externalId": 1045,
+      "nomeOriginal": "Paris FC",
+      "nomeCurtoPersistido": "Paris FC"
+    },
+    {
+      "externalId": 1076,
+      "nomeOriginal": "Coventry City FC",
+      "nomeCurtoPersistido": "Coventry City"
+    },
+    {
+      "externalId": 1081,
+      "nomeOriginal": "Preston North End FC",
+      "nomeCurtoPersistido": "Preston NE"
+    },
+    {
+      "externalId": 1126,
+      "nomeOriginal": "Lincoln City FC",
+      "nomeCurtoPersistido": "Lincoln City"
+    },
+    {
+      "externalId": 1765,
+      "nomeOriginal": "Fluminense FC",
+      "nomeCurtoPersistido": "Fluminense"
+    },
+    {
+      "externalId": 1766,
+      "nomeOriginal": "CA Mineiro",
+      "nomeCurtoPersistido": "Atlético-MG"
+    },
+    {
+      "externalId": 1767,
+      "nomeOriginal": "Grêmio FBPA",
+      "nomeCurtoPersistido": "Grêmio"
+    },
+    {
+      "externalId": 1768,
+      "nomeOriginal": "CA Paranaense",
+      "nomeCurtoPersistido": "Athletico-PR"
+    },
+    {
+      "externalId": 1769,
+      "nomeOriginal": "SE Palmeiras",
+      "nomeCurtoPersistido": "Palmeiras"
+    },
+    {
+      "externalId": 1770,
+      "nomeOriginal": "Botafogo FR",
+      "nomeCurtoPersistido": "Botafogo"
+    },
+    {
+      "externalId": 1771,
+      "nomeOriginal": "Cruzeiro EC",
+      "nomeCurtoPersistido": "Cruzeiro"
+    },
+    {
+      "externalId": 1772,
+      "nomeOriginal": "Chapecoense AF",
+      "nomeCurtoPersistido": "Chapecoense"
+    },
+    {
+      "externalId": 1776,
+      "nomeOriginal": "São Paulo FC",
+      "nomeCurtoPersistido": "São Paulo"
+    },
+    {
+      "externalId": 1777,
+      "nomeOriginal": "EC Bahia",
+      "nomeCurtoPersistido": "Bahia"
+    },
+    {
+      "externalId": 1779,
+      "nomeOriginal": "SC Corinthians Paulista",
+      "nomeCurtoPersistido": "Corinthians"
+    },
+    {
+      "externalId": 1780,
+      "nomeOriginal": "CR Vasco da Gama",
+      "nomeCurtoPersistido": "Vasco"
+    },
+    {
+      "externalId": 1782,
+      "nomeOriginal": "EC Vitória",
+      "nomeCurtoPersistido": "Vitória"
+    },
+    {
+      "externalId": 1783,
+      "nomeOriginal": "CR Flamengo",
+      "nomeCurtoPersistido": "Flamengo"
+    },
+    {
+      "externalId": 1887,
+      "nomeOriginal": "FK Shakhtar Donetsk",
+      "nomeCurtoPersistido": "Shaktar"
+    },
+    {
+      "externalId": 1899,
+      "nomeOriginal": "PAE AEK",
+      "nomeCurtoPersistido": "PAE AEK"
+    },
+    {
+      "externalId": 1903,
+      "nomeOriginal": "Sport Lisboa e Benfica",
+      "nomeCurtoPersistido": "SL Benfica"
+    },
+    {
+      "externalId": 1909,
+      "nomeOriginal": "SC Cambuur-Leeuwarden",
+      "nomeCurtoPersistido": "Cambuur"
+    },
+    {
+      "externalId": 1912,
+      "nomeOriginal": "Telstar 1963",
+      "nomeCurtoPersistido": "Telstar"
+    },
+    {
+      "externalId": 1915,
+      "nomeOriginal": "NEC",
+      "nomeCurtoPersistido": "NEC"
+    },
+    {
+      "externalId": 1920,
+      "nomeOriginal": "Fortuna Sittard",
+      "nomeCurtoPersistido": "Sittard"
+    },
+    {
+      "externalId": 2016,
+      "nomeOriginal": "LASK Linz",
+      "nomeCurtoPersistido": "LASK"
+    },
+    {
+      "externalId": 4241,
+      "nomeOriginal": "Coritiba FBC",
+      "nomeCurtoPersistido": "Coritiba"
+    },
+    {
+      "externalId": 4286,
+      "nomeOriginal": "RB Bragantino",
+      "nomeCurtoPersistido": "Bragantino"
+    },
+    {
+      "externalId": 4287,
+      "nomeOriginal": "Clube do Remo",
+      "nomeCurtoPersistido": "Remo"
+    },
+    {
+      "externalId": 4364,
+      "nomeOriginal": "Mirassol FC",
+      "nomeCurtoPersistido": "Mirassol"
+    },
+    {
+      "externalId": 5335,
+      "nomeOriginal": "Real Racing Club de Santander",
+      "nomeCurtoPersistido": "Santander"
+    },
+    {
+      "externalId": 5527,
+      "nomeOriginal": "Académico de Viseu FC",
+      "nomeCurtoPersistido": "Acad. Viseu"
+    },
+    {
+      "externalId": 5529,
+      "nomeOriginal": "CD Nacional",
+      "nomeCurtoPersistido": "CD Nacional"
+    },
+    {
+      "externalId": 5530,
+      "nomeOriginal": "CD Santa Clara",
+      "nomeCurtoPersistido": "Santa Clara"
+    },
+    {
+      "externalId": 5531,
+      "nomeOriginal": "FC Famalicão",
+      "nomeCurtoPersistido": "Famalicão"
+    },
+    {
+      "externalId": 5533,
+      "nomeOriginal": "Gil Vicente FC",
+      "nomeCurtoPersistido": "Gil Vicente"
+    },
+    {
+      "externalId": 5543,
+      "nomeOriginal": "Vitória SC",
+      "nomeCurtoPersistido": "Vitória SC"
+    },
+    {
+      "externalId": 5575,
+      "nomeOriginal": "CS Marítimo",
+      "nomeCurtoPersistido": "Marítimo"
+    },
+    {
+      "externalId": 5613,
+      "nomeOriginal": "Sporting Clube de Braga",
+      "nomeCurtoPersistido": "Braga"
+    },
+    {
+      "externalId": 5720,
+      "nomeOriginal": "Viking FK",
+      "nomeCurtoPersistido": "Viking"
+    },
+    {
+      "externalId": 5721,
+      "nomeOriginal": "FK Bodø/Glimt",
+      "nomeCurtoPersistido": "Bodø/Glimt"
+    },
+    {
+      "externalId": 5890,
+      "nomeOriginal": "US Lecce",
+      "nomeCurtoPersistido": "Lecce"
+    },
+    {
+      "externalId": 5911,
+      "nomeOriginal": "AC Monza",
+      "nomeCurtoPersistido": "Monza"
+    },
+    {
+      "externalId": 6618,
+      "nomeOriginal": "Casa Pia AC",
+      "nomeCurtoPersistido": "Casa Pia"
+    },
+    {
+      "externalId": 6684,
+      "nomeOriginal": "SC Internacional",
+      "nomeCurtoPersistido": "Internacional"
+    },
+    {
+      "externalId": 6685,
+      "nomeOriginal": "Santos FC",
+      "nomeCurtoPersistido": "Santos"
+    },
+    {
+      "externalId": 6806,
+      "nomeOriginal": "Sparta Rotterdam",
+      "nomeCurtoPersistido": "Sparta"
+    },
+    {
+      "externalId": 7397,
+      "nomeOriginal": "Como 1907",
+      "nomeCurtoPersistido": "Como 1907"
+    },
+    {
+      "externalId": 7509,
+      "nomeOriginal": "ŠK Slovan Bratislava",
+      "nomeCurtoPersistido": "Sl. Bratislava"
+    },
+    {
+      "externalId": 7822,
+      "nomeOriginal": "FC Alverca",
+      "nomeCurtoPersistido": "Alverca"
+    },
+    {
+      "externalId": 9136,
+      "nomeOriginal": "CF Estrela da Amadora",
+      "nomeCurtoPersistido": "Amadora"
+    },
+    {
+      "externalId": 10233,
+      "nomeOriginal": "Sabah FK",
+      "nomeCurtoPersistido": "Sabah FK"
+    }
+  ]
+}

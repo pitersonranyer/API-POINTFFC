@@ -5,8 +5,8 @@ import { FutebolSyncService } from '../src/futebol/futebol-sync.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const competition = { id: 2013, code: 'BSA', name: 'Brasileirão', type: 'LEAGUE', emblem: null, area: { name: 'Brazil' }, currentSeason: { startDate: '2026-01-28' } };
-const team = { id: 10, name: 'Clube A', shortName: 'A', tla: 'AAA', crest: 'https://crests.football-data.org/original.svg', area: { name: 'Brazil' } };
-const fixture = () => ({ id: 100, competition: { id: 2013, code: 'BSA' }, season: { startDate: '2026-01-28' }, matchday: 1, stage: 'REGULAR_SEASON', group: null, homeTeam: { id: 10 }, awayTeam: { id: 20 }, utcDate: '2026-09-12T00:30:00Z', status: 'TIMED', lastUpdated: '2026-09-11T10:00:00Z', score: { winner: null as string | null, fullTime: { home: null as number | null, away: null as number | null }, halfTime: { home: null, away: null } } });
+const team = { id: 900010, name: 'Clube A', shortName: 'A', tla: 'AAA', crest: 'https://crests.football-data.org/original.svg', area: { name: 'Brazil' } };
+const fixture = () => ({ id: 100, competition: { id: 2013, code: 'BSA' }, season: { startDate: '2026-01-28' }, matchday: 1, stage: 'REGULAR_SEASON', group: null, homeTeam: { id: 900010 }, awayTeam: { id: 900020 }, utcDate: '2026-09-12T00:30:00Z', status: 'TIMED', lastUpdated: '2026-09-11T10:00:00Z', score: { winner: null as string | null, fullTime: { home: null as number | null, away: null as number | null }, halfTime: { home: null, away: null } } });
 
 describe('football-data normalização', () => {
   it.each([
@@ -24,9 +24,9 @@ describe('football-data normalização', () => {
     expect(mapTeam({ ...team, shortName })).toMatchObject({ nomeOriginal: 'Clube A', nome: 'Clube A', nomeCurto: shortName ?? 'Clube A' });
   });
   it('mapeia competição e temporada corrente', () => expect(mapCompetition(competition)).toMatchObject({ externalId: 2013, codigo: 'BSA', temporadaAtual: 2026 }));
-  it('aceita ligas internacionais sem aplicar nomes da BSA', () => {
+  it('aceita ligas internacionais e resolve nomes exclusivamente pelo ID global', () => {
     expect(mapCompetition({ ...competition, code: 'PL' }).codigo).toBe('PL');
-    expect(mapTeam({ ...team, id: 1766, name: 'International Club' }, 'PL')).toMatchObject({ nome: 'International Club', nomeOriginal: 'International Club' });
+    expect(mapTeam({ ...team, id: 66, name: 'Manchester United FC' }, 'PL')).toMatchObject({ nome: 'Manchester United', nomeOriginal: 'Manchester United FC' });
   });
   it('preserva URL original do escudo', () => expect(mapTeam(team).escudoUrl).toBe(team.crest));
   it('mapeia partida com UTC e placares nulos', () => {
@@ -102,7 +102,7 @@ describe('FutebolSyncService com persistência em memória', () => {
     const prisma = { $transaction: jest.fn(async fn => fn(tx)) };
     const match = fixture();
     const client = { getCompetition: jest.fn(async () => competition),
-      getTeams: jest.fn(async () => ({ competition, season: { startDate: '2026-01-28' }, teams: [team, { ...team, id: 20, name: 'Clube B' }] })),
+      getTeams: jest.fn(async () => ({ competition, season: { startDate: '2026-01-28' }, teams: [team, { ...team, id: 900020, name: 'Clube B' }] })),
       getMatches: jest.fn(async () => ({ competition, matches: [match] })) };
     return { tx, prisma, client, match, service: new FutebolSyncService(prisma as unknown as PrismaService, client as unknown as FootballDataClient) };
   }
@@ -110,18 +110,18 @@ describe('FutebolSyncService com persistência em memória', () => {
     const { service, tx } = setup(); await service.syncBrasileirao();
     expect(tx.futebolCompeticao.data.size).toBe(1); expect(tx.futebolTime.data.size).toBe(2); expect(tx.futebolPartida.data.size).toBe(1);
     expect(tx.futebolPartida.data.get(100)).toMatchObject({ competicaoId: 1, timeMandanteId: 1, timeVisitanteId: 2, placarMandante: null });
-    expect(tx.futebolTime.data.get(10).cartolaClubeId).toBeNull();
+    expect(tx.futebolTime.data.get(900010).cartolaClubeId).toBeNull();
     expect(tx.futebolCompeticao.data.get(2013).ultimoSyncEm).toBeInstanceOf(Date);
   });
   it('persiste PL sem vínculo Cartola e mantém idempotência', async () => {
     const { service, tx, client } = setup();
     client.getCompetition.mockResolvedValue({ ...competition, code: 'PL' });
     const response = await client.getTeams();
-    response.teams.push({ ...team, id: 1766, name: 'International Club' });
+    response.teams.push({ ...team, id: 66, name: 'Manchester United FC' });
     client.getTeams.mockResolvedValue(response);
     await service.syncCompeticao('PL');
     await service.syncCompeticao('PL');
-    expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'International Club', cartolaClubeId: null });
+    expect(tx.futebolTime.data.get(66)).toMatchObject({ nome: 'Manchester United', nomeCurto: 'Manchester United', nomeOriginal: 'Manchester United FC', cartolaClubeId: null });
     expect(tx.futebolCompeticao.data.size).toBe(1);
     expect(tx.futebolPartida.data.size).toBe(1);
   });
@@ -136,6 +136,33 @@ describe('FutebolSyncService com persistência em memória', () => {
     await service.syncBrasileirao();
     expect(tx.futebolTime.data.get(1766)).toMatchObject({ nome: 'Atlético-MG', nomeCurto: 'Atlético-MG', nomeOriginal: 'CA Mineiro atualizado', cartolaClubeId: 282 });
     expect(tx.futebolTime.data.size).toBe(3);
+  });
+  it('sync PL/CL reaplica alias, preserva original e reutiliza o mesmo clube sem vínculo Cartola', async () => {
+    const { service, tx, client } = setup();
+    const pl = { ...competition, id: 2021, code: 'PL' };
+    const cl = { ...competition, id: 2001, code: 'CL' };
+    const united = { ...team, id: 66, name: 'Manchester United FC', shortName: 'Man Utd' };
+    const unknown = { ...team, id: 999999, name: 'Clube novo', shortName: 'Novo' };
+    client.getCompetition.mockResolvedValue(pl);
+    client.getTeams.mockResolvedValue({ competition: pl, season: { startDate: '2026-01-28' }, teams: [united, unknown] });
+    client.getMatches.mockResolvedValue({ competition: pl, matches: [] });
+    await service.syncCompeticao('PL');
+    const savedId = tx.futebolTime.data.get(66).id;
+    expect(tx.futebolTime.data.get(66)).toMatchObject({ nomeOriginal: 'Manchester United FC', nome: 'Manchester United', nomeCurto: 'Manchester United', cartolaClubeId: null });
+    expect(tx.futebolTime.data.get(999999)).toMatchObject({ nomeOriginal: 'Clube novo', nome: 'Clube novo', nomeCurto: 'Novo', cartolaClubeId: null });
+    // A later sync must repair stale display names even when there are no matches.
+    tx.futebolTime.data.get(66).nome = 'Nome antigo persistido';
+    tx.futebolTime.data.get(66).nomeCurto = 'Antigo';
+    client.getCompetition.mockResolvedValue(cl);
+    client.getTeams.mockResolvedValue({ competition: cl, season: { startDate: '2026-01-28' }, teams: [{ ...united, name: 'Manchester United FC atualizado' }] });
+    client.getMatches.mockResolvedValue({ competition: cl, matches: [] });
+    await service.syncCompeticao('CL');
+    await service.syncCompeticao('CL');
+    expect(tx.futebolTime.data.size).toBe(2);
+    expect(tx.futebolCompeticao.data.size).toBe(2);
+    expect(tx.futebolTime.data.get(66)).toMatchObject({ id: savedId, externalId: 66, nomeOriginal: 'Manchester United FC atualizado',
+      nome: 'Manchester United', nomeCurto: 'Manchester United', cartolaClubeId: null });
+    expect(tx.futebolTime.upsert).toHaveBeenLastCalledWith(expect.objectContaining({ where: { externalId: 66 } }));
   });
   it('atualiza placar/status e não duplica na segunda execução', async () => {
     const { service, tx, match, client } = setup(); await service.syncBrasileirao();
@@ -192,10 +219,10 @@ describe('FutebolSyncService com persistência em memória', () => {
     response.teams[0] = { ...response.teams[0], name: 'CR Flamengo', shortName: 'Flamengo', tla: 'FLA' };
     client.getTeams.mockResolvedValue(response);
     await service.syncBrasileirao();
-    expect(tx.futebolTime.data.get(10).cartolaClubeId).toBeNull();
-    tx.futebolTime.data.get(10).cartolaClubeId = 999;
+    expect(tx.futebolTime.data.get(900010).cartolaClubeId).toBeNull();
+    tx.futebolTime.data.get(900010).cartolaClubeId = 999;
     await service.syncBrasileirao();
-    expect(tx.futebolTime.data.get(10).cartolaClubeId).toBe(999);
+    expect(tx.futebolTime.data.get(900010).cartolaClubeId).toBe(999);
     expect(tx.futebolTime.data.size).toBe(2);
     expect(tx.futebolPartida.data.size).toBe(1);
   });

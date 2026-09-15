@@ -21,10 +21,11 @@ export function mapCompetition(input: unknown) {
     competition.keys({ name: str(), area: Joi.object({ name: str(100) }).unknown(true).required(), type: str(50), emblem: optional(65535), currentSeason: season }), input);
   return { externalId: value.id, codigo: value.code, nome: value.name, pais: value.area.name, tipo: value.type, emblemaUrl: value.emblem, temporadaAtual: Number(value.currentSeason.startDate.slice(0, 4)), ativa: true };
 }
-export function mapTeam(input: unknown, code: FutebolCodigo = 'BSA') {
+// The competition argument is retained for callers; aliases belong only to team IDs.
+export function mapTeam(input: unknown, _code: FutebolCodigo = 'BSA') {
   const value = parse<{ id: number; name: string; shortName: string | null; tla: string | null; crest: string | null; area: { name: string } }>(
     Joi.object({ id, name: str(), shortName: optional(), tla: optional(10), crest: optional(65535), area: Joi.object({ name: str(100) }).unknown(true).required() }).unknown(true), input);
-  return { externalId: value.id, ...(code === 'BSA' ? nomesClube(value.id, value.name, value.shortName) : { nomeOriginal: value.name, nome: value.name, nomeCurto: value.shortName ?? value.name }), sigla: value.tla, escudoUrl: value.crest, pais: value.area.name };
+  return { externalId: value.id, ...nomesClube(value.id, value.name, value.shortName), sigla: value.tla, escudoUrl: value.crest, pais: value.area.name };
 }
 export function mapMatch(input: unknown, competitionId: number, year: number) {
   const value = parse<{ id: number; competition: { id: number }; season: { startDate: string }; matchday: number | null; stage: string | null; group: string | null; homeTeam: { id: number }; awayTeam: { id: number }; utcDate: string; status: string; lastUpdated: string; score: { winner: string | null; fullTime: { home: number | null; away: number | null }; halfTime: { home: number | null; away: number | null } } }>(
