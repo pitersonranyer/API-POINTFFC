@@ -19,14 +19,14 @@ describe('RankingGeralController', () => {
   });
 
   it('encaminha a consulta ao serviço', async () => {
-    const query = { temporada: 2026, rodada: 25, limit: 15 };
+    const query = { temporada: 2026, rodada: 25, limit: 15, page: 1 };
     await expect(controller.consultar(query)).resolves.toBe(response);
     expect(service.consultar).toHaveBeenCalledWith(query);
   });
 
   it('aplica limit 15 quando o parâmetro é omitido', async () => {
     const dto = plainToInstance(RankingGeralQueryDto, { temporada: '2026', rodada: '25' });
-    expect(dto).toMatchObject({ temporada: 2026, rodada: 25, limit: 15 });
+    expect(dto).toMatchObject({ temporada: 2026, rodada: 25, limit: 15, page: 1 });
     expect(await validate(dto)).toHaveLength(0);
   });
 
@@ -43,6 +43,10 @@ describe('RankingGeralController', () => {
     { temporada: '2026', rodada: '25', limit: '0' },
     { temporada: '2026', rodada: '25', limit: '101' },
     { temporada: '2026', rodada: '25', limit: '1.5' },
+    { temporada: '2026', rodada: '25', page: '0' },
+    { temporada: '2026', rodada: '25', page: '1.5' },
+    { temporada: '2026', rodada: '25', page: '1000001' },
+    { temporada: '2026', rodada: '25', nomeTime: 'x'.repeat(101) },
   ])('rejeita parâmetros inválidos: %o', async (query) => {
     expect(await validate(plainToInstance(RankingGeralQueryDto, query))).not.toHaveLength(0);
   });

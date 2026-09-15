@@ -7,6 +7,9 @@ export interface ConsultarRankingGeralInput {
   temporada: number;
   rodada: number;
   limit: number;
+  page?: number;
+  nomeTime?: string;
+  nomeCartoleiro?: string;
 }
 
 interface CountRow {
@@ -27,12 +30,19 @@ export class RankingGeralService {
   constructor(private readonly prisma: PrismaService) {}
 
   async consultar(input: ConsultarRankingGeralInput): Promise<RankingGeralResponseDto> {
+    const page = input.page ?? 1;
+    const offset = (page - 1) * input.limit;
+    const teamPattern = input.nomeTime?.trim() ? `%${input.nomeTime.trim().replace(/[\\%_]/g, '\\$&')}%` : null;
+    const managerPattern = input.nomeCartoleiro?.trim() ? `%${input.nomeCartoleiro.trim().replace(/[\\%_]/g, '\\$&')}%` : null;
     const countQuery = this.prisma.$queryRaw<CountRow[]>`
       SELECT COUNT(*) AS total
       FROM TIME_RODADA tr
       INNER JOIN PONTUACAO_TIME_RODADA p ON p.TIME_RODADA_ID = tr.ID
+      INNER JOIN TIME_CARTOLA tc ON tc.TIME_ID = tr.TIME_ID
       WHERE tr.TEMPORADA = ${input.temporada}
         AND tr.RODADA = ${input.rodada}
+        AND (${teamPattern} IS NULL OR tc.NOME_TIME LIKE ${teamPattern})
+        AND (${managerPattern} IS NULL OR tc.NOME_CARTOLEIRO LIKE ${managerPattern})
     `;
     const rankingQuery = this.prisma.$queryRaw<RankingRow[]>`
       SELECT
@@ -47,17 +57,22 @@ export class RankingGeralService {
       INNER JOIN TIME_CARTOLA tc ON tc.TIME_ID = tr.TIME_ID
       WHERE tr.TEMPORADA = ${input.temporada}
         AND tr.RODADA = ${input.rodada}
+        AND (${teamPattern} IS NULL OR tc.NOME_TIME LIKE ${teamPattern})
+        AND (${managerPattern} IS NULL OR tc.NOME_CARTOLEIRO LIKE ${managerPattern})
       ORDER BY p.PONTUACAO DESC, tr.TIME_ID ASC
       LIMIT ${input.limit}
+      OFFSET ${offset}
     `;
     const [countRows, rows] = await this.prisma.$transaction([countQuery, rankingQuery]);
 
+    const total = Number(countRows[0]?.total ?? 0);
     return {
       temporada: input.temporada,
       rodada: input.rodada,
-      total: Number(countRows[0]?.total ?? 0),
+      total,
+      paginacao: { pagina: page, limite: input.limit, total, totalPaginas: Math.ceil(total / input.limit) },
       ranking: rows.map((row, index) => ({
-        posicao: index + 1,
+        posicao: offset + index + 1,
         timeId: Number(row.timeId),
         nomeTime: row.nomeTime,
         nomeCartoleiro: row.nomeCartoleiro,

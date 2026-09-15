@@ -35,4 +35,7 @@ export class RankingGeralResponseDto {
 
   @ApiProperty({ type: [RankingGeralItemDto] })
   ranking: RankingGeralItemDto[];
+
+  @ApiProperty({ example: { pagina: 1, limite: 20, total: 523, totalPaginas: 27 } })
+  paginacao: { pagina: number; limite: number; total: number; totalPaginas: number };
 }

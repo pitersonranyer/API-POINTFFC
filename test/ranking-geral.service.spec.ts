@@ -32,6 +32,7 @@ describe('RankingGeralService', () => {
       temporada: 2026,
       rodada: 25,
       total: 3,
+      paginacao: { pagina: 1, limite: 15, total: 3, totalPaginas: 1 },
       ranking: [
         { posicao: 1, timeId: 3, nomeTime: 'Time 3', nomeCartoleiro: 'Cartoleiro 3', escudoUrl: 'https://example.com/3.png', pontuacao: 90, status: 'PARCIAL' },
         { posicao: 2, timeId: 1, nomeTime: 'Time 1', nomeCartoleiro: 'Cartoleiro 1', escudoUrl: 'https://example.com/1.png', pontuacao: 80, status: 'PARCIAL' },
@@ -55,8 +56,8 @@ describe('RankingGeralService', () => {
 
     await service.consultar({ temporada: 2025, rodada: 24, limit: 100 });
 
-    expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual([2025, 24]);
-    expect(prisma.$queryRaw.mock.calls[1].slice(1)).toEqual([2025, 24, 100]);
+    expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual([2025, 24, null, null, null, null]);
+    expect(prisma.$queryRaw.mock.calls[1].slice(1)).toEqual([2025, 24, null, null, null, null, 100, 0]);
   });
 
   it('retorna lista vazia e total zero', async () => {
@@ -65,7 +66,7 @@ describe('RankingGeralService', () => {
       .mockResolvedValueOnce([]);
 
     await expect(service.consultar({ temporada: 2026, rodada: 1, limit: 15 })).resolves.toEqual({
-      temporada: 2026, rodada: 1, total: 0, ranking: [],
+      temporada: 2026, rodada: 1, total: 0, paginacao: { pagina: 1, limite: 15, total: 0, totalPaginas: 0 }, ranking: [],
     });
   });
 
@@ -89,5 +90,16 @@ describe('RankingGeralService', () => {
     expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(2);
+  });
+  it('pagina no banco, numera pela posicao global e filtra time e cartoleiro', async () => {
+    prisma.$queryRaw.mockReset().mockResolvedValueOnce([{ total: BigInt(43) }])
+      .mockResolvedValueOnce([row(41, 80), row(42, 79)]);
+    const result = await service.consultar({ temporada: 2026, rodada: 25, limit: 20, page: 2,
+      nomeTime: 'Real', nomeCartoleiro: 'Ana' });
+    expect(result.ranking.map(item => item.posicao)).toEqual([21, 22]);
+    expect(result.paginacao).toEqual({ pagina: 2, limite: 20, total: 43, totalPaginas: 3 });
+    expect(prisma.$queryRaw.mock.calls[0].slice(1)).toEqual([2026, 25, '%Real%', '%Real%', '%Ana%', '%Ana%']);
+    expect(prisma.$queryRaw.mock.calls[1].slice(1)).toEqual([2026, 25, '%Real%', '%Real%', '%Ana%', '%Ana%', 20, 20]);
+    expect((prisma.$queryRaw.mock.calls[1][0] as TemplateStringsArray).join(' ')).toContain('OFFSET');
   });
 });
