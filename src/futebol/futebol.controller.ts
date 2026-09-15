@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { FutebolCodigoParamsDto, FutebolJogosQueryDto, FutebolRodadaParamsDto } from './dto/futebol-query.dto';
-import { FutebolCompeticaoResponseDto, FutebolJogosResponseDto } from './dto/futebol-response.dto';
+import { FutebolCompeticaoResponseDto, FutebolJogosResponseDto, FutebolRodadaReferenciaResponseDto } from './dto/futebol-response.dto';
 import { FutebolQueryService } from './futebol-query.service';
 
 @ApiTags('futebol')
@@ -29,7 +29,7 @@ export class FutebolController {
   consultarRodada(@Param() params: FutebolRodadaParamsDto) { return this.futebol.consultarRodada(params.codigo, params.rodada); }
 
   @Get(':codigo/rodada-atual')
-  @ApiOperation({ summary: 'Seleciona rodada pelos status persistidos, sem consultar o provedor' })
-  @ApiOkResponse({ type: FutebolJogosResponseDto })
+  @ApiOperation({ summary: 'Consulta referência coletiva por fase/rodada e pendências, sem consultar o provedor' })
+  @ApiOkResponse({ type: FutebolRodadaReferenciaResponseDto })
   consultarRodadaAtual(@Param() params: FutebolCodigoParamsDto) { return this.futebol.consultarRodadaAtual(params.codigo); }
 }

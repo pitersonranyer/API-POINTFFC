@@ -44,3 +44,13 @@ export class FutebolJogosResponseDto {
   @ApiProperty() total!: number;
   @ApiProperty({ type: [FutebolJogoResponseDto] }) jogos!: FutebolJogoResponseDto[];
 }
+
+export class FutebolRodadaReferenciaResponseDto extends FutebolJogosResponseDto {
+  @ApiProperty({ type: Number, nullable: true, description: 'Referência inferida pelo bloco coletivo da fase/rodada. rodada é um alias temporário.' }) rodadaReferencia!: number | null;
+  @ApiProperty({ type: String, nullable: true }) faseReferencia!: string | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'Última rodada integralmente resolvida nos dados disponíveis, até a referência.' }) ultimaRodadaConcluida!: number | null;
+  @ApiProperty({ type: String, nullable: true }) faseUltimaRodadaConcluida!: string | null;
+  @ApiProperty({ type: Number, nullable: true, description: 'Sucessora da referência entre as etapas com quantidade suficiente de partidas.' }) proximaRodada!: number | null;
+  @ApiProperty({ type: String, nullable: true }) faseProximaRodada!: string | null;
+  @ApiProperty({ type: [FutebolJogoResponseDto], description: 'Jogos não resolvidos de etapas anteriores; cancelados não são pendências jogáveis.' }) partidasPendentes!: FutebolJogoResponseDto[];
+}

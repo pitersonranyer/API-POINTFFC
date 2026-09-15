@@ -2,7 +2,8 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FutebolJogosQueryDto } from './dto/futebol-query.dto';
-import { FutebolCompeticaoResponseDto, FutebolJogosResponseDto, FutebolJogoResponseDto } from './dto/futebol-response.dto';
+import { FutebolCompeticaoResponseDto, FutebolJogosResponseDto, FutebolJogoResponseDto, FutebolRodadaReferenciaResponseDto } from './dto/futebol-response.dto';
+import { competitionReference } from './futebol-reference.policy';
 
 const teamSelect = { id: true, externalId: true, cartolaClubeId: true, nome: true, nomeCurto: true, sigla: true, escudoUrl: true } as const;
 const gameSelect = {
@@ -46,28 +47,13 @@ export class FutebolQueryService {
     return { ...await this.listarJogos(codigo, { rodada }), rodada };
   }
 
-  async consultarRodadaAtual(codigo: string): Promise<FutebolJogosResponseDto> {
+  async consultarRodadaAtual(codigo: string): Promise<FutebolRodadaReferenciaResponseDto> {
     const competition = await this.competicao(codigo);
     const temporada = competition.temporadaAtual;
-    const where = { competicaoId: competition.id, temporada, rodada: { not: null } };
-    const now = new Date(Date.now());
-    // Jogos em andamento têm prioridade; empates seguem data, rodada e ID.
-    const live = await this.prisma.futebolPartida.findFirst({
-      where: { ...where, status: { in: ['IN_PLAY', 'PAUSED'] } },
-      orderBy: [{ dataHoraUtc: 'asc' }, { rodada: 'asc' }, { id: 'asc' }], select: { rodada: true },
-    });
-    // Agendamentos passados sem atualização de status não prendem o calendário.
-    const upcoming = live ?? await this.prisma.futebolPartida.findFirst({
-      where: { ...where, status: { in: ['SCHEDULED', 'TIMED'] }, dataHoraUtc: { gte: now } },
-      orderBy: [{ dataHoraUtc: 'asc' }, { rodada: 'asc' }, { id: 'asc' }], select: { rodada: true },
-    });
-    const selected = upcoming ?? await this.prisma.futebolPartida.findFirst({
-      where: { ...where, status: { in: ['FINISHED', 'AWARDED'] } },
-      orderBy: [{ rodada: 'desc' }, { id: 'asc' }], select: { rodada: true },
-    });
-    const rodada = selected?.rodada ?? null;
-    const jogos = rodada === null ? [] : await this.jogos({ competicaoId: competition.id, temporada, rodada }, competition.codigo);
-    return { competicao: { codigo: competition.codigo, nome: competition.nome }, temporada, rodada, total: jogos.length, jogos };
+    const matches = await this.jogos({ competicaoId: competition.id, temporada }, competition.codigo);
+    const reference = competitionReference(matches, new Date(Date.now()));
+    return { competicao: { codigo: competition.codigo, nome: competition.nome }, temporada,
+      ...reference, rodada: reference.rodadaReferencia, total: reference.jogos.length };
   }
 
   private async competicao(codigo: string) {

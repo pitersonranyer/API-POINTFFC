@@ -118,49 +118,43 @@ describe('Futebol API pública de leitura', () => {
     const { body, status } = await request('/futebol/competicoes/BSA/rodadas/99');
     expect(status).toBe(200); expect(body).toMatchObject({ rodada: 99, total: 0, jogos: [] });
   });
-  it.each(['SCHEDULED', 'TIMED', 'IN_PLAY', 'PAUSED'])('seleciona rodada elegível com %s sem ficar presa em POSTPONED antigo', async status => {
-    games = [game(1, 25, 'TIMED', '2026-12-31T00:00:00Z'), game(2, 24, status), game(3, 21, 'POSTPONED'), game(4, 1, 'CANCELLED'), { ...game(5, 1), temporada: 2025 }];
+  it.each(['TIMED', 'SCHEDULED', 'IN_PLAY', 'PAUSED', 'POSTPONED', 'SUSPENDED'])('separa pendência antiga %s sem trocar a referência coletiva', async status => {
+    games.push(game(4, 21, status, '2026-09-11T11:00:00Z'));
     const { body } = await request('/futebol/competicoes/BSA/rodada-atual');
-    expect(body).toMatchObject({ rodada: 24, total: 1 }); expect(body.jogos[0].id).toBe(2);
+    expect(body).toMatchObject({ rodada: 24, rodadaReferencia: 24, faseReferencia: 'REGULAR_SEASON', total: 2 });
+    expect(body.partidasPendentes.map((row: any) => row.id)).toEqual([4]);
+    expect(body.partidasPendentes[0].rodada).toBe(21);
+    expect(body.partidasPendentes[0].mandante.cartolaClubeId).toBe(262);
+    expect(prisma.futebolPartida.findFirst).not.toHaveBeenCalled();
   });
-  it.each(['POSTPONED', 'SUSPENDED'])('não seleciona rodada definida apenas por %s', async status => {
-    games = [game(1, 21, status)];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body).toMatchObject({ rodada: null, total: 0, jogos: [] });
-  });
-  it('prioriza IN_PLAY sobre agendamento mais próximo', async () => {
-    games = [game(1, 25, 'TIMED', '2026-09-11T12:00:00Z'), game(2, 24, 'IN_PLAY', '2026-09-11T11:00:00Z')];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body.rodada).toBe(24);
-  });
-  it('usa proximidade futura em vez do número da rodada', async () => {
-    games = [game(1, 21, 'TIMED', '2026-12-31T00:00:00Z'), game(2, 24)];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body.rodada).toBe(24);
-  });
-  it('mantém POSTPONED na própria rodada atual e na consulta específica antiga', async () => {
-    games = [game(1, 24), game(2, 24, 'POSTPONED'), game(3, 21, 'POSTPONED')];
+  it('expõe conclusão, próxima rodada e aliases sem vazar outras temporadas/competições', async () => {
+    games = [game(1, 27, 'FINISHED', '2026-09-10T19:00:00Z'), game(2, 27, 'AWARDED', '2026-09-10T20:00:00Z'),
+      game(3, 28), game(4, 28), game(5, 29, 'TIMED', '2026-09-19T19:00:00Z'), game(6, 29, 'TIMED', '2026-09-19T20:00:00Z'),
+      { ...game(7, 50, 'IN_PLAY'), competicaoId: 2 }, { ...game(8, 50, 'IN_PLAY'), temporada: 2025 }];
     const { body } = await request('/futebol/competicoes/BSA/rodada-atual');
-    expect(body).toMatchObject({ rodada: 24, total: 2 });
-    expect(body.jogos[1].status).toBe('POSTPONED');
-    expect((await request('/futebol/competicoes/BSA/rodadas/21')).body.jogos[0].status).toBe('POSTPONED');
+    expect(body).toMatchObject({ rodada: 28, rodadaReferencia: 28, faseReferencia: 'REGULAR_SEASON', ultimaRodadaConcluida: 27,
+      faseUltimaRodadaConcluida: 'REGULAR_SEASON', proximaRodada: 29, faseProximaRodada: 'REGULAR_SEASON', total: 2, partidasPendentes: [] });
+    expect(body.jogos.map((row: any) => row.id)).toEqual([3, 4]);
   });
-  it('seleciona próxima rodada futura após rodada encerrada', async () => {
-    games = [game(1, 23, 'FINISHED'), game(2, 24)];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body.rodada).toBe(24);
+  it('não mistura fases com o mesmo número na resposta', async () => {
+    games = [game(1, 1, 'FINISHED', '2026-09-01T19:00:00Z'), game(2, 1, 'FINISHED', '2026-09-01T20:00:00Z'),
+      { ...game(3, 1), fase: 'LAST_16' }, { ...game(4, 1), fase: 'LAST_16' }];
+    const { body } = await request('/futebol/competicoes/BSA/rodada-atual');
+    expect(body).toMatchObject({ rodada: 1, faseReferencia: 'LAST_16', ultimaRodadaConcluida: 1, faseUltimaRodadaConcluida: 'REGULAR_SEASON', total: 2 });
+    expect(body.jogos.map((row: any) => row.id)).toEqual([3, 4]);
   });
-  it('ignora agendamento passado sem status atualizado e usa última rodada encerrada', async () => {
-    games = [game(1, 21, 'TIMED', '2026-07-29T00:00:00Z'), game(2, 23, 'FINISHED')];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body.rodada).toBe(23);
+  it.each(['BSA', 'PL', 'PD', 'SA', 'BL1', 'FL1', 'PPL', 'DED', 'ELC', 'CL'])('aplica a mesma política coletiva em %s', async codigo => {
+    competitions[0].codigo = codigo;
+    if (codigo === 'CL') games.forEach(game => { game.fase = 'LEAGUE_STAGE'; });
+    const { status, body } = await request(`/futebol/competicoes/${codigo}/rodada-atual`);
+    expect(status).toBe(200);
+    expect(body).toMatchObject({ rodadaReferencia: 24, rodada: 24, total: 2, faseReferencia: codigo === 'CL' ? 'LEAGUE_STAGE' : 'REGULAR_SEASON' });
+    expect(body.jogos[0].mandante.cartolaClubeId).toBe(codigo === 'BSA' ? 262 : null);
   });
-  it('seleciona maior rodada encerrada ao término da temporada', async () => {
-    games = [game(1, 37, 'FINISHED'), game(2, 38, 'FINISHED')];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body.rodada).toBe(38);
-  });
-  it('ignora canceladas no fallback e considera AWARDED encerrado', async () => {
-    games = [game(1, 37, 'AWARDED'), game(2, 38, 'CANCELLED')];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body.rodada).toBe(37);
-  });
-  it.each(['sem jogos', 'apenas canceladas', 'sem rodada'])('retorna rodada null quando %s', async scenario => {
-    games = scenario === 'sem jogos' ? [] : [game(1, scenario === 'sem rodada' ? null : 1, scenario === 'apenas canceladas' ? 'CANCELLED' : 'TIMED')];
-    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body).toMatchObject({ rodada: null, total: 0, jogos: [] });
+  it.each(['sem jogos', 'apenas canceladas', 'partida isolada'])('retorna referência nula sem evidência coletiva: %s', async scenario => {
+    games = scenario === 'sem jogos' ? [] : [game(1, 1, scenario === 'apenas canceladas' ? 'CANCELLED' : 'TIMED')];
+    expect((await request('/futebol/competicoes/BSA/rodada-atual')).body).toMatchObject({ rodada: null, rodadaReferencia: null,
+      faseReferencia: null, ultimaRodadaConcluida: null, proximaRodada: null, total: 0, jogos: [] });
   });
   it('retorna todos os status da rodada selecionada', async () => {
     games.push(game(4, 24, 'CANCELLED'));
