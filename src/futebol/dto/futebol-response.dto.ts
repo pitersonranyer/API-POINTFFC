@@ -54,3 +54,19 @@ export class FutebolRodadaReferenciaResponseDto extends FutebolJogosResponseDto 
   @ApiProperty({ type: String, nullable: true }) faseProximaRodada!: string | null;
   @ApiProperty({ type: [FutebolJogoResponseDto], description: 'Jogos não resolvidos de etapas anteriores; cancelados não são pendências jogáveis.' }) partidasPendentes!: FutebolJogoResponseDto[];
 }
+
+export class FutebolCompeticaoJogoDto extends FutebolCompeticaoResumoDto {
+  @ApiProperty() id!: number;
+  @ApiProperty({ type: String, nullable: true }) emblemaUrl!: string | null;
+}
+
+export class FutebolJogoDiaResponseDto extends FutebolJogoResponseDto {
+  @ApiProperty({ type: FutebolCompeticaoJogoDto }) competicao!: FutebolCompeticaoJogoDto;
+}
+
+export class FutebolJogosHojeResponseDto {
+  @ApiProperty({ example: '2026-09-15', description: 'Dia considerado em America/Sao_Paulo' }) data!: string;
+  @ApiProperty({ enum: ['America/Sao_Paulo'] }) timezone!: string;
+  @ApiProperty() total!: number;
+  @ApiProperty({ type: [FutebolJogoDiaResponseDto] }) jogos!: FutebolJogoDiaResponseDto[];
+}

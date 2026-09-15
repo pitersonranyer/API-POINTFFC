@@ -2,8 +2,9 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FutebolJogosQueryDto } from './dto/futebol-query.dto';
-import { FutebolCompeticaoResponseDto, FutebolJogosResponseDto, FutebolJogoResponseDto, FutebolRodadaReferenciaResponseDto } from './dto/futebol-response.dto';
+import { FutebolCompeticaoResponseDto, FutebolJogosResponseDto, FutebolJogoResponseDto, FutebolRodadaReferenciaResponseDto, FutebolJogosHojeResponseDto } from './dto/futebol-response.dto';
 import { competitionReference } from './futebol-reference.policy';
+import { futebolDayInterval } from './futebol-day';
 
 const teamSelect = { id: true, externalId: true, cartolaClubeId: true, nome: true, nomeCurto: true, sigla: true, escudoUrl: true } as const;
 const gameSelect = {
@@ -26,6 +27,18 @@ function mapGame(row: GameRow, codigo: string): FutebolJogoResponseDto {
 export class FutebolQueryService {
   private readonly logger = new Logger(FutebolQueryService.name);
   constructor(private readonly prisma: PrismaService) {}
+
+  async listarJogosHoje(): Promise<FutebolJogosHojeResponseDto> {
+    const now = new Date(Date.now());
+    const { data, timezone, inicioUtc, fimUtc } = futebolDayInterval(now);
+    const rows = await this.prisma.futebolPartida.findMany({
+      where: { dataHoraUtc: { gte: inicioUtc, lt: fimUtc }, competicao: { ativa: true } },
+      select: { ...gameSelect, competicao: { select: { id: true, codigo: true, nome: true, emblemaUrl: true } } },
+      orderBy: [{ dataHoraUtc: 'asc' }, { competicaoId: 'asc' }, { id: 'asc' }],
+    });
+    const jogos = rows.map(row => ({ ...mapGame(row, row.competicao.codigo), competicao: row.competicao }));
+    return { data, timezone, total: jogos.length, jogos };
+  }
 
   listarCompeticoes(): Promise<FutebolCompeticaoResponseDto[]> {
     return this.prisma.futebolCompeticao.findMany({ where: { ativa: true }, orderBy: { codigo: 'asc' },

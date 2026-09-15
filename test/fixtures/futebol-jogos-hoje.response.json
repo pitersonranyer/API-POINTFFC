@@ -1,0 +1,44 @@
+{
+  "data": "2026-09-15",
+  "timezone": "America/Sao_Paulo",
+  "total": 1,
+  "jogos": [
+    {
+      "id": 1,
+      "externalId": 10001,
+      "temporada": 2026,
+      "rodada": 28,
+      "fase": "REGULAR_SEASON",
+      "grupo": null,
+      "dataHoraUtc": "2026-09-15T22:00:00.000Z",
+      "status": "TIMED",
+      "vencedor": null,
+      "mandante": {
+        "id": 10,
+        "externalId": 1783,
+        "cartolaClubeId": 262,
+        "nome": "Flamengo",
+        "nomeCurto": "Flamengo",
+        "sigla": "FLA",
+        "escudoUrl": "https://crests.example/1783.svg"
+      },
+      "visitante": {
+        "id": 11,
+        "externalId": 1765,
+        "cartolaClubeId": 266,
+        "nome": "Fluminense",
+        "nomeCurto": "Fluminense",
+        "sigla": "FLU",
+        "escudoUrl": "https://crests.example/1765.svg"
+      },
+      "placar": { "mandante": null, "visitante": null },
+      "placarIntervalo": { "mandante": null, "visitante": null },
+      "competicao": {
+        "id": 1,
+        "codigo": "BSA",
+        "nome": "Campeonato Brasileiro Série A",
+        "emblemaUrl": "https://crests.example/BSA.png"
+      }
+    }
+  ]
+}
