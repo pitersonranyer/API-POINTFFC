@@ -23,7 +23,7 @@ describe('Endpoints de inscricoes FREE', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     auth.authenticateJwt.mockResolvedValue({ idUsuario: 10, status: 'ATIVO' });
-    service.criar.mockResolvedValue({ id: 8, timeIdCartola: 123 });
+    service.criar.mockResolvedValue({ inscricoes: [{ id: 8, timeIdCartola: 123 }], quantidade: 1 });
     service.minhas.mockResolvedValue([]);
     service.participantes.mockResolvedValue([]);
   });
@@ -35,13 +35,17 @@ describe('Endpoints de inscricoes FREE', () => {
   });
 
   it('POST exige autenticacao e deriva usuarioId do token', async () => {
-    expect((await post({ timeIdCartola: 123 }, false)).status).toBe(401);
+    expect((await post({ timesCartolaIds: [123] }, false)).status).toBe(401);
     expect(service.criar).not.toHaveBeenCalled();
-    expect((await post({ timeIdCartola: 123 })).status).toBe(201);
-    expect(service.criar).toHaveBeenCalledWith(1, 10, 123);
+    expect((await post({ timesCartolaIds: [123] })).status).toBe(201);
+    expect(service.criar).toHaveBeenCalledWith(1, 10, [123]);
   });
 
-  it.each([{ timeIdCartola: 123, usuarioId: 99 }, { timeIdCartola: 0 }, { timeIdCartola: '123' }, {}, { timeIdCartola: 1.5 }])(
+  it.each([
+    { timesCartolaIds: [123], usuarioId: 99 }, { timesCartolaIds: [] }, { timesCartolaIds: '123' },
+    { timesCartolaIds: [0] }, { timesCartolaIds: ['123'] }, { timesCartolaIds: [1.5] },
+    { timesCartolaIds: [123, 123] }, {},
+  ])(
     'POST rejeita corpo fora do contrato: %j', async body => {
       expect((await post(body)).status).toBe(400);
       expect(service.criar).not.toHaveBeenCalled();
@@ -62,7 +66,7 @@ describe('Endpoints de inscricoes FREE', () => {
   it.each(['/competicoes/0/participantes', '/competicoes/abc/inscricoes/minhas', '/competicoes/1.5/inscricoes'])(
     'rejeita ID de competicao invalido em %s', async path => {
       const response = path.endsWith('/inscricoes') ? await fetch(base + path, { method: 'POST', headers: {
-        Authorization: 'Bearer valid', 'Content-Type': 'application/json' }, body: JSON.stringify({ timeIdCartola: 123 }) })
+        Authorization: 'Bearer valid', 'Content-Type': 'application/json' }, body: JSON.stringify({ timesCartolaIds: [123] }) })
         : await fetch(base + path, { headers: { Authorization: 'Bearer valid' } });
       expect(response.status).toBe(400);
     });

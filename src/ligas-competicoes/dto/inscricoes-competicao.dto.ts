@@ -1,11 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, Max, Min } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsInt, Max, Min } from 'class-validator';
 import { InscricaoTimeCompeticaoStatus } from '@prisma/client';
 
 export class CriarInscricaoDto {
-  @ApiProperty({ minimum: 1, example: 44566162 })
-  @IsInt() @Min(1) @Max(4294967295)
-  timeIdCartola!: number;
+  @ApiProperty({ type: [Number], minItems: 1, maxItems: 50, uniqueItems: true, example: [44566162, 13933388] })
+  @IsArray({ message: 'timesCartolaIds deve ser uma lista' })
+  @ArrayMinSize(1, { message: 'informe ao menos um time' })
+  @ArrayMaxSize(50, { message: 'o limite e de 50 times por solicitacao' })
+  @ArrayUnique({ message: 'timesCartolaIds nao pode conter IDs duplicados' })
+  @IsInt({ each: true }) @Min(1, { each: true }) @Max(4294967295, { each: true })
+  timesCartolaIds!: number[];
 }
 
 export class MinhaInscricaoDto {
@@ -21,6 +25,11 @@ export class MinhaInscricaoDto {
   @ApiProperty({ type: Number, nullable: true }) premioApurado!: number | null;
   @ApiProperty({ format: 'date-time' }) dataInscricao!: string;
   @ApiProperty({ type: Number }) valorInscricao!: number;
+}
+
+export class CriarInscricoesResponseDto {
+  @ApiProperty({ type: [MinhaInscricaoDto] }) inscricoes!: MinhaInscricaoDto[];
+  @ApiProperty({ minimum: 1 }) quantidade!: number;
 }
 
 export class ParticipanteCompeticaoDto {

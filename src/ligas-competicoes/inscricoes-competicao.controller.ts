@@ -4,7 +4,7 @@ import { Usuario } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/authenticated-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CompeticaoIdParamsDto } from './dto/ligas-competicoes-query.dto';
-import { CriarInscricaoDto, MinhaInscricaoDto, ParticipanteCompeticaoDto } from './dto/inscricoes-competicao.dto';
+import { CriarInscricaoDto, CriarInscricoesResponseDto, MinhaInscricaoDto, ParticipanteCompeticaoDto } from './dto/inscricoes-competicao.dto';
 import { InscricoesCompeticaoService } from './inscricoes-competicao.service';
 
 @ApiTags('competicoes')
@@ -15,14 +15,14 @@ export class InscricoesCompeticaoController {
   @Post(':id/inscricoes')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('jwt')
-  @ApiOperation({ summary: 'Inscreve um time proprio em competicao FREE' })
-  @ApiCreatedResponse({ type: MinhaInscricaoDto })
-  @ApiBadRequestResponse({ description: 'ID ou timeIdCartola invalido' })
+  @ApiOperation({ summary: 'Inscreve um ou mais times proprios em competicao FREE' })
+  @ApiCreatedResponse({ type: CriarInscricoesResponseDto })
+  @ApiBadRequestResponse({ description: 'ID ou timesCartolaIds invalido' })
   @ApiUnauthorizedResponse({ description: 'JWT ausente ou invalido' })
   @ApiNotFoundResponse({ description: 'Competicao ou time do usuario nao encontrado' })
   @ApiConflictResponse({ description: 'Inscricoes indisponiveis, limite atingido ou time ja inscrito' })
   criar(@AuthenticatedUser() usuario: Usuario, @Param() params: CompeticaoIdParamsDto, @Body() body: CriarInscricaoDto) {
-    return this.inscricoes.criar(params.id, usuario.idUsuario, body.timeIdCartola);
+    return this.inscricoes.criar(params.id, usuario.idUsuario, body.timesCartolaIds);
   }
 
   @Get(':id/inscricoes/minhas')

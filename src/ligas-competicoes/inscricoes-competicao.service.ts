@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { CompeticaoLigaStatus, CompeticaoTipoAcesso, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { MinhaInscricaoDto, ParticipanteCompeticaoDto } from './dto/inscricoes-competicao.dto';
+import { CriarInscricoesResponseDto, MinhaInscricaoDto, ParticipanteCompeticaoDto } from './dto/inscricoes-competicao.dto';
 
 export const minhaSelect = {
   id: true, timeIdCartola: true, nomeTime: true, nomeCartoleiro: true, escudoUrl: true,
@@ -67,7 +67,7 @@ function erroInscricao(motivo: MotivoBloqueio): ConflictException {
 export class InscricoesCompeticaoService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async criar(competicaoId: number, usuarioId: number, timeIdCartola: number): Promise<MinhaInscricaoDto> {
+  async criar(competicaoId: number, usuarioId: number, timesCartolaIds: number[]): Promise<CriarInscricoesResponseDto> {
     try {
       return await this.prisma.$transaction(async tx => {
         // Serializa inscricoes desta competicao antes de contar vagas, inclusive quando ainda nao ha inscritos.
@@ -84,17 +84,25 @@ export class InscricoesCompeticaoService {
         const bloqueio = motivoBloqueioInscricao(competicao, now);
         if (bloqueio) throw erroInscricao(bloqueio);
 
-        const time = await tx.timeUsuario.findUnique({
-          where: { usuarioId_timeId: { usuarioId, timeId: timeIdCartola } },
+        const times = await tx.timeUsuario.findMany({
+          where: { usuarioId, timeId: { in: timesCartolaIds } },
           select: { timeId: true, nome: true, nomeCartola: true, urlEscudoPng: true },
         });
-        if (!time) throw new NotFoundException('Time nao encontrado entre os times do usuario.');
-
-        const existente = await tx.inscricaoTimeCompeticao.findUnique({
-          where: { competicaoLigaId_timeIdCartola: { competicaoLigaId: competicaoId, timeIdCartola } },
-          select: { id: true },
+        const timesPorId = new Map(times.map(time => [time.timeId, time]));
+        const ausentes = timesCartolaIds.filter(timeId => !timesPorId.has(timeId));
+        if (ausentes.length) throw new NotFoundException({
+          message: 'Um ou mais times nao foram encontrados entre os times do usuario.',
+          errors: ausentes.map(timeIdCartola => ({ timeIdCartola, reason: 'TIME_NAO_PERTENCE_AO_USUARIO' })),
         });
-        if (existente) throw new ConflictException('Este time ja esta inscrito nesta competicao.');
+
+        const existentes = await tx.inscricaoTimeCompeticao.findMany({
+          where: { competicaoLigaId: competicaoId, timeIdCartola: { in: timesCartolaIds } },
+          select: { timeIdCartola: true },
+        });
+        if (existentes.length) throw new ConflictException({
+          message: 'Lote de inscricoes invalido.',
+          errors: existentes.map(({ timeIdCartola }) => ({ timeIdCartola, reason: 'TIME_JA_INSCRITO' })),
+        });
 
         const timesUsuario = competicao.limiteTimesUsuario === null ? 0
           : await tx.inscricaoTimeCompeticao.count({
@@ -104,18 +112,30 @@ export class InscricoesCompeticaoService {
           : await tx.inscricaoTimeCompeticao.count({
             where: { competicaoLigaId: competicaoId, statusInscricao: 'ATIVA' },
           });
-        const bloqueioLimite = motivoBloqueioInscricao(competicao, now, { participantes, timesUsuario });
-        if (bloqueioLimite) throw erroInscricao(bloqueioLimite);
+        const quantidadeNovas = timesCartolaIds.length;
+        if (competicao.limiteTimesUsuario !== null
+          && timesUsuario + quantidadeNovas > competicao.limiteTimesUsuario) {
+          throw erroInscricao('LIMITE_TIMES_USUARIO_ATINGIDO');
+        }
+        if (competicao.limiteParticipantes !== null
+          && participantes + quantidadeNovas > competicao.limiteParticipantes) {
+          throw erroInscricao('LIMITE_PARTICIPANTES_ATINGIDO');
+        }
 
-        const inscricao = await tx.inscricaoTimeCompeticao.create({
-          data: {
-            competicaoLigaId: competicaoId, usuarioId, timeIdCartola: time.timeId,
-            nomeTime: time.nome, nomeCartoleiro: time.nomeCartola, escudoUrl: time.urlEscudoPng,
-            valorInscricao: competicao.valorInscricao, statusInscricao: 'ATIVA', dataInscricao: now,
-          },
-          select: minhaSelect,
-        });
-        return mapMinha(inscricao);
+        const inscricoes: MinhaInscricaoDto[] = [];
+        for (const timeIdCartola of timesCartolaIds) {
+          const time = timesPorId.get(timeIdCartola)!;
+          const inscricao = await tx.inscricaoTimeCompeticao.create({
+            data: {
+              competicaoLigaId: competicaoId, usuarioId, timeIdCartola: time.timeId,
+              nomeTime: time.nome, nomeCartoleiro: time.nomeCartola, escudoUrl: time.urlEscudoPng,
+              valorInscricao: competicao.valorInscricao, statusInscricao: 'ATIVA', dataInscricao: now,
+            },
+            select: minhaSelect,
+          });
+          inscricoes.push(mapMinha(inscricao));
+        }
+        return { inscricoes, quantidade: inscricoes.length };
       }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
