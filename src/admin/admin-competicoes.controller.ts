@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundRes
 import { AdminGuard } from '../auth/admin.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { AdminCompeticoesService } from './admin-competicoes.service';
-import { AtualizarAdminCompeticaoDto, CriarAdminCompeticaoDto, ListarAdminCompeticoesQueryDto } from './dto/admin-competicoes.dto';
+import { AtualizarAdminCompeticaoDto, CriarAdminCompeticaoDto, DuplicarAdminCompeticaoDto, ListarAdminCompeticoesQueryDto } from './dto/admin-competicoes.dto';
 import { AdminIdParamsDto } from './dto/admin-common.dto';
 
 @ApiTags('admin')
@@ -32,6 +32,13 @@ export class AdminCompeticoesController {
   @ApiCreatedResponse({ description: 'Competicao criada' })
   criar(@Body() dto: CriarAdminCompeticaoDto): Promise<Record<string, unknown>> {
     return this.competicoes.criar(dto);
+  }
+
+  @Post(':id/duplicar')
+  @ApiCreatedResponse({ description: 'Nova competicao criada a partir do modelo informado' })
+  @ApiNotFoundResponse({ description: 'Competicao de origem nao encontrada' })
+  duplicar(@Param() params: AdminIdParamsDto, @Body() dto: DuplicarAdminCompeticaoDto): Promise<Record<string, unknown>> {
+    return this.competicoes.duplicar(params.id, dto);
   }
 
   @Patch(':id')

@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { CompeticaoLigaStatus, CompeticaoTipoAcesso, Prisma } from '@prisma/client';
 import { AdminCompeticoesService } from '../src/admin/admin-competicoes.service';
 import { AdminLigasService } from '../src/admin/admin-ligas.service';
-import { CriarAdminCompeticaoDto } from '../src/admin/dto/admin-competicoes.dto';
+import { CriarAdminCompeticaoDto, DuplicarAdminCompeticaoDto } from '../src/admin/dto/admin-competicoes.dto';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 const baseDto = (change: Partial<CriarAdminCompeticaoDto> = {}): CriarAdminCompeticaoDto => ({
@@ -10,6 +10,13 @@ const baseDto = (change: Partial<CriarAdminCompeticaoDto> = {}): CriarAdminCompe
   valorInscricao: 0, rodadaInicio: 27, rodadaFim: 27,
   inicioInscricao: new Date('2026-09-01T00:00:00Z'), fimInscricao: new Date('2026-09-20T00:00:00Z'),
   dataInicio: new Date('2026-09-21T00:00:00Z'), dataFim: new Date('2026-09-28T00:00:00Z'),
+  ...change,
+});
+
+const duplicarDto = (change: Partial<DuplicarAdminCompeticaoDto> = {}): DuplicarAdminCompeticaoDto => ({
+  nome: 'Rodada 28', slug: 'rodada-28', rodadaInicio: 28, rodadaFim: 28,
+  inicioInscricao: new Date('2026-09-22T00:00:00Z'), fimInscricao: new Date('2026-09-29T00:00:00Z'),
+  dataInicio: new Date('2026-09-30T00:00:00Z'), dataFim: new Date('2026-10-07T00:00:00Z'),
   ...change,
 });
 
@@ -31,8 +38,13 @@ const row = (change: Record<string, unknown> = {}) => {
 };
 
 describe('AdminCompeticoesService', () => {
+  const tx = {
+    ligaModalidade: { findUnique: jest.fn() },
+    competicaoLiga: { findUnique: jest.fn(), create: jest.fn() },
+  };
   const prisma = {
-    $transaction: jest.fn(async (values: Array<Promise<unknown>>) => Promise.all(values)),
+    $transaction: jest.fn(async (input: Array<Promise<unknown>> | ((client: typeof tx) => Promise<unknown>)) =>
+      typeof input === 'function' ? input(tx) : Promise.all(input)),
     ligaModalidade: { findUnique: jest.fn() },
     competicaoLiga: { count: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
     inscricaoTimeCompeticao: { count: jest.fn() },
@@ -48,6 +60,13 @@ describe('AdminCompeticoesService', () => {
     prisma.inscricaoTimeCompeticao.count.mockResolvedValue(0);
     prisma.competicaoLiga.count.mockResolvedValue(1);
     prisma.competicaoLiga.findMany.mockResolvedValue([row()]);
+    tx.ligaModalidade.findUnique.mockResolvedValue({ ativa: true });
+    tx.competicaoLiga.findUnique.mockResolvedValue(row({
+      status: CompeticaoLigaStatus.ENCERRADA, descricao: 'Modelo', tipoTaxaPlataforma: 'PERCENTUAL',
+      valorTaxaPlataforma: new Prisma.Decimal(10), limiteTimesUsuario: 3, limiteParticipantes: 100,
+      visivelApp: true, destaque: true,
+    }));
+    tx.competicaoLiga.create.mockImplementation(async ({ data }) => row({ ...data, id: 8 }));
   });
 
   it('cria competicao valida e converte Decimal/datas na resposta', async () => {
@@ -116,6 +135,53 @@ describe('AdminCompeticoesService', () => {
       ligaModalidade: { ligaId: 1, modalidadeId: 2 } } });
     expect(options.where.OR).toHaveLength(2);
     expect(result).toMatchObject({ itens: [{ visivelApp: false }], paginacao: { pagina: 2, total: 1 } });
+  });
+
+  it('duplica origem encerrada herdando estrutura, mas usando novos dados e status RASCUNHO', async () => {
+    const dto = duplicarDto();
+    const result = await service.duplicar(7, dto);
+    expect(result).toMatchObject({ id: 8, nome: 'Rodada 28', slug: 'rodada-28', rodadaInicio: 28, rodadaFim: 28,
+      descricao: 'Modelo', tipoAcesso: 'FREE', valorInscricao: 0,
+      tipoTaxaPlataforma: 'PERCENTUAL', valorTaxaPlataforma: 10,
+      limiteTimesUsuario: 3, limiteParticipantes: 100, visivelApp: true, destaque: true,
+      status: CompeticaoLigaStatus.RASCUNHO });
+    const data = tx.competicaoLiga.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({ dataInicio: dto.dataInicio, dataFim: dto.dataFim,
+      inicioInscricao: dto.inicioInscricao, fimInscricao: dto.fimInscricao });
+    expect(prisma.competicaoLiga.update).not.toHaveBeenCalled();
+    expect(prisma.inscricaoTimeCompeticao.count).not.toHaveBeenCalled();
+    expect(tx).not.toHaveProperty('premiacaoCompeticao');
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it('retorna 404 sem criar quando a origem nao existe', async () => {
+    tx.competicaoLiga.findUnique.mockResolvedValueOnce(null);
+    await expect(service.duplicar(999, duplicarDto())).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.competicaoLiga.create).not.toHaveBeenCalled();
+  });
+
+  it('preserva configuracao PAGO e limites', async () => {
+    tx.competicaoLiga.findUnique.mockResolvedValueOnce(row({ tipoAcesso: 'PAGO', valorInscricao: 25,
+      limiteTimesUsuario: 2, limiteParticipantes: 50, tipoTaxaPlataforma: 'VALOR_FIXO',
+      valorTaxaPlataforma: new Prisma.Decimal(3) }));
+    await service.duplicar(7, duplicarDto());
+    expect(tx.competicaoLiga.create.mock.calls[0][0].data).toMatchObject({
+      tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal(25), limiteTimesUsuario: 2,
+      limiteParticipantes: 50, tipoTaxaPlataforma: 'VALOR_FIXO', valorTaxaPlataforma: new Prisma.Decimal(3),
+    });
+  });
+
+  it('reutiliza validacao de datas e nao persiste duplicacao invalida', async () => {
+    await expect(service.duplicar(7, duplicarDto({ dataFim: new Date('2026-09-29T00:00:00Z') })))
+      .rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.competicaoLiga.create).not.toHaveBeenCalled();
+  });
+
+  it('traduz slug duplicado na duplicacao para 409', async () => {
+    tx.competicaoLiga.create.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('duplicado', {
+      code: 'P2002', clientVersion: 'test', meta: { target: ['SLUG'] },
+    }));
+    await expect(service.duplicar(7, duplicarDto())).rejects.toBeInstanceOf(ConflictException);
   });
 });
 

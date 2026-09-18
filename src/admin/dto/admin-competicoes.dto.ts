@@ -66,6 +66,32 @@ export class CriarAdminCompeticaoDto {
 
 export class AtualizarAdminCompeticaoDto extends PartialType(CriarAdminCompeticaoDto) {}
 
+export class DuplicarAdminCompeticaoDto {
+  @ApiProperty() @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(255)
+  nome!: string;
+
+  @ApiProperty() @Transform(trim) @IsString() @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/) @MaxLength(255)
+  slug!: string;
+
+  @ApiProperty({ minimum: 1, maximum: 255 }) @IsInt() @Min(1) @Max(255)
+  rodadaInicio!: number;
+
+  @ApiProperty({ minimum: 1, maximum: 255 }) @IsInt() @Min(1) @Max(255)
+  rodadaFim!: number;
+
+  @ApiProperty({ type: String, format: 'date-time' }) @Type(() => Date) @IsDate()
+  dataInicio!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time' }) @Type(() => Date) @IsDate()
+  dataFim!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time' }) @Type(() => Date) @IsDate()
+  inicioInscricao!: Date;
+
+  @ApiProperty({ type: String, format: 'date-time' }) @Type(() => Date) @IsDate()
+  fimInscricao!: Date;
+}
+
 export class ListarAdminCompeticoesQueryDto {
   @ApiPropertyOptional({ minimum: 1, default: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   pagina = 1;

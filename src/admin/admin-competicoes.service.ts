@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { CompeticaoLigaStatus, CompeticaoTipoAcesso, CompeticaoTipoTaxaPlataforma, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AtualizarAdminCompeticaoDto, CriarAdminCompeticaoDto, ListarAdminCompeticoesQueryDto } from './dto/admin-competicoes.dto';
+import { AtualizarAdminCompeticaoDto, CriarAdminCompeticaoDto, DuplicarAdminCompeticaoDto, ListarAdminCompeticoesQueryDto } from './dto/admin-competicoes.dto';
 
 const adminCompeticaoSelect = {
   id: true, ligaModalidadeId: true, nome: true, slug: true, descricao: true,
@@ -18,6 +18,7 @@ const adminCompeticaoSelect = {
 
 type CompeticaoRow = Prisma.CompeticaoLigaGetPayload<{ select: typeof adminCompeticaoSelect }>;
 type EstadoCompeticao = Omit<Prisma.CompeticaoLigaUncheckedCreateInput, 'id' | 'criadoEm' | 'atualizadoEm'>;
+type EscritaCompeticaoClient = Pick<Prisma.TransactionClient, 'ligaModalidade' | 'competicaoLiga'>;
 
 const camposEstruturais: Array<keyof AtualizarAdminCompeticaoDto> = [
   'ligaModalidadeId', 'tipoAcesso', 'valorInscricao', 'tipoTaxaPlataforma', 'valorTaxaPlataforma',
@@ -118,7 +119,6 @@ export class AdminCompeticoesService {
   }
 
   async criar(dto: CriarAdminCompeticaoDto): Promise<Record<string, unknown>> {
-    await this.validarLigaModalidade(dto.ligaModalidadeId);
     const estado: EstadoCompeticao = {
       nome: dto.nome, slug: dto.slug, descricao: dto.descricao ?? null,
       ligaModalidadeId: dto.ligaModalidadeId, tipoAcesso: dto.tipoAcesso,
@@ -131,16 +131,39 @@ export class AdminCompeticoesService {
       status: dto.status ?? CompeticaoLigaStatus.RASCUNHO,
       visivelApp: dto.visivelApp ?? false, destaque: dto.destaque ?? false,
     };
-    validarEstado(estado);
     try {
-      return mapear(await this.prisma.competicaoLiga.create({ data: estado, select: adminCompeticaoSelect }));
+      return await this.criarEstado(this.prisma, estado);
+    } catch (error) { this.tratarErroPrisma(error); }
+  }
+
+  async duplicar(id: number, dto: DuplicarAdminCompeticaoDto): Promise<Record<string, unknown>> {
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const origem = await tx.competicaoLiga.findUnique({
+          where: { id },
+          select: {
+            ligaModalidadeId: true, descricao: true, tipoAcesso: true, valorInscricao: true,
+            tipoTaxaPlataforma: true, valorTaxaPlataforma: true,
+            limiteTimesUsuario: true, limiteParticipantes: true, visivelApp: true, destaque: true,
+          },
+        });
+        if (!origem) throw new NotFoundException('Competicao de origem nao encontrada.');
+        return this.criarEstado(tx, {
+          ...origem,
+          nome: dto.nome, slug: dto.slug,
+          rodadaInicio: dto.rodadaInicio, rodadaFim: dto.rodadaFim,
+          dataInicio: dto.dataInicio, dataFim: dto.dataFim,
+          inicioInscricao: dto.inicioInscricao, fimInscricao: dto.fimInscricao,
+          status: CompeticaoLigaStatus.RASCUNHO,
+        });
+      });
     } catch (error) { this.tratarErroPrisma(error); }
   }
 
   async atualizar(id: number, dto: AtualizarAdminCompeticaoDto): Promise<Record<string, unknown>> {
     const atual = await this.prisma.competicaoLiga.findUnique({ where: { id } });
     if (!atual) throw new NotFoundException('Competicao nao encontrada.');
-    if (dto.ligaModalidadeId !== undefined) await this.validarLigaModalidade(dto.ligaModalidadeId);
+    if (dto.ligaModalidadeId !== undefined) await this.validarLigaModalidade(this.prisma, dto.ligaModalidadeId);
     const estado = { ...atual, ...dto } as EstadoCompeticao;
     validarEstado(estado);
     const inscricoesAtivas = await this.prisma.inscricaoTimeCompeticao.count({
@@ -163,8 +186,14 @@ export class AdminCompeticoesService {
     } catch (error) { this.tratarErroPrisma(error); }
   }
 
-  private async validarLigaModalidade(id: number): Promise<void> {
-    const vinculo = await this.prisma.ligaModalidade.findUnique({ where: { id }, select: { ativa: true } });
+  private async criarEstado(client: EscritaCompeticaoClient, estado: EstadoCompeticao): Promise<Record<string, unknown>> {
+    await this.validarLigaModalidade(client, estado.ligaModalidadeId);
+    validarEstado(estado);
+    return mapear(await client.competicaoLiga.create({ data: estado, select: adminCompeticaoSelect }));
+  }
+
+  private async validarLigaModalidade(client: EscritaCompeticaoClient, id: number): Promise<void> {
+    const vinculo = await client.ligaModalidade.findUnique({ where: { id }, select: { ativa: true } });
     if (!vinculo) throw new NotFoundException('Vinculo liga/modalidade nao encontrado.');
     if (!vinculo.ativa) throw new BadRequestException('Vinculo liga/modalidade esta inativo.');
   }
