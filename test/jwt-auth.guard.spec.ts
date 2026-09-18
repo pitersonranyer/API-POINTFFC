@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from '@nestjs/common';
-import { UserStatus } from '@prisma/client';
+import { UserStatus, UserType } from '@prisma/client';
 import { JwtAuthGuard } from '../src/auth/jwt-auth.guard';
+import { AdminGuard } from '../src/auth/admin.guard';
 
 describe('JwtAuthGuard', () => {
   const request:any={headers:{}}; const context={switchToHttp:()=>({getRequest:()=>request})} as ExecutionContext;
@@ -10,4 +11,18 @@ describe('JwtAuthGuard', () => {
   it('rejeita token inválido/expirado',async()=>{request.headers.authorization='Bearer bad';auth.authenticateJwt.mockRejectedValue(new UnauthorizedException());await expect(guard.canActivate(context)).rejects.toBeInstanceOf(UnauthorizedException)});
   it('rejeita usuário bloqueado',async()=>{request.headers.authorization='Bearer ok';auth.authenticateJwt.mockResolvedValue({status:UserStatus.BLOQUEADO});await expect(guard.canActivate(context)).rejects.toBeInstanceOf(ForbiddenException)});
   it('anexa usuário para JWT válido',async()=>{request.headers.authorization='Bearer ok';const user={status:UserStatus.ATIVO};auth.authenticateJwt.mockResolvedValue(user);await expect(guard.canActivate(context)).resolves.toBe(true);expect(request.user).toBe(user)});
+});
+
+describe('AdminGuard', () => {
+  const request: any = {};
+  const context = { switchToHttp: () => ({ getRequest: () => request }) } as ExecutionContext;
+  const guard = new AdminGuard();
+  it('autoriza somente PLATFORM_ADMIN ativo', () => {
+    request.user = { tipoUsuario: UserType.PLATFORM_ADMIN, status: UserStatus.ATIVO };
+    expect(guard.canActivate(context)).toBe(true);
+    request.user = { tipoUsuario: UserType.PLAYER, status: UserStatus.ATIVO };
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+    request.user = { tipoUsuario: UserType.PLATFORM_ADMIN, status: UserStatus.INATIVO };
+    expect(() => guard.canActivate(context)).toThrow(ForbiddenException);
+  });
 });

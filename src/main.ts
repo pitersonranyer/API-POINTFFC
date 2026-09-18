@@ -12,7 +12,7 @@ async function bootstrap(): Promise<void> {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.enableCors({
     origin: config.getOrThrow<string>('FRONTEND_URL'),
-    methods: ['GET', 'POST', 'DELETE'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key'],
     credentials: true,
   });

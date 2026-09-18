@@ -20,6 +20,7 @@ import { RankingGeralModule } from './ranking-geral/ranking-geral.module';
 import { RoundProcessingModule } from './round-processing/round-processing.module';
 import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module';
 import { LigasCompeticoesModule } from './ligas-competicoes/ligas-competicoes.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { LigasCompeticoesModule } from './ligas-competicoes/ligas-competicoes.mo
     RoundProcessingModule,
     PocMercadoPagoModule,
     LigasCompeticoesModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
