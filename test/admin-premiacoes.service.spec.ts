@@ -57,6 +57,7 @@ describe('AdminPremiacoesService', () => {
 
   it.each([
     ['VALOR_FIXO', [fixa()]],
+    ['VALOR_FIXO por faixa', [fixa({ posicaoInicio: 4, posicaoFim: 10 })]],
     ['PERCENTUAL', [percentual()]],
     ['mista', [fixa(), percentual({ posicaoInicio: 3, posicaoFim: 3, percentual: 25 })]],
     ['nao continua', [fixa(), fixa({ posicaoInicio: 5, posicaoFim: 5 })]],
@@ -83,6 +84,7 @@ describe('AdminPremiacoesService', () => {
     ['fixo sem valor', [fixa({ valor: null })]],
     ['fixo com percentual', [fixa({ percentual: 10 })]],
     ['percentual ausente', [percentual({ percentual: null })]],
+    ['percentual com faixa', [percentual({ posicaoFim: 2 })]],
     ['percentual com valor', [percentual({ valor: 10 })]],
     ['percentual individual acima de 100', [percentual({ percentual: 101 })]],
     ['soma percentual acima de 100', [percentual({ percentual: 60 }), percentual({ posicaoInicio: 2, posicaoFim: 2, percentual: 41 })]],

@@ -8,10 +8,12 @@ import { AdminLigasController } from './admin-ligas.controller';
 import { AdminLigasService } from './admin-ligas.service';
 import { AdminPremiacoesController } from './admin-premiacoes.controller';
 import { AdminPremiacoesService } from './admin-premiacoes.service';
+import { AdminDashboardFinanceiroController } from './admin-dashboard-financeiro.controller';
+import { AdminDashboardFinanceiroService } from './admin-dashboard-financeiro.service';
 
 @Module({
   imports: [AuthModule, PrismaModule],
-  controllers: [AdminLigasController, AdminCompeticoesController, AdminPremiacoesController],
-  providers: [AdminGuard, AdminLigasService, AdminCompeticoesService, AdminPremiacoesService],
+  controllers: [AdminLigasController, AdminCompeticoesController, AdminPremiacoesController, AdminDashboardFinanceiroController],
+  providers: [AdminGuard, AdminLigasService, AdminCompeticoesService, AdminPremiacoesService, AdminDashboardFinanceiroService],
 })
 export class AdminModule {}

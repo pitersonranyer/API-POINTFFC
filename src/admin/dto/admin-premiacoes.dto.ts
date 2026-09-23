@@ -4,12 +4,12 @@ import { Type } from 'class-transformer';
 import { IsArray, IsEnum, IsInt, IsNumber, IsOptional, Min, ValidateNested } from 'class-validator';
 
 export class AdminPremiacaoInputDto {
-  @ApiProperty({ minimum: 1 })
+  @ApiProperty({ minimum: 1, description: 'Primeira posicao premiada.' })
   @IsInt()
   @Min(1)
   posicaoInicio!: number;
 
-  @ApiProperty({ minimum: 1 })
+  @ApiProperty({ minimum: 1, description: 'VALOR_FIXO permite faixa; PERCENTUAL exige o mesmo valor de posicaoInicio.' })
   @IsInt()
   @Min(1)
   posicaoFim!: number;
@@ -18,12 +18,12 @@ export class AdminPremiacaoInputDto {
   @IsEnum(PremiacaoCompeticaoTipo)
   tipoPremiacao!: PremiacaoCompeticaoTipo;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Premio fixo por posicao.' })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   valor?: number | null;
 
-  @ApiPropertyOptional({ type: Number, nullable: true })
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Percentual por posicao sobre valor das inscricoes menos taxa POINT. Soma da grade ate 100%.' })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 4 })
   percentual?: number | null;

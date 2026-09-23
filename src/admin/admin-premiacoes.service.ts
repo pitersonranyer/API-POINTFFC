@@ -87,6 +87,9 @@ export class AdminPremiacoesService {
           throw new BadRequestException('VALOR_FIXO exige valor nao negativo e percentual nulo.');
         }
       } else if (premiacao.tipoPremiacao === PremiacaoCompeticaoTipo.PERCENTUAL) {
+        if (premiacao.posicaoInicio !== premiacao.posicaoFim) {
+          throw new BadRequestException('PERCENTUAL exige posicaoInicio igual a posicaoFim.');
+        }
         if (!temPercentual || temValor || !Number.isFinite(premiacao.percentual)
           || premiacao.percentual! <= 0 || premiacao.percentual! > 100) {
           throw new BadRequestException('PERCENTUAL exige percentual maior que zero e menor ou igual a 100, com valor nulo.');
