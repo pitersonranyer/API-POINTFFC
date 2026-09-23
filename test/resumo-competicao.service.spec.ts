@@ -120,9 +120,14 @@ describe('ResumoCompeticaoService', () => {
     expect((await service.consultar(1, 10)).usuario?.motivoBloqueio).toBe('LIMITE_PARTICIPANTES_ATINGIDO');
   });
 
-  it('bloqueia competicao paga', async () => {
+  it('permite competicao paga com preco valido', async () => {
+    prisma.competicaoLiga.findFirst.mockResolvedValue(competicao({ tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal('10') }));
+    expect((await service.consultar(1, 10)).usuario).toMatchObject({ podeInscrever: true, motivoBloqueio: null });
+  });
+
+  it('bloqueia competicao paga com preco invalido', async () => {
     prisma.competicaoLiga.findFirst.mockResolvedValue(competicao({ tipoAcesso: 'PAGO' }));
-    expect((await service.consultar(1, 10)).usuario?.motivoBloqueio).toBe('COMPETICAO_NAO_FREE');
+    expect((await service.consultar(1, 10)).usuario?.motivoBloqueio).toBe('COMPETICAO_INDISPONIVEL');
   });
 
   it.each([

@@ -139,6 +139,7 @@ model Usuario {
   times           TimeUsuario[]
   carteira        Carteira?
   inscricoesCompeticao InscricaoTimeCompeticao[]
+  lotesInscricao LoteInscricao[]
 
   @@map("USUARIO")
 }
@@ -225,6 +226,7 @@ model MovimentacaoCarteira {
   status MovimentacaoCarteiraStatus @default(CONFIRMADA)
   criadoEm DateTime @default(now())
   carteira Carteira @relation(fields: [carteiraId], references: [id], onDelete: Restrict)
+  loteInscricao LoteInscricao?
 
   @@index([carteiraId, criadoEm, id])
   @@map("MOVIMENTACAO_CARTEIRA")
@@ -360,6 +362,7 @@ model CompeticaoLiga {
   ligaModalidade LigaModalidade @relation(fields: [ligaModalidadeId], references: [id], onDelete: Restrict)
   premiacoes PremiacaoCompeticao[]
   inscricoes InscricaoTimeCompeticao[]
+  lotesInscricao LoteInscricao[]
 
   @@index([ligaModalidadeId, status, visivelApp])
   @@index([rodadaInicio])
@@ -384,10 +387,38 @@ model PremiacaoCompeticao {
   @@map("PREMIACAO_COMPETICAO")
 }
 
+model LoteInscricao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
+  chaveIdempotenciaHash String @map("CHAVE_IDEMPOTENCIA_HASH") @db.Char(64)
+  requestHash String @map("REQUEST_HASH") @db.Char(64)
+  tipoAcesso CompeticaoTipoAcesso @map("TIPO_ACESSO")
+  quantidade Int @map("QUANTIDADE") @db.UnsignedInt
+  valorUnitario Decimal @map("VALOR_UNITARIO") @db.Decimal(12, 2)
+  valorTotal Decimal @map("VALOR_TOTAL") @db.Decimal(12, 2)
+  moeda String @default("BRL") @map("MOEDA") @db.Char(3)
+  movimentacaoDebitoId Int? @unique(map: "LOTE_INSCRICAO_DEBITO_key") @map("MOVIMENTACAO_DEBITO_ID") @db.UnsignedInt
+  respostaOriginal Json? @map("RESPOSTA_ORIGINAL")
+  // Nulo durante a montagem do lote; a confirmacao PAGO exige debito (CHECK na migration).
+  confirmadoEm DateTime? @map("CONFIRMADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict, map: "LOTE_INSCRICAO_USUARIO_fkey")
+  competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict, map: "LOTE_INSCRICAO_COMPETICAO_fkey")
+  movimentacaoDebito MovimentacaoCarteira? @relation(fields: [movimentacaoDebitoId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "LOTE_INSCRICAO_DEBITO_fkey")
+  inscricoes InscricaoTimeCompeticao[]
+
+  @@unique([usuarioId, chaveIdempotenciaHash], map: "LOTE_INSCRICAO_USUARIO_CHAVE_key")
+  @@index([competicaoLigaId, confirmadoEm], map: "LOTE_INSCRICAO_COMPETICAO_CONFIRMACAO_idx")
+  @@map("LOTE_INSCRICAO")
+}
+
 model InscricaoTimeCompeticao {
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
   competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
   usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  loteInscricaoId Int? @map("LOTE_INSCRICAO_ID") @db.UnsignedInt
   timeIdCartola Int @map("TIME_ID_CARTOLA") @db.UnsignedInt
   nomeTime String @map("NOME_TIME") @db.VarChar(255)
   nomeCartoleiro String? @map("NOME_CARTOLEIRO") @db.VarChar(255)
@@ -405,8 +436,10 @@ model InscricaoTimeCompeticao {
   atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
   competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict)
   usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  loteInscricao LoteInscricao? @relation(fields: [loteInscricaoId], references: [id], onDelete: Restrict, map: "INSCRICAO_LOTE_fkey")
 
   @@unique([competicaoLigaId, timeIdCartola])
+  @@index([loteInscricaoId], map: "INSCRICAO_LOTE_idx")
   @@index([usuarioId, competicaoLigaId])
   @@index([competicaoLigaId, statusInscricao, posicao])
   @@map("INSCRICAO_TIME_COMPETICAO")

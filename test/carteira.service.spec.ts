@@ -46,6 +46,53 @@ describe('CarteiraService', () => {
     expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['creditarEmTransacao', 'CREDITO', '12.5'],
+    ['debitarEmTransacao', 'DEBITO', '7.5'],
+  ] as const)('%s usa somente o client recebido e preserva os locks', async (method, tipo, saldo) => {
+    const isolated = new CarteiraService({} as PrismaService);
+    const movimento = await isolated[method](tx, input);
+    expect(movimento).toMatchObject({ tipo, status: 'CONFIRMADA', carteiraId: 10 });
+    expect(movimento.saldoPosterior.equals(saldo)).toBe(true);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+    const queries = tx.$queryRaw.mock.calls.map(([sql]: [TemplateStringsArray]) => sql.join('?'));
+    expect(queries[0]).toContain('FROM USUARIO');
+    expect(queries[1]).toContain('FROM CARTEIRA');
+    expect(queries.every((sql: string) => sql.includes('FOR UPDATE'))).toBe(true);
+    expect(tx.$queryRaw.mock.invocationCallOrder[1]).toBeLessThan(tx.carteira.update.mock.invocationCallOrder[0]);
+    expect(tx.carteira.update).toHaveBeenCalledTimes(1);
+    expect(tx.movimentacaoCarteira.create).toHaveBeenCalledTimes(1);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['creditar', 'debitar'] as const)('%s delega ao nucleo com a transacao aberta', async method => {
+    const core = jest.spyOn(service, method === 'creditar' ? 'creditarEmTransacao' : 'debitarEmTransacao');
+    await service[method](input);
+    expect(core).toHaveBeenCalledWith(tx, input);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('debito na transacao externa rejeita saldo insuficiente sem escritas', async () => {
+    await expect(service.debitarEmTransacao(tx, { ...input, valor: '10.01' })).rejects.toThrow('Saldo insuficiente');
+    expect(tx.carteira.update).not.toHaveBeenCalled();
+    expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each(['creditarEmTransacao', 'debitarEmTransacao'] as const)('%s preserva validacao de entrada e restricao PIX', async method => {
+    await expect(service[method](tx, { ...input, valor: '0' })).rejects.toThrow();
+    await expect(service[method](tx, { ...input, origem: 'RECARGA_PIX' })).rejects.toThrow('PIX exige crédito vinculado');
+    expect(tx.$queryRaw).not.toHaveBeenCalled();
+    expect(tx.carteira.update).not.toHaveBeenCalled();
+    expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
+  });
+
+  it('propaga falha do nucleo para o chamador da transacao externa', async () => {
+    tx.movimentacaoCarteira.create.mockRejectedValue(new Error('Falha ao registrar'));
+    await expect(service.debitarEmTransacao(tx, input)).rejects.toThrow('Falha ao registrar');
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it.each(['creditar', 'debitar'] as const)('carteira bloqueada impede %s', async (method) => {
     carteira.status = 'BLOQUEADA';
     await expect(service[method](input)).rejects.toThrow('Carteira bloqueada');

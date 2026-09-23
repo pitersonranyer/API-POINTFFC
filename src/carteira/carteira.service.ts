@@ -27,6 +27,10 @@ export class CarteiraService {
     return this.prisma.$transaction((tx) => this.obterComBloqueio(tx, usuarioId));
   }
 
+  obterOuCriarEmTransacao(tx: Prisma.TransactionClient, usuarioId: number): Promise<Carteira> {
+    return this.obterComBloqueio(tx, usuarioId);
+  }
+
   async consultarExtrato(usuarioId: number) {
     const carteira = await this.obterOuCriar(usuarioId);
     return this.prisma.movimentacaoCarteira.findMany({
@@ -69,6 +73,16 @@ export class CarteiraService {
 
   debitar(input: OperacaoCarteira) {
     return this.movimentar(input, 'DEBITO');
+  }
+
+  // O chamador controla commit/rollback e deve propagar falhas para abortar a transacao.
+  // Preserva a ordem de locks USUARIO -> CARTEIRA; nao abre transacao propria.
+  creditarEmTransacao(tx: Prisma.TransactionClient, input: OperacaoCarteira) {
+    return this.movimentarEmTransacao(tx, input, 'CREDITO');
+  }
+
+  debitarEmTransacao(tx: Prisma.TransactionClient, input: OperacaoCarteira) {
+    return this.movimentarEmTransacao(tx, input, 'DEBITO');
   }
 
   // Recebe exclusivamente dados já consultados no provedor pelo fluxo interno PIX.
@@ -142,28 +156,38 @@ export class CarteiraService {
     return decimal;
   }
 
-  private async movimentar(input: OperacaoCarteira, tipo: MovimentacaoCarteiraTipo) {
+  private validarOperacao(input: OperacaoCarteira): Prisma.Decimal {
     if (input.origem === 'RECARGA_PIX') throw new BadRequestException('PIX exige crédito vinculado à recarga oficial');
     const valor = this.validarValor(input.valor);
     if (!Object.values(MovimentacaoCarteiraOrigem).includes(input.origem)) {
       throw new BadRequestException('Origem inválida');
     }
-    return this.prisma.$transaction(async (tx) => {
-      const carteira = await this.obterComBloqueio(tx, input.usuarioId);
-      if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
-      const anterior = carteira.saldoDisponivel;
-      if (anterior.isNegative() || carteira.saldoBloqueado.isNegative()) {
-        throw new BadRequestException('Carteira com saldo inválido');
-      }
-      if (tipo === 'DEBITO' && anterior.lt(valor)) throw new BadRequestException('Saldo insuficiente');
-      const posterior = tipo === 'CREDITO' ? anterior.plus(valor) : anterior.minus(valor);
-      if (posterior.isNegative() || posterior.gt(LIMITE)) throw new BadRequestException('Saldo fora do limite');
-      await tx.carteira.update({ where: { id: carteira.id }, data: { saldoDisponivel: posterior } });
-      return tx.movimentacaoCarteira.create({ data: {
-        carteiraId: carteira.id, tipo, origem: input.origem, valor,
-        saldoAnterior: anterior, saldoPosterior: posterior,
-        referenciaId: input.referenciaId, descricao: input.descricao, status: 'CONFIRMADA',
-      } });
-    });
+    return valor;
+  }
+
+  private async movimentar(input: OperacaoCarteira, tipo: MovimentacaoCarteiraTipo) {
+    // Mantem rejeicao de entradas invalidas antes de abrir a transacao publica.
+    this.validarOperacao(input);
+    return this.prisma.$transaction(tx => tipo === 'CREDITO'
+      ? this.creditarEmTransacao(tx, input) : this.debitarEmTransacao(tx, input));
+  }
+
+  private async movimentarEmTransacao(tx: Prisma.TransactionClient, input: OperacaoCarteira, tipo: MovimentacaoCarteiraTipo) {
+    const valor = this.validarOperacao(input);
+    const carteira = await this.obterComBloqueio(tx, input.usuarioId);
+    if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
+    const anterior = carteira.saldoDisponivel;
+    if (anterior.isNegative() || carteira.saldoBloqueado.isNegative()) {
+      throw new BadRequestException('Carteira com saldo inválido');
+    }
+    if (tipo === 'DEBITO' && anterior.lt(valor)) throw new BadRequestException('Saldo insuficiente');
+    const posterior = tipo === 'CREDITO' ? anterior.plus(valor) : anterior.minus(valor);
+    if (posterior.isNegative() || posterior.gt(LIMITE)) throw new BadRequestException('Saldo fora do limite');
+    await tx.carteira.update({ where: { id: carteira.id }, data: { saldoDisponivel: posterior } });
+    return tx.movimentacaoCarteira.create({ data: {
+      carteiraId: carteira.id, tipo, origem: input.origem, valor,
+      saldoAnterior: anterior, saldoPosterior: posterior,
+      referenciaId: input.referenciaId, descricao: input.descricao, status: 'CONFIRMADA',
+    } });
   }
 }

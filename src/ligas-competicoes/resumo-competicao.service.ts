@@ -17,7 +17,7 @@ export class ResumoCompeticaoService {
         status: true, destaque: true, visivelApp: true,
         ligaModalidade: { select: {
           ativa: true,
-          liga: { select: { id: true, nome: true, slug: true, imagemUrl: true, status: true } },
+          liga: { select: { id: true, nome: true, slug: true, imagemUrl: true, status: true, visivelApp: true } },
           modalidade: { select: { codigo: true, nome: true, ativa: true } },
         } },
         premiacoes: { orderBy: [{ ordem: 'asc' }, { id: 'asc' }], select: {
@@ -39,7 +39,7 @@ export class ResumoCompeticaoService {
     ]);
 
     const { ligaModalidade, premiacoes, visivelApp, valorInscricao, inicioInscricao, fimInscricao, dataInicio, dataFim, ...dados } = row;
-    const { status: ligaStatus, ...liga } = ligaModalidade.liga;
+    const { status: ligaStatus, visivelApp: ligaVisivelApp, ...liga } = ligaModalidade.liga;
     const { ativa: modalidadeAtiva, ...modalidade } = ligaModalidade.modalidade;
     const resposta: ResumoCompeticaoResponseDto = {
       competicao: {
@@ -82,7 +82,7 @@ export class ResumoCompeticaoService {
         limiteTimesUsuario: row.limiteTimesUsuario,
         limiteParticipantes: row.limiteParticipantes,
         ligaModalidade: { ativa: ligaModalidade.ativa,
-          liga: { status: ligaStatus }, modalidade: { ativa: modalidadeAtiva } },
+          liga: { status: ligaStatus, visivelApp: ligaVisivelApp }, modalidade: { ativa: modalidadeAtiva } },
       }, new Date(), { participantes: quantidade, timesUsuario: quantidadeTimesInscritos });
       resposta.usuario = { quantidadeTimesInscritos, limiteTimesUsuario: row.limiteTimesUsuario,
         podeInscrever: motivoBloqueio === null, motivoBloqueio, melhorPosicaoUsuario, melhorPontuacaoUsuario };

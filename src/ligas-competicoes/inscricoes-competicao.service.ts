@@ -32,7 +32,7 @@ export interface DadosDisponibilidade {
   fimInscricao: Date | null;
   limiteTimesUsuario: number | null;
   limiteParticipantes: number | null;
-  ligaModalidade: { ativa: boolean; liga: { status: string }; modalidade: { ativa: boolean } };
+  ligaModalidade: { ativa: boolean; liga: { status: string; visivelApp?: boolean }; modalidade: { ativa: boolean } };
 }
 
 export function motivoBloqueioInscricao(
@@ -41,10 +41,12 @@ export function motivoBloqueioInscricao(
   contagens?: { participantes: number; timesUsuario: number },
 ): MotivoBloqueio | null {
   if (!competicao.visivelApp || !competicao.ligaModalidade.ativa
-    || competicao.ligaModalidade.liga.status !== 'ATIVA' || !competicao.ligaModalidade.modalidade.ativa) {
+    || competicao.ligaModalidade.liga.status !== 'ATIVA' || competicao.ligaModalidade.liga.visivelApp === false
+    || !competicao.ligaModalidade.modalidade.ativa) {
     return 'COMPETICAO_INDISPONIVEL';
   }
-  if (competicao.tipoAcesso !== 'FREE' || !competicao.valorInscricao.isZero()) return 'COMPETICAO_NAO_FREE';
+  if ((competicao.tipoAcesso === 'FREE' && !competicao.valorInscricao.isZero())
+    || (competicao.tipoAcesso === 'PAGO' && !competicao.valorInscricao.gt(0))) return 'COMPETICAO_INDISPONIVEL';
   if (competicao.status !== 'INSCRICOES_ABERTAS') return 'INSCRICOES_FECHADAS';
   if ((competicao.inicioInscricao && now < competicao.inicioInscricao)
     || (competicao.fimInscricao && now > competicao.fimInscricao)) return 'FORA_JANELA_INSCRICAO';
@@ -77,9 +79,11 @@ export class InscricoesCompeticaoService {
         const competicao = await tx.competicaoLiga.findUnique({ where: { id: competicaoId }, select: {
           visivelApp: true, tipoAcesso: true, valorInscricao: true, status: true,
           inicioInscricao: true, fimInscricao: true, limiteTimesUsuario: true, limiteParticipantes: true,
-          ligaModalidade: { select: { ativa: true, liga: { select: { status: true } }, modalidade: { select: { ativa: true } } } },
+          ligaModalidade: { select: { ativa: true, liga: { select: { status: true, visivelApp: true } }, modalidade: { select: { ativa: true } } } },
         } });
         if (!competicao) throw new NotFoundException('Competicao nao encontrada.');
+        // Contrato legado continua exclusivo para FREE.
+        if (competicao.tipoAcesso !== 'FREE' || !competicao.valorInscricao.isZero()) throw erroInscricao('COMPETICAO_NAO_FREE');
         const now = new Date();
         const bloqueio = motivoBloqueioInscricao(competicao, now);
         if (bloqueio) throw erroInscricao(bloqueio);

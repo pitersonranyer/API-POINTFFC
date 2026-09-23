@@ -108,6 +108,42 @@ integration('Carteira - transações reais MySQL', () => {
     expect(await service.consultarExtrato(usuarioId)).toHaveLength(2);
   });
 
+  it('credito e debito participam do mesmo commit externo', async () => {
+    await prisma.$transaction(async tx => {
+      await service.creditarEmTransacao(tx, input('10'));
+      await service.debitarEmTransacao(tx, input('3'));
+      expect((await tx.carteira.findUniqueOrThrow({ where: { usuarioId } })).saldoDisponivel.toString()).toBe('7');
+    });
+    expect((await service.obterOuCriar(usuarioId)).saldoDisponivel.toString()).toBe('7');
+    expect(await service.consultarExtrato(usuarioId)).toHaveLength(2);
+  });
+
+  it('rollback externo desfaz debito, movimentacao e outras escritas', async () => {
+    await service.creditar(input('10'));
+    await expect(prisma.$transaction(async tx => {
+      await tx.usuario.update({ where: { idUsuario: usuarioId }, data: { nome: 'Nao persistir' } });
+      await service.debitarEmTransacao(tx, input('3'));
+      expect((await tx.carteira.findUniqueOrThrow({ where: { usuarioId } })).saldoDisponivel.toString()).toBe('7');
+      expect(await tx.movimentacaoCarteira.count({ where: { carteira: { usuarioId } } })).toBe(2);
+      throw new Error('Rollback externo');
+    })).rejects.toThrow('Rollback externo');
+    expect((await service.obterOuCriar(usuarioId)).saldoDisponivel.toString()).toBe('10');
+    expect(await service.consultarExtrato(usuarioId)).toHaveLength(1);
+    expect((await prisma.usuario.findUniqueOrThrow({ where: { idUsuario: usuarioId } })).nome).toBeNull();
+  });
+
+  it('debito externo e publico concorrentes preservam o saldo', async () => {
+    await service.creditar(input('10'));
+    const results = await Promise.allSettled([
+      prisma.$transaction(tx => service.debitarEmTransacao(tx, input('7'))),
+      service.debitar(input('7')),
+    ]);
+    expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect((results.find(result => result.status === 'rejected') as PromiseRejectedResult).reason.message).toBe('Saldo insuficiente');
+    expect((await service.obterOuCriar(usuarioId)).saldoDisponivel.toString()).toBe('3');
+    expect(await service.consultarExtrato(usuarioId)).toHaveLength(2);
+  });
+
   it('carteira bloqueada não aceita crédito nem débito', async () => {
     await service.creditar(input('10'));
     await prisma.carteira.update({ where: { usuarioId }, data: { status: 'BLOQUEADA' } });

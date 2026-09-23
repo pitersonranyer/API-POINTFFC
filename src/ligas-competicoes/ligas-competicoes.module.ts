@@ -14,6 +14,9 @@ import { DiagnosticoEscalacoesController } from './diagnostico-escalacoes.contro
 import { DiagnosticoEscalacoesService } from './diagnostico-escalacoes.service';
 import { SincronizacaoPontuacoesController } from './sincronizacao-pontuacoes.controller';
 import { SincronizacaoPontuacoesService } from './sincronizacao-pontuacoes.service';
+import { CarteiraModule } from '../carteira/carteira.module';
+import { LotesInscricaoController } from './lotes-inscricao.controller';
+import { LotesInscricaoService } from './lotes-inscricao.service';
 
-@Module({ imports: [PrismaModule, AuthModule], controllers: [LigasController, CompeticoesController, InscricoesCompeticaoController, ResumoCompeticaoController, RankingCompeticaoController, DiagnosticoEscalacoesController, SincronizacaoPontuacoesController], providers: [LigasCompeticoesService, InscricoesCompeticaoService, ResumoCompeticaoService, RankingCompeticaoService, DiagnosticoEscalacoesService, SincronizacaoPontuacoesService, AdminGuard], exports: [SincronizacaoPontuacoesService] })
+@Module({ imports: [PrismaModule, AuthModule, CarteiraModule], controllers: [LigasController, CompeticoesController, InscricoesCompeticaoController, LotesInscricaoController, ResumoCompeticaoController, RankingCompeticaoController, DiagnosticoEscalacoesController, SincronizacaoPontuacoesController], providers: [LigasCompeticoesService, InscricoesCompeticaoService, LotesInscricaoService, ResumoCompeticaoService, RankingCompeticaoService, DiagnosticoEscalacoesService, SincronizacaoPontuacoesService, AdminGuard], exports: [SincronizacaoPontuacoesService] })
 export class LigasCompeticoesModule {}
