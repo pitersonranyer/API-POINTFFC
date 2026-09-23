@@ -118,6 +118,82 @@ describe('AdminCompeticoesService', () => {
       .resolves.toMatchObject({ descricao: 'Seguro', visivelApp: true, destaque: true });
   });
 
+  describe('PATCH com inconsistencia temporal historica', () => {
+    beforeEach(() => {
+      prisma.competicaoLiga.findUnique.mockResolvedValue(row({
+        fimInscricao: new Date('2026-09-22T00:00:00Z'),
+      }));
+    });
+
+    it.each([
+      { status: CompeticaoLigaStatus.ENCERRADA },
+      { descricao: 'Texto atualizado' },
+    ])('permite edicao sem datas: %j', async dto => {
+      prisma.inscricaoTimeCompeticao.count.mockResolvedValue(2);
+      await expect(service.atualizar(7, dto)).resolves.toMatchObject({
+        ...dto, fimInscricao: '2026-09-22T00:00:00.000Z', dataInicio: '2026-09-21T00:00:00.000Z',
+      });
+      expect(prisma.competicaoLiga.update).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      { dataInicio: new Date('2026-09-20T00:00:00Z') },
+      { dataFim: new Date('2026-09-29T00:00:00Z') },
+      { inicioInscricao: new Date('2026-09-02T00:00:00Z') },
+      { fimInscricao: new Date('2026-09-23T00:00:00Z') },
+      { dataFim: null },
+      { dataInicio: new Date('2026-09-21T00:00:00Z') },
+    ])('valida todo o conjunto quando uma data esta presente: %j', async dto => {
+      await expect(service.atualizar(7, dto))
+        .rejects.toThrow('fimInscricao nao pode ser posterior a dataInicio.');
+      expect(prisma.competicaoLiga.update).not.toHaveBeenCalled();
+    });
+
+    it('permite corrigir a data usando as demais datas preservadas', async () => {
+      await expect(service.atualizar(7, { dataInicio: new Date('2026-09-23T00:00:00Z') }))
+        .resolves.toMatchObject({ dataInicio: '2026-09-23T00:00:00.000Z',
+          fimInscricao: '2026-09-22T00:00:00.000Z', dataFim: '2026-09-28T00:00:00.000Z' });
+      expect(prisma.competicaoLiga.update).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      [{ valorInscricao: 1 }, 'Competicao FREE deve ter valorInscricao igual a zero.'],
+      [{ rodadaFim: 26 }, 'rodadaFim deve ser maior ou igual a rodadaInicio.'],
+      [{ limiteParticipantes: 0 }, 'Limites devem ser maiores que zero.'],
+      [{ valorTaxaPlataforma: 10 }, 'Tipo e valor da taxa da plataforma devem ser informados juntos.'],
+    ] as const)('preserva validacoes nao temporais: %j', async (dto, mensagem) => {
+      await expect(service.atualizar(7, dto)).rejects.toThrow(mensagem);
+      expect(prisma.competicaoLiga.update).not.toHaveBeenCalled();
+    });
+
+    it('preserva bloqueios estruturais e de status com inscricoes ativas', async () => {
+      prisma.inscricaoTimeCompeticao.count.mockResolvedValue(2);
+      await expect(service.atualizar(7, { rodadaFim: 28 })).rejects.toBeInstanceOf(ConflictException);
+      await expect(service.atualizar(7, { status: CompeticaoLigaStatus.CANCELADA }))
+        .rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.competicaoLiga.update).not.toHaveBeenCalled();
+    });
+
+    it.each([CompeticaoLigaStatus.CANCELADA, CompeticaoLigaStatus.ENCERRADA])(
+      'preserva restricoes de transicao de %s', async status => {
+        prisma.competicaoLiga.findUnique.mockResolvedValue(row({
+          status, fimInscricao: new Date('2026-09-22T00:00:00Z'),
+        }));
+        await expect(service.atualizar(7, { status: CompeticaoLigaStatus.INSCRICOES_ABERTAS }))
+          .rejects.toBeInstanceOf(ConflictException);
+        expect(prisma.competicaoLiga.update).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  it.each([
+    [{ dataFim: new Date('2026-09-20T00:00:00Z') }, 'dataFim deve ser maior ou igual a dataInicio.'],
+    [{ inicioInscricao: new Date('2026-09-21T00:00:00Z') }, 'fimInscricao deve ser maior ou igual a inicioInscricao.'],
+  ])('preserva as demais regras temporais no PATCH: %j', async (dto, mensagem) => {
+    await expect(service.atualizar(7, dto as Partial<CriarAdminCompeticaoDto>)).rejects.toThrow(mensagem as string);
+    expect(prisma.competicaoLiga.update).not.toHaveBeenCalled();
+  });
+
   it('impede transicoes terminais invalidas', async () => {
     prisma.competicaoLiga.findUnique.mockResolvedValueOnce(row({ status: CompeticaoLigaStatus.CANCELADA }));
     await expect(service.atualizar(7, { status: CompeticaoLigaStatus.INSCRICOES_ABERTAS }))

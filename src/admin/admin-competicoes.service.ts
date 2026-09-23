@@ -44,7 +44,7 @@ function mapear(row: CompeticaoRow): Record<string, unknown> {
   };
 }
 
-function validarEstado(estado: EstadoCompeticao): void {
+function validarEstado(estado: EstadoCompeticao, validarDatas = true): void {
   const valorInscricao = new Prisma.Decimal(String(estado.valorInscricao));
   if (estado.rodadaInicio !== null && estado.rodadaInicio !== undefined && estado.rodadaInicio <= 0
     || estado.rodadaFim !== null && estado.rodadaFim !== undefined && estado.rodadaFim <= 0) {
@@ -54,13 +54,13 @@ function validarEstado(estado: EstadoCompeticao): void {
     && estado.rodadaFim !== null && estado.rodadaFim !== undefined && estado.rodadaFim < estado.rodadaInicio) {
     throw new BadRequestException('rodadaFim deve ser maior ou igual a rodadaInicio.');
   }
-  if (estado.dataInicio && estado.dataFim && estado.dataFim < estado.dataInicio) {
+  if (validarDatas && estado.dataInicio && estado.dataFim && estado.dataFim < estado.dataInicio) {
     throw new BadRequestException('dataFim deve ser maior ou igual a dataInicio.');
   }
-  if (estado.inicioInscricao && estado.fimInscricao && estado.fimInscricao < estado.inicioInscricao) {
+  if (validarDatas && estado.inicioInscricao && estado.fimInscricao && estado.fimInscricao < estado.inicioInscricao) {
     throw new BadRequestException('fimInscricao deve ser maior ou igual a inicioInscricao.');
   }
-  if (estado.fimInscricao && estado.dataInicio && estado.fimInscricao > estado.dataInicio) {
+  if (validarDatas && estado.fimInscricao && estado.dataInicio && estado.fimInscricao > estado.dataInicio) {
     throw new BadRequestException('fimInscricao nao pode ser posterior a dataInicio.');
   }
   if (estado.tipoAcesso === CompeticaoTipoAcesso.FREE && !valorInscricao.isZero()) {
@@ -165,7 +165,9 @@ export class AdminCompeticoesService {
     if (!atual) throw new NotFoundException('Competicao nao encontrada.');
     if (dto.ligaModalidadeId !== undefined) await this.validarLigaModalidade(this.prisma, dto.ligaModalidadeId);
     const estado = { ...atual, ...dto } as EstadoCompeticao;
-    validarEstado(estado);
+    const alteraDatas = dto.dataInicio !== undefined || dto.dataFim !== undefined
+      || dto.inicioInscricao !== undefined || dto.fimInscricao !== undefined;
+    validarEstado(estado, alteraDatas);
     const inscricoesAtivas = await this.prisma.inscricaoTimeCompeticao.count({
       where: { competicaoLigaId: id, statusInscricao: 'ATIVA' },
     });
