@@ -2,7 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListarCompeticoesQueryDto } from './dto/ligas-competicoes-query.dto';
-import { CompeticaoDetalheDto, CompeticaoResumoDto, LigaResponseDto } from './dto/ligas-competicoes-response.dto';
+import { CompeticaoCardDto, CompeticaoDetalheDto, CompeticaoResumoDto, LigaResponseDto } from './dto/ligas-competicoes-response.dto';
+import { calcularBasePremiacao, DecimalFinanceiro } from './financeiro-competicao';
 
 const publicLiga = { status: 'ATIVA', visivelApp: true } as const;
 const publicModalidade = { ativa: true, modalidade: { ativa: true } } as const;
@@ -50,7 +51,7 @@ export class LigasCompeticoesService {
     return { ...fields, modalidades: modalidades.map(vinculo => vinculo.modalidade) };
   }
 
-  async listarCompeticoes(slug: string, query: ListarCompeticoesQueryDto): Promise<CompeticaoResumoDto[]> {
+  async listarCompeticoes(slug: string, query: ListarCompeticoesQueryDto): Promise<CompeticaoCardDto[]> {
     this.logger.log(`listarCompeticoes entrada ${JSON.stringify({ slug, modalidade: query.modalidade ?? null,
       rodada: query.rodada ?? null, status: query.status ?? null })}`);
     const liga = await this.prisma.liga.findFirst({ where: { slug, ...publicLiga }, select: { id: true } });
@@ -90,12 +91,31 @@ export class LigasCompeticoesService {
       this.logger.warn(`listarCompeticoes diagnosticoSql falhou: ${error instanceof Error ? error.message : String(error)}`);
     }
     const rows = await this.prisma.competicaoLiga.findMany({
-      where, select: competicaoSelect,
+      where, select: {
+        ...competicaoSelect,
+        tipoTaxaPlataforma: true, valorTaxaPlataforma: true,
+        _count: { select: { inscricoes: { where: { statusInscricao: { in: ['ATIVA', 'FINALIZADA'] } } } } },
+        premiacoes: { where: { tipoPremiacao: 'VALOR_FIXO' }, select: { valor: true, posicaoInicio: true, posicaoFim: true } },
+      },
       orderBy: [{ destaque: 'desc' }, { valorInscricao: 'asc' }, { nome: 'asc' }, { id: 'asc' }],
     });
     this.logger.log(`listarCompeticoes resultado ${JSON.stringify({ quantidade: rows.length,
       competicoes: rows.map(({ id, slug }) => ({ id, slug })) })}`);
-    return rows.map(resumo);
+    return rows.map(({ _count, tipoTaxaPlataforma, valorTaxaPlataforma, premiacoes, ...row }) => {
+      const quantidadeInscritos = _count.inscricoes;
+      let premiacaoEmDisputa: string | null = null;
+      if (row.tipoAcesso === 'PAGO') {
+        const bruto = new DecimalFinanceiro(row.valorInscricao).mul(quantidadeInscritos);
+        premiacaoEmDisputa = calcularBasePremiacao(row.id, bruto, quantidadeInscritos,
+          tipoTaxaPlataforma, valorTaxaPlataforma).basePremiacao.toFixed(2);
+      } else {
+        const total = premiacoes.reduce((soma, premio) => premio.valor?.gt(0) && premio.posicaoFim >= premio.posicaoInicio
+          ? soma.plus(new DecimalFinanceiro(premio.valor).mul(premio.posicaoFim - premio.posicaoInicio + 1)) : soma,
+        new DecimalFinanceiro(0));
+        if (total.gt(0)) premiacaoEmDisputa = total.toFixed(2);
+      }
+      return { ...resumo(row), quantidadeInscritos, premiacaoEmDisputa };
+    });
   }
 
   async buscarCompeticao(id: number): Promise<CompeticaoDetalheDto> {

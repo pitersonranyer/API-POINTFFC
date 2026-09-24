@@ -1,7 +1,7 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ApiBadRequestResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CompeticaoIdParamsDto, LigaSlugParamsDto, ListarCompeticoesQueryDto } from './dto/ligas-competicoes-query.dto';
-import { CompeticaoDetalheDto, CompeticaoResumoDto, LigaResponseDto } from './dto/ligas-competicoes-response.dto';
+import { CompeticaoCardDto, CompeticaoDetalheDto, LigaResponseDto } from './dto/ligas-competicoes-response.dto';
 import { LigasCompeticoesService } from './ligas-competicoes.service';
 
 @ApiTags('ligas')
@@ -18,7 +18,7 @@ export class LigasController {
 
   @Get(':slug/competicoes')
   @ApiOperation({ summary: 'Lista competicoes publicas de uma liga' })
-  @ApiOkResponse({ type: [CompeticaoResumoDto] })
+  @ApiOkResponse({ type: [CompeticaoCardDto] })
   listar(@Param() params: LigaSlugParamsDto, @Query() query: ListarCompeticoesQueryDto) {
     return this.service.listarCompeticoes(params.slug, query);
   }

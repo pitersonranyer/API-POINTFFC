@@ -39,6 +39,12 @@ export class CompeticaoResumoDto {
   @ApiProperty({ type: ModalidadeResumoDto }) modalidade!: ModalidadeResumoDto;
 }
 
+export class CompeticaoCardDto extends CompeticaoResumoDto {
+  @ApiProperty({ description: 'Inscricoes ATIVA e FINALIZADA; exclui CANCELADA.' }) quantidadeInscritos!: number;
+  @ApiProperty({ type: String, nullable: true, example: '1234.56', description: 'BRL decimal derivado, nao persistido. PAGO: inscritos validos x entrada menos taxa. FREE: premios fixos configurados, ou null.' })
+  premiacaoEmDisputa!: string | null;
+}
+
 export class PremiacaoResumoDto {
   @ApiProperty() posicaoInicio!: number;
   @ApiProperty() posicaoFim!: number;

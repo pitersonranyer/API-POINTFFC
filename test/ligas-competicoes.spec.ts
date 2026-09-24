@@ -14,7 +14,8 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   inicioInscricao: new Date('2026-09-01T00:00:00Z'), fimInscricao: new Date('2026-09-30T23:59:59Z'),
   dataInicio: new Date('2026-10-01T00:00:00Z'), dataFim: new Date('2026-10-07T23:59:59Z'),
   limiteTimesUsuario: 30, limiteParticipantes: null, status: 'INSCRICOES_ABERTAS', destaque: true,
-  ligaModalidade: { modalidade, liga }, premiacoes: [], ...overrides,
+  ligaModalidade: { modalidade, liga }, premiacoes: [], _count: { inscricoes: 0 },
+  tipoTaxaPlataforma: null, valorTaxaPlataforma: null, ...overrides,
 });
 
 describe('Ligas e competicoes - leitura publica', () => {
@@ -142,5 +143,46 @@ describe('Ligas e competicoes - leitura publica', () => {
   it('controllers permanecem publicos, sem JwtAuthGuard', () => {
     expect(Reflect.getMetadata(GUARDS_METADATA, LigasController)).toBeUndefined();
     expect(Reflect.getMetadata(GUARDS_METADATA, CompeticoesController)).toBeUndefined();
+  });
+
+  it.each([
+    ['PERCENTUAL', '10', '900.00'],
+    ['VALOR_FIXO', '2.50', '750.00'],
+    [null, null, '1000.00'],
+  ])('card PAGO reutiliza taxa %s e calcula premio sem persistir', async (tipo, taxa, esperado) => {
+    prisma.competicaoLiga.findMany.mockResolvedValue([row({ tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal(10),
+      tipoTaxaPlataforma: tipo, valorTaxaPlataforma: taxa === null ? null : new Prisma.Decimal(taxa), _count: { inscricoes: 100 } })]);
+    const [card] = await service.listarCompeticoes('point-ffc', {});
+    expect(card).toMatchObject({ valorInscricao: 10, quantidadeInscritos: 100, premiacaoEmDisputa: esperado });
+    expect(card).not.toHaveProperty('tipoTaxaPlataforma');
+    expect(card).not.toHaveProperty('valorTaxaPlataforma');
+    expect(card).not.toHaveProperty('_count');
+    expect(card).not.toHaveProperty('premiacoes');
+    const select = prisma.competicaoLiga.findMany.mock.calls[1][0].select;
+    expect(select._count.select.inscricoes.where).toEqual({ statusInscricao: { in: ['ATIVA', 'FINALIZADA'] } });
+  });
+
+  it('recalcula a cada leitura com novas inscricoes e mantem HALF_UP', async () => {
+    let inscritos = 1;
+    prisma.competicaoLiga.findMany.mockImplementation(async () => [row({ tipoAcesso: 'PAGO',
+      valorInscricao: new Prisma.Decimal('0.05'), tipoTaxaPlataforma: 'PERCENTUAL', valorTaxaPlataforma: new Prisma.Decimal(10),
+      _count: { inscricoes: inscritos } })]);
+    expect((await service.listarCompeticoes('point-ffc', {}))[0].premiacaoEmDisputa).toBe('0.04');
+    inscritos = 2;
+    expect((await service.listarCompeticoes('point-ffc', {}))[0].premiacaoEmDisputa).toBe('0.09');
+    inscritos = 0;
+    expect((await service.listarCompeticoes('point-ffc', {}))[0].premiacaoEmDisputa).toBe('0.00');
+  });
+
+  it('FREE sem premio real retorna null independentemente dos inscritos', async () => {
+    prisma.competicaoLiga.findMany.mockResolvedValue([row({ _count: { inscricoes: 500 } })]);
+    expect((await service.listarCompeticoes('point-ffc', {}))[0].premiacaoEmDisputa).toBeNull();
+  });
+
+  it('FREE soma apenas premios monetarios fixos configurados por faixa', async () => {
+    prisma.competicaoLiga.findMany.mockResolvedValue([row({ _count: { inscricoes: 500 },
+      premiacoes: [{ valor: new Prisma.Decimal('50.25'), posicaoInicio: 1, posicaoFim: 3 }] })]);
+    expect((await service.listarCompeticoes('point-ffc', {}))[0].premiacaoEmDisputa).toBe('150.75');
+    expect(prisma.competicaoLiga.findMany.mock.calls[1][0].select.premiacoes.where).toEqual({ tipoPremiacao: 'VALOR_FIXO' });
   });
 });

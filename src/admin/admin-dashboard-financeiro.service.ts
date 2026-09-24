@@ -1,6 +1,7 @@
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { calcularBasePremiacao, centavos, DecimalFinanceiro as Decimal } from '../ligas-competicoes/financeiro-competicao';
 import { DashboardFinanceiroItemDto, DashboardFinanceiroQueryDto, DashboardFinanceiroResponseDto } from './dto/admin-dashboard-financeiro.dto';
 
 const competicaoSelect = {
@@ -18,10 +19,7 @@ const premioSelect = {
 } satisfies Prisma.PremiacaoCompeticaoSelect;
 type Premio = Prisma.PremiacaoCompeticaoGetPayload<{ select: typeof premioSelect }>;
 
-// Precisao local: nao modifica a configuracao Decimal compartilhada pelo Prisma.
-const Decimal = Prisma.Decimal.clone({ precision: 40, rounding: Prisma.Decimal.ROUND_HALF_UP });
 const zero = () => new Decimal(0);
-const centavos = (valor: Prisma.Decimal) => valor.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 const valoresVazios = () => ({ valorInscricoes: zero(), receitaPointPrevista: zero(),
   basePremiacao: zero(), premiacaoCalculada: zero(), saldoAposPremiacao: zero() });
 type Valores = ReturnType<typeof valoresVazios>;
@@ -79,15 +77,11 @@ export class AdminDashboardFinanceiroService {
         const totalConsiderado = dados.ativos + dados.finalizados;
         const tipo = competicao.tipoTaxaPlataforma;
         const taxa = competicao.valorTaxaPlataforma;
-        if ((tipo === null) !== (taxa === null) || taxa?.lt(0) || (tipo === 'PERCENTUAL' && taxa?.gt(100))) {
-          throw new ConflictException(`Taxa da plataforma invalida na competicao ${competicao.id}.`);
-        }
+        const base = calcularBasePremiacao(competicao.id, dados.valor, totalConsiderado, tipo, taxa);
         const financeiro = valoresVazios();
         financeiro.valorInscricoes = dados.valor;
-        financeiro.receitaPointPrevista = centavos(tipo === 'PERCENTUAL'
-          ? dados.valor.mul(taxa!).div(100)
-          : tipo === 'VALOR_FIXO' ? new Decimal(taxa!).mul(totalConsiderado) : zero());
-        financeiro.basePremiacao = dados.valor.minus(financeiro.receitaPointPrevista);
+        financeiro.receitaPointPrevista = base.receitaPoint;
+        financeiro.basePremiacao = base.basePremiacao;
         let fimAnterior = 0;
         let percentualTotal = zero();
         const premiacoes = (premiosPorCompeticao.get(competicao.id) ?? []).map(premio => {
