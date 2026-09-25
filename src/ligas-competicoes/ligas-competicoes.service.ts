@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ListarCompeticoesQueryDto } from './dto/ligas-competicoes-query.dto';
 import { CompeticaoCardDto, CompeticaoDetalheDto, CompeticaoResumoDto, LigaResponseDto } from './dto/ligas-competicoes-response.dto';
-import { calcularBasePremiacao, DecimalFinanceiro } from './financeiro-competicao';
+import { calcularPremiacaoEmDisputa } from './financeiro-competicao';
 
 const publicLiga = { status: 'ATIVA', visivelApp: true } as const;
 const publicModalidade = { ativa: true, modalidade: { ativa: true } } as const;
@@ -103,17 +103,8 @@ export class LigasCompeticoesService {
       competicoes: rows.map(({ id, slug }) => ({ id, slug })) })}`);
     return rows.map(({ _count, tipoTaxaPlataforma, valorTaxaPlataforma, premiacoes, ...row }) => {
       const quantidadeInscritos = _count.inscricoes;
-      let premiacaoEmDisputa: string | null = null;
-      if (row.tipoAcesso === 'PAGO') {
-        const bruto = new DecimalFinanceiro(row.valorInscricao).mul(quantidadeInscritos);
-        premiacaoEmDisputa = calcularBasePremiacao(row.id, bruto, quantidadeInscritos,
-          tipoTaxaPlataforma, valorTaxaPlataforma).basePremiacao.toFixed(2);
-      } else {
-        const total = premiacoes.reduce((soma, premio) => premio.valor?.gt(0) && premio.posicaoFim >= premio.posicaoInicio
-          ? soma.plus(new DecimalFinanceiro(premio.valor).mul(premio.posicaoFim - premio.posicaoInicio + 1)) : soma,
-        new DecimalFinanceiro(0));
-        if (total.gt(0)) premiacaoEmDisputa = total.toFixed(2);
-      }
+      const premiacaoEmDisputa = calcularPremiacaoEmDisputa(
+        { ...row, tipoTaxaPlataforma, valorTaxaPlataforma }, quantidadeInscritos, premiacoes);
       return { ...resumo(row), quantidadeInscritos, premiacaoEmDisputa };
     });
   }

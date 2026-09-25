@@ -19,7 +19,7 @@ const competicao = (changes: Record<string, unknown> = {}) => ({
   ligaModalidade: { ativa: true,
     liga: { id: 2, nome: 'POINT FFC', slug: 'point-ffc', imagemUrl: null, status: 'ATIVA' },
     modalidade: { codigo: 'RODADA', nome: 'Rodada', ativa: true } },
-  premiacoes: [], ...changes,
+  premiacoes: [], _count: { inscricoes: 0 }, tipoTaxaPlataforma: null, valorTaxaPlataforma: null, ...changes,
 });
 
 describe('ResumoCompeticaoService', () => {
@@ -143,6 +143,58 @@ describe('ResumoCompeticaoService', () => {
     expect((await service.consultar(1)).premiacao).toEqual([]);
     prisma.competicaoLiga.findFirst.mockResolvedValue(competicao({ premiacoes: [{ posicaoInicio: 1, posicaoFim: 1,
       tipoPremiacao: 'VALOR_FIXO', valor: new Prisma.Decimal(10), percentual: null, ordem: 1 }] }));
-    expect((await service.consultar(1)).premiacao).toEqual([{ posicaoInicio: 1, posicaoFim: 1, tipoPremiacao: 'VALOR_FIXO', valor: 10, percentual: null, ordem: 1 }]);
+    expect((await service.consultar(1)).premiacao).toEqual([{ posicaoInicio: 1, posicaoFim: 1, tipoPremiacao: 'VALOR_FIXO', valor: 10, percentual: null, ordem: 1, valorCalculado: '10.00' }]);
+  });
+
+  const percentuais = [30, 18, 12].map((percentual, index) => ({ posicaoInicio: index + 1, posicaoFim: index + 1,
+    tipoPremiacao: 'PERCENTUAL', valor: null, percentual: new Prisma.Decimal(percentual), ordem: index }));
+
+  it.each([
+    ['200', '160.00', ['48.00', '28.80', '19.20']],
+    ['2', '1.60', ['0.48', '0.29', '0.19']],
+    ['0', '0.00', ['0.00', '0.00', '0.00']],
+  ])('calcula percentuais por posicao sobre base liquida de %s', async (entrada, base, valores) => {
+    prisma.competicaoLiga.findFirst.mockResolvedValue(competicao({ tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal(entrada),
+      tipoTaxaPlataforma: 'PERCENTUAL', valorTaxaPlataforma: new Prisma.Decimal(20), _count: { inscricoes: 1 }, premiacoes: percentuais }));
+    const result = await service.consultar(1);
+    expect(result.premiacaoEmDisputa).toBe(base);
+    expect(result.premiacao.map(p => p.valorCalculado)).toEqual(valores);
+    expect(result.premiacao.map(p => p.percentual)).toEqual([30, 18, 12]);
+    expect(result.competicao).not.toHaveProperty('_count');
+    expect(result.competicao).not.toHaveProperty('valorTaxaPlataforma');
+    expect(prisma.competicaoLiga.findFirst.mock.calls[0][0].select._count.select.inscricoes.where)
+      .toEqual({ statusInscricao: { in: ['ATIVA', 'FINALIZADA'] } });
+  });
+
+  it('recalcula com inscritos validos e usa taxa fixa e HALF_UP por posicao de faixa', async () => {
+    const row = competicao({ tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal('0.06'),
+      tipoTaxaPlataforma: 'VALOR_FIXO', valorTaxaPlataforma: new Prisma.Decimal('0.01'), _count: { inscricoes: 1 },
+      premiacoes: [{ ...percentuais[0], posicaoFim: 3 }] });
+    prisma.competicaoLiga.findFirst.mockResolvedValue(row);
+    expect((await service.consultar(1)).premiacao[0].valorCalculado).toBe('0.02');
+    row._count.inscricoes = 2;
+    const atual = await service.consultar(1);
+    expect(atual.premiacaoEmDisputa).toBe('0.10');
+    expect(atual.premiacao[0]).toMatchObject({ posicaoInicio: 1, posicaoFim: 3, valorCalculado: '0.03' });
+  });
+
+  it('FREE usa somente fixos por posicao e nao cria base percentual a partir de inscricoes', async () => {
+    expect((await service.consultar(1)).premiacaoEmDisputa).toBeNull();
+    prisma.competicaoLiga.findFirst.mockResolvedValue(competicao({ _count: { inscricoes: 500 }, premiacoes: [
+      { posicaoInicio: 4, posicaoFim: 6, tipoPremiacao: 'VALOR_FIXO', valor: new Prisma.Decimal('50.25'), percentual: null, ordem: 4 },
+      ...percentuais,
+    ] }));
+    const result = await service.consultar(1);
+    expect(result.premiacaoEmDisputa).toBe('150.75');
+    expect(result.premiacao.map(p => p.valorCalculado)).toEqual(['50.25', null, null, null]);
+  });
+
+  it('PAGO permite mistura de regras sem somar fixos a base de inscricoes', async () => {
+    prisma.competicaoLiga.findFirst.mockResolvedValue(competicao({ tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal(160),
+      _count: { inscricoes: 1 }, premiacoes: [...percentuais,
+        { posicaoInicio: 4, posicaoFim: 5, tipoPremiacao: 'VALOR_FIXO', valor: new Prisma.Decimal(5), percentual: null, ordem: 4 }] }));
+    const result = await service.consultar(1);
+    expect(result.premiacaoEmDisputa).toBe('160.00');
+    expect(result.premiacao.map(p => p.valorCalculado)).toEqual(['48.00', '28.80', '19.20', '5.00']);
   });
 });

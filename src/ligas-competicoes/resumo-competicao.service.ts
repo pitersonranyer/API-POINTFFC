@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { mapMinha, minhaSelect, motivoBloqueioInscricao } from './inscricoes-competicao.service';
 import { ResumoCompeticaoResponseDto } from './dto/resumo-competicao.dto';
+import { calcularPremiacaoEmDisputa, centavos, DecimalFinanceiro } from './financeiro-competicao';
 
 @Injectable()
 export class ResumoCompeticaoService {
@@ -15,6 +16,8 @@ export class ResumoCompeticaoService {
         rodadaInicio: true, rodadaFim: true, inicioInscricao: true, fimInscricao: true,
         dataInicio: true, dataFim: true, limiteTimesUsuario: true, limiteParticipantes: true,
         status: true, destaque: true, visivelApp: true,
+        tipoTaxaPlataforma: true, valorTaxaPlataforma: true,
+        _count: { select: { inscricoes: { where: { statusInscricao: { in: ['ATIVA', 'FINALIZADA'] } } } } },
         ligaModalidade: { select: {
           ativa: true,
           liga: { select: { id: true, nome: true, slug: true, imagemUrl: true, status: true, visivelApp: true } },
@@ -38,7 +41,11 @@ export class ResumoCompeticaoService {
       minhasQuery,
     ]);
 
-    const { ligaModalidade, premiacoes, visivelApp, valorInscricao, inicioInscricao, fimInscricao, dataInicio, dataFim, ...dados } = row;
+    const { ligaModalidade, premiacoes, visivelApp, valorInscricao, inicioInscricao, fimInscricao, dataInicio, dataFim,
+      _count, tipoTaxaPlataforma, valorTaxaPlataforma, ...dados } = row;
+    const premiacaoEmDisputa = calcularPremiacaoEmDisputa(
+      { ...dados, valorInscricao, tipoTaxaPlataforma, valorTaxaPlataforma }, _count.inscricoes,
+      premiacoes.filter(premio => premio.tipoPremiacao === 'VALOR_FIXO'));
     const { status: ligaStatus, visivelApp: ligaVisivelApp, ...liga } = ligaModalidade.liga;
     const { ativa: modalidadeAtiva, ...modalidade } = ligaModalidade.modalidade;
     const resposta: ResumoCompeticaoResponseDto = {
@@ -53,9 +60,15 @@ export class ResumoCompeticaoService {
       liga,
       modalidade,
       inscritos: { quantidade },
+      premiacaoEmDisputa,
       premiacao: premiacoes.map(premio => ({ ...premio,
         valor: premio.valor?.toNumber() ?? null,
         percentual: premio.percentual?.toNumber() ?? null,
+        valorCalculado: premio.tipoPremiacao === 'VALOR_FIXO' && premio.valor !== null
+          ? centavos(new DecimalFinanceiro(premio.valor)).toFixed(2)
+          : premio.tipoPremiacao === 'PERCENTUAL' && premio.percentual !== null && row.tipoAcesso === 'PAGO'
+            ? centavos(new DecimalFinanceiro(premiacaoEmDisputa!).mul(premio.percentual).div(100)).toFixed(2)
+            : null,
       })),
     };
 
