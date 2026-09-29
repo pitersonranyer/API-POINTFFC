@@ -14,10 +14,12 @@ import { AdminDesafiosController } from './admin-desafios.controller';
 import { AdminDesafiosService } from './admin-desafios.service';
 import { FutebolModule } from '../futebol/futebol.module';
 import { AdminDesafioPartidasService } from './admin-desafio-partidas.service';
+import { AdminDesafioApuracaoService } from './admin-desafio-apuracao.service';
+import { AdminDesafioApuracaoController } from './admin-desafio-apuracao.controller';
 
 @Module({
   imports: [AuthModule, PrismaModule, FutebolModule],
-  controllers: [AdminLigasController, AdminCompeticoesController, AdminPremiacoesController, AdminDashboardFinanceiroController, AdminDesafiosController],
-  providers: [AdminGuard, AdminLigasService, AdminCompeticoesService, AdminPremiacoesService, AdminDashboardFinanceiroService, AdminDesafiosService, AdminDesafioPartidasService],
+  controllers: [AdminLigasController, AdminCompeticoesController, AdminPremiacoesController, AdminDashboardFinanceiroController, AdminDesafiosController, AdminDesafioApuracaoController],
+  providers: [AdminGuard, AdminLigasService, AdminCompeticoesService, AdminPremiacoesService, AdminDashboardFinanceiroService, AdminDesafiosService, AdminDesafioPartidasService, AdminDesafioApuracaoService],
 })
 export class AdminModule {}

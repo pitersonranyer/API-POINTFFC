@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DesafioFixture, FootballDataError, FootballDataErrorCode, mapDesafioMatch, parseDesafioMatches } from './football-data.normalizer';
 import { FutebolCodigo, isFutebolCodigo } from './futebol-competicoes';
+import { DesafioResultadoOficial, mapDesafioResultado, parseDesafioResultados } from './football-data-desafio-resultado';
 
 export interface FootballDataPesquisa {
   date?: string;
@@ -57,21 +58,29 @@ export class FootballDataClient {
   }
 
   async buscarPartidasPorIds(ids: number[]): Promise<DesafioFixture[]> {
+    return this.buscarPorIds(ids, mapDesafioMatch, parseDesafioMatches);
+  }
+
+  buscarResultadosPorIds(ids: number[]): Promise<DesafioResultadoOficial[]> {
+    return this.buscarPorIds(ids, mapDesafioResultado, parseDesafioResultados);
+  }
+
+  private async buscarPorIds<T extends DesafioFixture>(ids: number[], mapear: (input: unknown) => T, listar: (input: unknown) => T[]): Promise<T[]> {
     const unicos = [...new Set(ids)];
     unicos.forEach(id => this.validarId(id));
-    const matches: DesafioFixture[] = [];
+    const matches: T[] = [];
     // Lotes de 50 limitam o tamanho da URL; /matches?ids=... suporta competicoes mistas.
     for (let i = 0; i < unicos.length; i += 50) {
       const lote = unicos.slice(i, i + 50);
-      let rows: DesafioFixture[];
+      let rows: T[];
       if (lote.length === 1) {
-        try { rows = [mapDesafioMatch(await this.request(`/matches/${lote[0]}`))]; }
+        try { rows = [mapear(await this.request(`/matches/${lote[0]}`))]; }
         catch (error) {
           if (error instanceof FootballDataError && error.code === 'NOT_FOUND') rows = [];
           else throw error;
         }
       } else {
-        rows = parseDesafioMatches(await this.request('/matches', new URLSearchParams({ ids: lote.join(',') })));
+        rows = listar(await this.request('/matches', new URLSearchParams({ ids: lote.join(',') })));
       }
       if (rows.some(row => !lote.includes(row.fixtureId))) throw new FootballDataError('football-data: partida divergente.');
       matches.push(...rows);
