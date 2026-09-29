@@ -21,6 +21,7 @@ import { RoundProcessingModule } from './round-processing/round-processing.modul
 import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module';
 import { LigasCompeticoesModule } from './ligas-competicoes/ligas-competicoes.module';
 import { AdminModule } from './admin/admin.module';
+import { DesafiosModule } from './desafios/desafios.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { AdminModule } from './admin/admin.module';
     PocMercadoPagoModule,
     LigasCompeticoesModule,
     AdminModule,
+    DesafiosModule,
   ],
 })
 export class AppModule {}
