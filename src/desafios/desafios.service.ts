@@ -3,6 +3,7 @@ import { DesafioPartidaStatus, DesafioStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DesafioDetalheDto, DesafioPalpiteSalvoDto, DesafioResumoDto, DesafiosPaginaDto } from './dto/desafios-response.dto';
 import { ListarDesafiosQueryDto, SalvarDesafioPalpiteDto } from './dto/desafios.dto';
+import { mapearMinhaDesafioInscricao, minhaDesafioInscricaoSelect } from './desafio-inscricao';
 
 const desafioSelect = {
   id: true, nome: true, descricao: true, tipoAcesso: true, valorInscricao: true, status: true,
@@ -71,9 +72,14 @@ export class DesafiosService {
       where: { desafioId: id, usuarioId }, select: { desafioPartidaId: true, palpite: true },
     });
     const meusPalpites = new Map(palpites.map(palpite => [palpite.desafioPartidaId, palpite.palpite]));
+    const minhaInscricao = usuarioId === undefined ? null : await this.prisma.desafioInscricao.findUnique({
+      where: { desafioId_usuarioId: { desafioId: id, usuarioId } }, select: minhaDesafioInscricaoSelect,
+    });
     const agora = new Date();
     if (!disponivel(desafio, agora)) throw new NotFoundException('Desafio nao encontrado ou indisponivel.');
-    return { ...mapear(desafio), partidas: desafio.partidas.map(partida => ({
+    return { ...mapear(desafio), ...(usuarioId === undefined ? {} : {
+      inscrito: minhaInscricao?.status === 'ATIVA', minhaInscricao: minhaInscricao ? mapearMinhaDesafioInscricao(minhaInscricao) : null,
+    }), partidas: desafio.partidas.map(partida => ({
       id: partida.id, ordem: partida.ordem, nomeCompeticao: partida.nomeCompeticao,
       nomeMandante: partida.nomeMandante, logoMandanteUrl: partida.logoMandanteUrl,
       nomeVisitante: partida.nomeVisitante, logoVisitanteUrl: partida.logoVisitanteUrl,

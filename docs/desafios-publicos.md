@@ -1,5 +1,8 @@
 # Desafio publico e palpites — Etapa 4
 
+A [Etapa 5](desafio-participacao.md) acrescenta a confirmacao de participacao e os campos
+`inscrito`/`minhaInscricao` no detalhe autenticado, preservando a independencia dos palpites.
+
 ## Rotas
 
 | Metodo | Rota | Autenticacao | Sucesso |
@@ -132,8 +135,9 @@ ou detalhe indisponivel; 409 no PUT quando o Desafio nao permite participacao ou
 
 ## Escopo e validacao
 
-Nao altera schema, constraints nem migrations. Nao consulta/cria DesafioInscricao,
+Nao altera schema, constraints nem migrations. O fluxo de palpites nao consulta/cria DesafioInscricao,
 nao movimenta carteira, nao integra PIX/pagamento e nao implementa ranking/apuracao.
+Desde a Etapa 5, o detalhe autenticado consulta a propria inscricao e ha uma rota separada de participacao.
 Nenhum palpite cria automaticamente uma inscricao, nem mesmo em Desafio FREE.
 
 Testes de servico cobrem visibilidade, periodos, privacidade, criacao/alteracao, igualdade

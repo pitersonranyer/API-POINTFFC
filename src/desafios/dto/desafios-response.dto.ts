@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DesafioPartidaStatus, DesafioResultado, DesafioStatus, DesafioTipoAcesso } from '@prisma/client';
+import { MinhaDesafioInscricaoDto } from './desafio-participacao.dto';
 
 export class DesafioResumoDto {
   @ApiProperty() id!: number;
@@ -34,6 +35,8 @@ export class DesafioPartidaDto {
 
 export class DesafioDetalheDto extends DesafioResumoDto {
   @ApiProperty({ type: [DesafioPartidaDto] }) partidas!: DesafioPartidaDto[];
+  @ApiPropertyOptional({ description: 'Somente autenticado; true quando possui inscricao ATIVA' }) inscrito?: boolean;
+  @ApiPropertyOptional({ type: MinhaDesafioInscricaoDto, nullable: true }) minhaInscricao?: MinhaDesafioInscricaoDto | null;
 }
 
 export class DesafiosPaginacaoDto {

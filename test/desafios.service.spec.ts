@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Desafio, DesafioPalpite, DesafioPartida, Prisma } from '@prisma/client';
+import { Desafio, DesafioInscricao, DesafioPalpite, DesafioPartida, Prisma } from '@prisma/client';
 import { DesafiosService } from '../src/desafios/desafios.service';
 import { ListarDesafiosQueryDto } from '../src/desafios/dto/desafios.dto';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -28,7 +28,7 @@ type FiltroPublico = { id?: number; status: { in: string[] }; publicadoEm: { lte
   inicioInscricao: { lte: Date }; dataFim: { gt: Date }; tipoAcesso?: string };
 
 function setup() {
-  const state = { desafios: [desafio()], partidas: [partida()], palpites: [] as DesafioPalpite[] };
+  const state = { desafios: [desafio()], partidas: [partida()], palpites: [] as DesafioPalpite[], inscricoes: [] as DesafioInscricao[] };
   const filtrar = (where: FiltroPublico) => state.desafios.filter(d => (where.id === undefined || d.id === where.id)
     && where.status.in.includes(d.status) && d.publicadoEm !== null && d.publicadoEm <= where.publicadoEm.lte
     && d.inicioInscricao <= where.inicioInscricao.lte && d.dataFim > where.dataFim.gt
@@ -65,7 +65,11 @@ function setup() {
         state.palpites.push(novo); return novo;
       }),
     },
-    desafioInscricao: foraDoEscopo, carteira: foraDoEscopo, movimentacaoCarteira: foraDoEscopo,
+    desafioInscricao: { ...foraDoEscopo, findUnique: jest.fn(async ({ where }: {
+      where: { desafioId_usuarioId: { desafioId: number; usuarioId: number } };
+    }) => state.inscricoes.find(i => i.desafioId === where.desafioId_usuarioId.desafioId
+      && i.usuarioId === where.desafioId_usuarioId.usuarioId) ?? null) },
+    carteira: foraDoEscopo, movimentacaoCarteira: foraDoEscopo,
     $queryRaw: jest.fn(async (sql: TemplateStringsArray, ...values: number[]) => {
       const existe = sql.join(' ').includes('DESAFIO_PARTIDA')
         ? state.partidas.some(p => p.id === values[0] && p.desafioId === values[1])
@@ -130,6 +134,9 @@ describe('Desafios publicos e meus palpites', () => {
       logoMandanteUrl: 'https://example.com/home.png', nomeVisitante: 'Visitante', logoVisitanteUrl: null,
       dataInicio: '2030-10-03T16:00:00.000Z', status: 'AGENDADA', fechamentoEm: '2030-10-03T16:00:00.000Z', podeAlterarPalpite: false });
     expect(f.tx.desafioPalpite.findMany).not.toHaveBeenCalled();
+    expect(f.tx.desafioInscricao.findUnique).not.toHaveBeenCalled();
+    expect(result).not.toHaveProperty('inscrito');
+    expect(result).not.toHaveProperty('minhaInscricao');
     expect(f.tx.desafio.findFirst.mock.calls[0][0]).toMatchObject({ select: { partidas: { orderBy: [{ ordem: 'asc' }, { id: 'asc' }] } } });
     expect(f.proibido).not.toHaveBeenCalled();
   });
@@ -141,8 +148,27 @@ describe('Desafios publicos e meus palpites', () => {
       palpite(42, 3, { desafioId: 8, palpite: 'CASA' })];
     const result = await f.service.buscar(7, 42);
     expect(result.partidas.map(p => [p.meuPalpite, p.podeAlterarPalpite])).toEqual([['CASA', false], ['EMPATE', true], [null, true]]);
+    expect(result).toMatchObject({ inscrito: false, minhaInscricao: null });
     expect(f.tx.desafioPalpite.findMany).toHaveBeenCalledWith({ where: { desafioId: 7, usuarioId: 42 },
       select: { desafioPartidaId: true, palpite: true } });
+    expect(f.proibido).not.toHaveBeenCalled();
+  });
+
+  it('detalhe informa somente a minha inscricao, sem IDs financeiros ou dados de outro usuario', async () => {
+    const f = setup();
+    const inscricao: DesafioInscricao = { id: 10, desafioId: 7, usuarioId: 42, status: 'ATIVA',
+      valorInscricao: new Prisma.Decimal('2.00'), movimentacaoDebitoId: 100,
+      dataInscricao: agora, criadoEm: agora, atualizadoEm: agora };
+    f.state.inscricoes = [inscricao, { ...inscricao, id: 11, usuarioId: 43 }];
+    expect(await f.service.buscar(7, 42)).toMatchObject({ inscrito: true, minhaInscricao: {
+      id: 10, desafioId: 7, status: 'ATIVA', valorInscricao: '2.00', dataInscricao: agora.toISOString(),
+    } });
+    expect((await f.service.buscar(7, 42)).minhaInscricao).not.toHaveProperty('movimentacaoDebitoId');
+    expect((await f.service.buscar(7, 42)).minhaInscricao).not.toHaveProperty('usuarioId');
+    expect(await f.service.buscar(7, 99)).toMatchObject({ inscrito: false, minhaInscricao: null });
+    inscricao.status = 'CANCELADA';
+    expect(await f.service.buscar(7, 42)).toMatchObject({ inscrito: false, minhaInscricao: { status: 'CANCELADA' } });
+    await expect(f.service.salvarPalpite(7, 1, 42, { palpite: 'FORA' })).resolves.toMatchObject({ palpite: 'FORA' });
     expect(f.proibido).not.toHaveBeenCalled();
   });
 
