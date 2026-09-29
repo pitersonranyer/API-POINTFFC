@@ -141,6 +141,10 @@ model Usuario {
   inscricoesCompeticao InscricaoTimeCompeticao[]
   lotesInscricao LoteInscricao[]
 
+  desafiosCriados Desafio[]
+  palpitesDesafio DesafioPalpite[]
+  inscricoesDesafio DesafioInscricao[]
+
   @@map("USUARIO")
 }
 
@@ -227,6 +231,7 @@ model MovimentacaoCarteira {
   criadoEm DateTime @default(now())
   carteira Carteira @relation(fields: [carteiraId], references: [id], onDelete: Restrict)
   loteInscricao LoteInscricao?
+  inscricaoDesafio DesafioInscricao?
 
   @@index([carteiraId, criadoEm, id])
   @@map("MOVIMENTACAO_CARTEIRA")
@@ -443,6 +448,136 @@ model InscricaoTimeCompeticao {
   @@index([usuarioId, competicaoLigaId])
   @@index([competicaoLigaId, statusInscricao, posicao])
   @@map("INSCRICAO_TIME_COMPETICAO")
+}
+
+enum DesafioTipoAcesso {
+  FREE
+  PAGO
+}
+
+enum DesafioStatus {
+  RASCUNHO
+  ABERTO
+  EM_ANDAMENTO
+  ENCERRADO
+  CANCELADO
+}
+
+enum DesafioPartidaStatus {
+  AGENDADA
+  EM_ANDAMENTO
+  FINALIZADA
+  ANULADA
+}
+
+enum DesafioResultado {
+  CASA
+  EMPATE
+  FORA
+}
+
+enum DesafioInscricaoStatus {
+  ATIVA
+  CANCELADA
+}
+
+model Desafio {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  tipoAcesso DesafioTipoAcesso @default(FREE) @map("TIPO_ACESSO")
+  // FREE = 0 e PAGO > 0: CHECK na migration.
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  status DesafioStatus @default(RASCUNHO) @map("STATUS")
+  inicioInscricao DateTime @map("INICIO_INSCRICAO")
+  fimInscricao DateTime @map("FIM_INSCRICAO")
+  dataInicio DateTime @map("DATA_INICIO")
+  dataFim DateTime @map("DATA_FIM")
+  limiteParticipantes Int? @map("LIMITE_PARTICIPANTES") @db.UnsignedInt
+  criadoPorId Int @map("CRIADO_POR_ID") @db.UnsignedInt
+  publicadoEm DateTime? @map("PUBLICADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  criadoPor Usuario @relation(fields: [criadoPorId], references: [idUsuario], onDelete: Restrict)
+  partidas DesafioPartida[]
+  palpites DesafioPalpite[]
+  inscricoes DesafioInscricao[]
+
+  @@index([criadoPorId])
+  @@index([status, dataInicio])
+  @@map("DESAFIO")
+}
+
+model DesafioPartida {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
+  fixtureIdApiFootball Int @map("FIXTURE_ID_API_FOOTBALL") @db.UnsignedInt
+  leagueIdApiFootball Int @map("LEAGUE_ID_API_FOOTBALL") @db.UnsignedInt
+  nomeCompeticao String @map("NOME_COMPETICAO") @db.VarChar(255)
+  mandanteIdApiFootball Int @map("MANDANTE_ID_API_FOOTBALL") @db.UnsignedInt
+  nomeMandante String @map("NOME_MANDANTE") @db.VarChar(255)
+  logoMandanteUrl String? @map("LOGO_MANDANTE_URL") @db.Text
+  visitanteIdApiFootball Int @map("VISITANTE_ID_API_FOOTBALL") @db.UnsignedInt
+  nomeVisitante String @map("NOME_VISITANTE") @db.VarChar(255)
+  logoVisitanteUrl String? @map("LOGO_VISITANTE_URL") @db.Text
+  dataInicio DateTime @map("DATA_INICIO")
+  status DesafioPartidaStatus @default(AGENDADA) @map("STATUS")
+  // Resultado e gols consideram somente tempo regulamentar e acrescimos.
+  resultado DesafioResultado? @map("RESULTADO")
+  golsMandante Int? @map("GOLS_MANDANTE") @db.UnsignedSmallInt
+  golsVisitante Int? @map("GOLS_VISITANTE") @db.UnsignedSmallInt
+  ordem Int @default(0) @map("ORDEM") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
+  palpites DesafioPalpite[]
+
+  @@unique([desafioId, fixtureIdApiFootball])
+  // Alvo da FK composta: impede palpites com desafio diferente da partida.
+  @@unique([id, desafioId])
+  @@index([desafioId, ordem])
+  @@map("DESAFIO_PARTIDA")
+}
+
+model DesafioPalpite {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
+  desafioPartidaId Int @map("DESAFIO_PARTIDA_ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  palpite DesafioResultado @map("PALPITE")
+  pontos Decimal? @map("PONTOS") @db.Decimal(12, 2)
+  apurado Boolean @default(false) @map("APURADO")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
+  desafioPartida DesafioPartida @relation(fields: [desafioPartidaId, desafioId], references: [id, desafioId], onDelete: Restrict, onUpdate: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+
+  @@unique([desafioPartidaId, usuarioId])
+  @@index([desafioPartidaId, desafioId])
+  @@index([desafioId, apurado])
+  @@index([usuarioId, desafioId])
+  @@map("DESAFIO_PALPITE")
+}
+
+model DesafioInscricao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  status DesafioInscricaoStatus @default(ATIVA) @map("STATUS")
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  movimentacaoDebitoId Int? @unique @map("MOVIMENTACAO_DEBITO_ID") @db.UnsignedInt
+  dataInscricao DateTime @default(now()) @map("DATA_INSCRICAO")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  movimentacaoDebito MovimentacaoCarteira? @relation(fields: [movimentacaoDebitoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([desafioId, usuarioId])
+  @@index([usuarioId])
+  @@index([desafioId, status])
+  @@map("DESAFIO_INSCRICAO")
 }
 
 model TimeCartola {

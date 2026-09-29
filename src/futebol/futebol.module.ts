@@ -4,5 +4,5 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { FootballDataClient } from './football-data.client';
 import { FutebolSyncService } from './futebol-sync.service';
 
-@Module({ imports: [ConfigModule, PrismaModule], providers: [FootballDataClient, FutebolSyncService], exports: [FutebolSyncService] })
+@Module({ imports: [ConfigModule, PrismaModule], providers: [FootballDataClient, FutebolSyncService], exports: [FutebolSyncService, FootballDataClient] })
 export class FutebolModule {}
