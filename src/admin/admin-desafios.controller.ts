@@ -36,7 +36,7 @@ export class AdminDesafiosController {
 
   // Rota estatica deve preceder :id para nao ser interpretada como identificador.
   @Get('fixtures')
-  @ApiOkResponse({ description: 'Fixtures oficiais da API-Football, sem persistencia' })
+  @ApiOkResponse({ description: 'Partidas oficiais football-data.org das competicoes suportadas, por periodo inclusivo de ate 7 dias UTC, sem persistencia' })
   pesquisarFixtures(@Query() query: PesquisarAdminFixturesDto) {
     return this.partidas.pesquisar(query);
   }

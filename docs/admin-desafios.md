@@ -1,5 +1,9 @@
 # Desafio — administração e partidas (Etapas 2 e 3)
 
+> Atualizacao: o contrato vigente de pesquisa, datas e publicacao esta em
+> [Fluxo simplificado](desafio-fluxo-simplificado.md). Os exemplos de datas manuais,
+> filtros antigos de fixtures e restricao por periodo abaixo registram as etapas anteriores.
+
 Todas as rotas exigem `Authorization: Bearer <JWT>` de um `PLATFORM_ADMIN` ativo.
 Reutilizam `JwtAuthGuard`, `AdminGuard` e `AuthenticatedUser` no `AdminModule`.
 Os exemplos abaixo são ilustrativos; IDs e horários são gerados pelo servidor.

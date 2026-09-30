@@ -20,17 +20,19 @@ Listagem e detalhe usam a mesma regra, com horario UTC do backend:
 
 - status `ABERTO` ou `EM_ANDAMENTO`;
 - `publicadoEm` preenchido e menor ou igual ao instante atual;
-- `inicioInscricao <= agora < dataFim`.
+- `inicioInscricao <= agora`.
 
-O schema nao possui um periodo separado de exibicao. Por isso, `inicioInscricao`
-marca a disponibilizacao publica e `dataFim` encerra essa disponibilizacao.
-Rascunhos, cancelados, encerrados, nao publicados, ainda nao disponiveis e expirados
+No [fluxo simplificado](desafio-fluxo-simplificado.md), `inicioInscricao` coincide com
+a publicacao. `dataFim` e referencia operacional; a visibilidade permanece enquanto
+o desafio aguarda apuracao. Rascunhos, cancelados, encerrados, nao publicados e ainda nao disponiveis
 nao aparecem na listagem e retornam 404 no detalhe, inclusive para administradores.
 As rotas administrativas das etapas anteriores continuam disponiveis separadamente.
 
 `fimInscricao` e `dataInicio` global sao informativos nesta etapa e NAO fecham palpites.
 Um Desafio `EM_ANDAMENTO` continua aceitando palpites nas partidas futuras elegiveis.
-Nao ha job novo nem transicao automatica de status nesta etapa.
+As respostas derivam EM_ANDAMENTO no primeiro kickoff, sem job novo. O status persistido
+continua sendo atualizado pela apuracao. O limite existente de `dataFim` para gravacao
+de palpites permanece; a nova visibilidade nao reabre palpites.
 
 ## Listagem
 

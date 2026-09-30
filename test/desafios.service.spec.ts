@@ -25,13 +25,13 @@ const palpite = (usuarioId = 42, partidaId = 1, change: Partial<DesafioPalpite> 
 });
 
 type FiltroPublico = { id?: number; status: { in: string[] }; publicadoEm: { lte: Date };
-  inicioInscricao: { lte: Date }; dataFim: { gt: Date }; tipoAcesso?: string };
+  inicioInscricao: { lte: Date }; tipoAcesso?: string };
 
 function setup() {
   const state = { desafios: [desafio()], partidas: [partida()], palpites: [] as DesafioPalpite[], inscricoes: [] as DesafioInscricao[] };
   const filtrar = (where: FiltroPublico) => state.desafios.filter(d => (where.id === undefined || d.id === where.id)
     && where.status.in.includes(d.status) && d.publicadoEm !== null && d.publicadoEm <= where.publicadoEm.lte
-    && d.inicioInscricao <= where.inicioInscricao.lte && d.dataFim > where.dataFim.gt
+    && d.inicioInscricao <= where.inicioInscricao.lte
     && (where.tipoAcesso === undefined || d.tipoAcesso === where.tipoAcesso));
   const proibido = jest.fn(() => { throw new Error('Inscricao/financeiro nao pertencem a esta etapa'); });
   const foraDoEscopo = { findUnique: proibido, findFirst: proibido, findMany: proibido, count: proibido,
@@ -93,7 +93,21 @@ describe('Desafios publicos e meus palpites', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(agora); });
   afterEach(() => jest.useRealTimers());
 
-  it('lista somente publicados ABERTO/EM_ANDAMENTO entre inicioInscricao inclusivo e dataFim exclusivo', async () => {
+  it('deriva andamento exatamente no kickoff e preserva visibilidade apos referencia final', async () => {
+    const f = setup();
+    f.state.desafios[0].dataInicio = new Date(+agora + 1);
+    expect((await f.service.buscar(7)).status).toBe('ABERTO');
+    jest.setSystemTime(new Date(+agora + 1));
+    expect((await f.service.buscar(7)).status).toBe('EM_ANDAMENTO');
+    jest.setSystemTime(f.state.desafios[0].dataFim);
+    expect((await f.service.listar(new ListarDesafiosQueryDto())).itens[0].status).toBe('EM_ANDAMENTO');
+    expect((await f.service.buscar(7)).status).toBe('EM_ANDAMENTO');
+    f.state.partidas[0].dataInicio = new Date(+f.state.desafios[0].dataFim + 1000);
+    await expect(f.service.salvarPalpite(7, 1, 42, { palpite: 'CASA' })).rejects.toBeInstanceOf(ConflictException);
+    expect((await f.service.buscar(7, 42)).partidas[0].podeAlterarPalpite).toBe(false);
+  });
+
+  it('lista publicados ABERTO/EM_ANDAMENTO inclusive apos dataFim enquanto apuracao esta pendente', async () => {
     const f = setup();
     f.state.desafios = [desafio(1), desafio(2, { status: 'EM_ANDAMENTO' }),
       desafio(3, { status: 'RASCUNHO' }), desafio(4, { status: 'CANCELADO' }), desafio(5, { status: 'ENCERRADO' }),
@@ -101,11 +115,11 @@ describe('Desafios publicos e meus palpites', () => {
       desafio(8, { inicioInscricao: new Date(+agora + 1) }), desafio(9, { dataFim: agora }),
       desafio(10, { inicioInscricao: agora, publicadoEm: agora })];
     const result = await f.service.listar(new ListarDesafiosQueryDto());
-    expect(result.itens.map(d => d.id)).toEqual([1, 2, 10]);
-    expect(result.paginacao).toEqual({ pagina: 1, limite: 20, total: 3, totalPaginas: 1 });
+    expect(result.itens.map(d => d.id)).toEqual([1, 2, 9, 10]);
+    expect(result.paginacao).toEqual({ pagina: 1, limite: 20, total: 4, totalPaginas: 1 });
     const consulta = f.tx.desafio.findMany.mock.calls[0][0];
     expect(consulta.where).toEqual({ status: { in: ['ABERTO', 'EM_ANDAMENTO'] }, publicadoEm: { lte: agora },
-      inicioInscricao: { lte: agora }, dataFim: { gt: agora } });
+      inicioInscricao: { lte: agora } });
     expect(consulta).toMatchObject({ orderBy: [{ dataInicio: 'asc' }, { id: 'asc' }] });
     expect(f.tx.desafio.count.mock.calls[0][0].where).toEqual(consulta.where);
     expect(result.itens[0]).not.toHaveProperty('criadoPorId');
@@ -173,7 +187,7 @@ describe('Desafios publicos e meus palpites', () => {
   });
 
   it.each<Partial<Desafio>>([{ status: 'RASCUNHO' }, { status: 'CANCELADO' }, { status: 'ENCERRADO' },
-    { publicadoEm: null }, { publicadoEm: new Date(+agora + 1) }, { inicioInscricao: new Date(+agora + 1) }, { dataFim: agora }])
+    { publicadoEm: null }, { publicadoEm: new Date(+agora + 1) }, { inicioInscricao: new Date(+agora + 1) }])
   ('oculta detalhe indisponivel e recusa gravacao: %j', async change => {
     const f = setup(); Object.assign(f.state.desafios[0], change);
     await expect(f.service.buscar(7, 42)).rejects.toBeInstanceOf(NotFoundException);

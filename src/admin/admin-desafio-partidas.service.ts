@@ -4,6 +4,7 @@ import { FootballDataClient } from '../futebol/football-data.client';
 import { DesafioFixture, FootballDataError } from '../futebol/football-data.normalizer';
 import { PrismaService } from '../prisma/prisma.service';
 import { PesquisarAdminFixturesDto } from './dto/admin-desafio-partidas.dto';
+import { periodoDasPartidas } from '../desafios/desafio-periodo';
 
 export interface PublicacaoPartidas {
   partidas: DesafioPartida[];
@@ -56,17 +57,7 @@ export class AdminDesafioPartidasService {
   }
 
   pesquisar(query: PesquisarAdminFixturesDto): Promise<DesafioFixture[]> {
-    const intervalo = query.from !== undefined || query.to !== undefined;
-    if (query.date ? intervalo : !query.from || !query.to) {
-      throw new BadRequestException('Informe date ou o par from/to.');
-    }
-    if (intervalo) {
-      const dias = (Date.parse(query.to!) - Date.parse(query.from!)) / 86400000;
-      if (!Number.isFinite(dias) || dias < 0 || dias > 6) throw new BadRequestException('Intervalo deve ter de 1 a 7 dias.');
-      if (!query.league && !query.team) throw new BadRequestException('Intervalo exige league ou team.');
-    }
-    if ((query.league || query.team) && !query.season) throw new BadRequestException('Informe season ao filtrar league ou team.');
-    return this.consultar(() => this.footballData.pesquisarPartidas(query));
+    return this.consultar(() => this.footballData.pesquisarPartidasPorPeriodo(query.dataInicial, query.dataFinal));
   }
 
   async listar(id: number) {
@@ -93,10 +84,12 @@ export class AdminDesafioPartidasService {
         const ultima = await tx.desafioPartida.findFirst({ where: { desafioId: id }, orderBy: { ordem: 'desc' }, select: { ordem: true } });
         const ordem = (ultima?.ordem ?? 0) + 1;
         if (ordem > 4294967295) throw new ConflictException('Limite de ordem das partidas atingido.');
-        return mapear(await tx.desafioPartida.create({ data: {
+        const criada = await tx.desafioPartida.create({ data: {
           desafioId: id, ...snapshot(fixture), ordem, status: DesafioPartidaStatus.AGENDADA,
           resultado: null, golsMandante: null, golsVisitante: null,
-        } }));
+        } });
+        await this.recalcularPeriodo(tx, id);
+        return mapear(criada);
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -117,6 +110,7 @@ export class AdminDesafioPartidasService {
         }
         await tx.desafioPartida.delete({ where: { id: partidaId } });
         const restantes = await tx.desafioPartida.findMany({ where: { desafioId: id }, orderBy: ordenacao });
+        await tx.desafio.update({ where: { id }, data: periodoDasPartidas(restantes) });
         return this.gravarOrdem(tx, restantes.map(partida => partida.id));
       });
     } catch (error) {
@@ -149,7 +143,7 @@ export class AdminDesafioPartidasService {
     return { partidas, fixtures: porId };
   }
 
-  async aplicarPublicacao(tx: Prisma.TransactionClient, desafio: Pick<Desafio, 'id' | 'dataInicio' | 'dataFim'>, preparacao: PublicacaoPartidas): Promise<void> {
+  async aplicarPublicacao(tx: Prisma.TransactionClient, desafio: Pick<Desafio, 'id'>, preparacao: PublicacaoPartidas) {
     // Chamado somente dentro da transacao que ja detem o lock de DESAFIO.
     const atuais = await tx.desafioPartida.findMany({ where: { desafioId: desafio.id }, orderBy: ordenacao });
     const antes = preparacao.partidas;
@@ -170,15 +164,19 @@ export class AdminDesafioPartidasService {
         throw new BadRequestException(`Partida ${partida.id} nao esta em situacao aceitavel para publicar.`);
       }
       validarFutura(fixture);
-      const data = new Date(fixture.dataHoraInicio);
-      if (data < desafio.dataInicio || data > desafio.dataFim) {
-        throw new BadRequestException(`Fixture ${fixture.fixtureId} esta fora do periodo do Desafio.`);
-      }
       return { id: partida.id, fixture };
     });
     // Valida o conjunto inteiro antes de atualizar qualquer snapshot; rollback inclui a publicacao.
     for (const { id, fixture } of atualizacoes) await tx.desafioPartida.update({ where: { id }, data: snapshot(fixture) });
     for (const { fixture } of atualizacoes) validarFutura(fixture);
+    return periodoDasPartidas(atualizacoes.map(({ fixture }) => ({ dataInicio: new Date(fixture.dataHoraInicio) })));
+  }
+
+  async recalcularPeriodo(tx: Prisma.TransactionClient, id: number) {
+    const partidas = await tx.desafioPartida.findMany({ where: { desafioId: id } });
+    const periodo = periodoDasPartidas(partidas);
+    await tx.desafio.update({ where: { id }, data: periodo });
+    return periodo;
   }
 
   private async exigirNaoDuplicada(client: Pick<Prisma.TransactionClient, 'desafioPartida'>, desafioId: number, fixtureIdApiFootball: number): Promise<void> {

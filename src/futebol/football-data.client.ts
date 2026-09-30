@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DesafioFixture, FootballDataError, FootballDataErrorCode, mapDesafioMatch, parseDesafioMatches } from './football-data.normalizer';
-import { FutebolCodigo, isFutebolCodigo } from './futebol-competicoes';
+import { FUTEBOL_COMPETICAO_IDS, FUTEBOL_COMPETICOES, FutebolCodigo, isFutebolCodigo } from './futebol-competicoes';
 import { DesafioResultadoOficial, mapDesafioResultado, parseDesafioResultados } from './football-data-desafio-resultado';
 
 export interface FootballDataPesquisa {
@@ -19,9 +19,42 @@ export class FootballDataClient {
   constructor(private readonly config: ConfigService) {}
   private nextRequestAt = 0;
   private queue = Promise.resolve();
+  private readonly pesquisas = new Map<string, { expira: number; itens: DesafioFixture[] }>();
+  private readonly pesquisasEmCurso = new Map<string, Promise<DesafioFixture[]>>();
   getCompetition(code: FutebolCodigo = 'BSA'): Promise<unknown> { return this.get(code, ''); }
   getTeams(code: FutebolCodigo, season: number): Promise<unknown> { return this.get(code, '/teams', season); }
   getMatches(code: FutebolCodigo, season: number): Promise<unknown> { return this.get(code, '/matches', season); }
+
+  async pesquisarPartidasPorPeriodo(dataInicial: string, dataFinal: string): Promise<DesafioFixture[]> {
+    const valida = (data: string) => typeof data === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(data)
+      && Number.isFinite(Date.parse(data)) && new Date(data).toISOString().slice(0, 10) === data;
+    const dias = (Date.parse(dataFinal) - Date.parse(dataInicial)) / 86400000;
+    if (!valida(dataInicial) || !valida(dataFinal) || dias < 0 || dias > 6) {
+      throw new FootballDataError('Intervalo deve conter de 1 a 7 dias validos (dataInicial/dataFinal).', 'INVALID_QUERY');
+    }
+    const chave = `${dataInicial}/${dataFinal}`;
+    const cache = this.pesquisas.get(chave);
+    if (cache && cache.expira > Date.now()) return cache.itens.map(item => ({ ...item }));
+    let consulta = this.pesquisasEmCurso.get(chave);
+    if (!consulta) {
+      const fimExclusivo = new Date(Date.parse(dataFinal) + 86400000).toISOString().slice(0, 10);
+      consulta = (async () => {
+        const params = new URLSearchParams({ dateFrom: dataInicial, dateTo: fimExclusivo,
+          competitions: FUTEBOL_COMPETICOES.map(code => FUTEBOL_COMPETICAO_IDS[code]).join(',') });
+        const itens = parseDesafioMatches(await this.request('/matches', params), true)
+          .filter(p => p.dataHoraInicio >= `${dataInicial}T00:00:00.000Z` && p.dataHoraInicio < `${fimExclusivo}T00:00:00.000Z`)
+          .sort((a, b) => a.dataHoraInicio.localeCompare(b.dataHoraInicio) || a.leagueId - b.leagueId || a.fixtureId - b.fixtureId);
+        // Cache curto e limitado somente para descoberta; publicacao sempre reconsulta por IDs.
+        for (const [key, entry] of this.pesquisas) if (entry.expira <= Date.now()) this.pesquisas.delete(key);
+        if (this.pesquisas.size >= 100) this.pesquisas.delete(this.pesquisas.keys().next().value!);
+        this.pesquisas.set(chave, { expira: Date.now() + 30000, itens });
+        return itens;
+      })();
+      this.pesquisasEmCurso.set(chave, consulta);
+    }
+    try { return (await consulta).map(item => ({ ...item })); }
+    finally { if (this.pesquisasEmCurso.get(chave) === consulta) this.pesquisasEmCurso.delete(chave); }
+  }
 
   async pesquisarPartidas(query: FootballDataPesquisa): Promise<DesafioFixture[]> {
     const from = query.date ?? query.from;

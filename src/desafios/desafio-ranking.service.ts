@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DesafioRankingDto, DesafioRankingQueryDto } from './dto/desafio-ranking.dto';
+import { statusDoDesafio } from './desafio-periodo';
 
 @Injectable()
 export class DesafioRankingService {
@@ -12,7 +13,7 @@ export class DesafioRankingService {
       const agora = new Date();
       // Ranking permanece consultavel apos dataFim/ENCERRADO, sem expor rascunhos/cancelados.
       const desafio = await tx.desafio.findFirst({ where: { id, status: { in: ['ABERTO', 'EM_ANDAMENTO', 'ENCERRADO'] },
-        publicadoEm: { lte: agora }, inicioInscricao: { lte: agora } }, select: { id: true, status: true } });
+        publicadoEm: { lte: agora }, inicioInscricao: { lte: agora } }, select: { id: true, status: true, dataInicio: true } });
       if (!desafio) throw new NotFoundException('Desafio nao encontrado ou ranking indisponivel.');
       const partidas = await tx.desafioPartida.findMany({ where: { desafioId: id },
         select: { id: true, status: true, resultado: true, golsMandante: true, golsVisitante: true } });
@@ -35,7 +36,7 @@ export class DesafioRankingService {
         return { ...row, posicao, acertos: row.pontos };
       });
       const total = ranking.length;
-      return { desafioId: id, status: desafio.status, totalPartidasValidas: validas.length,
+      return { desafioId: id, status: statusDoDesafio(desafio, agora), totalPartidasValidas: validas.length,
         totalPartidasApuradas: apuradas.length, totalPartidasAnuladas: partidas.length - validas.length,
         pontuacaoMaxima: validas.length, ranking: ranking.slice((query.pagina - 1) * query.limite, query.pagina * query.limite),
         paginacao: { pagina: query.pagina, limite: query.limite, total, totalPaginas: Math.ceil(total / query.limite) } };

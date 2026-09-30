@@ -5,6 +5,7 @@ import { AdminDesafiosService } from '../src/admin/admin-desafios.service';
 import { FootballDataClient } from '../src/futebol/football-data.client';
 import { DesafioFixture, traduzirStatusDesafio } from '../src/futebol/football-data.normalizer';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { desafioParticipacaoFixture } from './helpers/desafio-participacao.fixture';
 
 const oficial = (id = 123, status = 'TIMED', change: Partial<DesafioFixture> = {}): DesafioFixture => ({
   fixtureId: id, leagueId: 71, leagueNome: 'Serie A', dataHoraInicio: '2030-10-03T16:00:00.000Z',
@@ -67,7 +68,7 @@ function setup(iniciais: DesafioPartida[] = []) {
     const backup = { desafio: state.desafio && { ...state.desafio }, partidas: state.partidas.map(p => ({ ...p })) };
     try { return await fn(tx); } catch (error) { Object.assign(state, backup); throw error; } finally { release(); }
   }) };
-  const api = { pesquisarPartidas: jest.fn(async () => [oficial()]), buscarPartidasPorIds: jest.fn(async (ids: number[]) => ids.map(id => oficial(id))) };
+  const api = { pesquisarPartidasPorPeriodo: jest.fn(async () => [oficial()]), buscarPartidasPorIds: jest.fn(async (ids: number[]) => ids.map(id => oficial(id))) };
   const service = new AdminDesafioPartidasService(prisma as unknown as PrismaService, api as unknown as FootballDataClient);
   const admin = new AdminDesafiosService(prisma as unknown as PrismaService, service);
   return { state, tx, prisma, api, service, admin };
@@ -77,28 +78,57 @@ describe('Administracao de partidas do Desafio', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(new Date('2030-10-01T12:00:00Z')); });
   afterEach(() => jest.useRealTimers());
 
-  it('busca por data, liga/time/temporada e intervalo sem gravar', async () => {
+  it('recalcula primeira/ultima ao adicionar e remover, sem depender da ordem de exibicao', async () => {
     const f = setup();
-    await f.service.pesquisar({ date: '2030-10-03' });
-    await f.service.pesquisar({ date: '2030-10-03', league: 71, team: 127, season: 2030 });
-    await f.service.pesquisar({ from: '2030-10-01', to: '2030-10-07', league: 71, season: 2030 });
-    expect(f.api.pesquisarPartidas).toHaveBeenCalledTimes(3);
+    f.api.buscarPartidasPorIds.mockResolvedValueOnce([oficial(123, 'TIMED', { dataHoraInicio: '2030-10-09T20:00:00Z' })]);
+    await f.service.adicionar(7, 123);
+    expect(f.state.desafio).toMatchObject({ dataInicio: new Date('2030-10-09T20:00:00Z'),
+      fimInscricao: new Date('2030-10-09T20:00:00Z'), dataFim: new Date('2030-10-09T23:00:00Z') });
+    await f.service.adicionar(7, 124);
+    expect(f.state.desafio!.dataInicio).toEqual(new Date('2030-10-03T16:00:00Z'));
+    await f.service.reordenar(7, [1, 2]);
+    expect(f.state.desafio!.dataInicio).toEqual(new Date('2030-10-03T16:00:00Z'));
+    await f.service.remover(7, 2);
+    expect(f.state.desafio!.dataInicio).toEqual(new Date('2030-10-09T20:00:00Z'));
+    await f.service.adicionar(7, 124);
+    await f.service.remover(7, 1);
+    expect(f.state.desafio!.dataFim).toEqual(new Date('2030-10-03T19:00:00Z'));
+    await f.service.remover(7, 2);
+    expect(f.state.partidas).toHaveLength(0);
+    expect(f.state.desafio!.status).toBe('RASCUNHO');
+    await expect(f.admin.publicar(7)).rejects.toThrow('pelo menos uma partida');
+  });
+
+  it.each(['FREE', 'PAGO'] as const)('publicacao abre participacao %s imediatamente e primeiro kickoff fecha sem cron', async tipoAcesso => {
+    const f = setup([partida(1), partida(2)]);
+    Object.assign(f.state.desafio!, { tipoAcesso, valorInscricao: new Prisma.Decimal(tipoAcesso === 'FREE' ? 0 : 2) });
+    await f.admin.publicar(7);
+    expect(f.state.desafio!.inicioInscricao).toEqual(new Date());
+    expect(f.state.desafio!.fimInscricao).toEqual(f.state.desafio!.dataInicio);
+    const participacao = desafioParticipacaoFixture();
+    Object.assign(participacao.desafio, f.state.desafio);
+    participacao.state.partidas = f.state.partidas;
+    await expect(participacao.service.participar(7, 42)).resolves.toMatchObject({ tipoAcesso, valorCobrado: tipoAcesso === 'FREE' ? '0.00' : '2.00' });
+    expect(participacao.state.movimentos).toHaveLength(tipoAcesso === 'FREE' ? 0 : 1);
+    jest.setSystemTime(f.state.desafio!.dataInicio);
+    await expect(participacao.service.participar(7, 43)).rejects.toBeInstanceOf(ConflictException);
+    expect(participacao.state.inscricoes).toHaveLength(1);
+    expect(participacao.state.movimentos).toHaveLength(tipoAcesso === 'FREE' ? 0 : 1);
+    await expect(f.admin.buscar(7)).resolves.toMatchObject({ status: 'EM_ANDAMENTO' });
+    await expect(f.admin.cancelar(7)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('busca somente por periodo sem gravar', async () => {
+    const f = setup();
+    await f.service.pesquisar({ dataInicial: '2030-10-01', dataFinal: '2030-10-07' });
+    expect(f.api.pesquisarPartidasPorPeriodo).toHaveBeenCalledWith('2030-10-01', '2030-10-07');
     expect(f.prisma.$transaction).not.toHaveBeenCalled();
     expect(f.tx.desafioPartida.create).not.toHaveBeenCalled();
   });
 
-  it.each([{}, { date: '2030-10-03', from: '2030-10-01' }, { from: '2030-10-01' },
-    { from: '2030-10-01', to: '2030-10-08', league: 71, season: 2030 },
-    { from: '2030-10-03', to: '2030-10-01', league: 71, season: 2030 },
-    { from: '2030-10-01', to: '2030-10-07' }, { date: '2030-10-03', league: 71 }, { date: '2030-10-03', team: 127 },
-  ])('rejeita busca invalida: %j', query => {
-    const f = setup(); expect(() => f.service.pesquisar(query)).toThrow(BadRequestException);
-    expect(f.api.pesquisarPartidas).not.toHaveBeenCalled();
-  });
-
   it('propaga falha externa da busca sem transforma-la em 404', async () => {
-    const f = setup(); f.api.pesquisarPartidas.mockRejectedValue(new ServiceUnavailableException());
-    await expect(f.service.pesquisar({ date: '2030-10-03' })).rejects.toBeInstanceOf(ServiceUnavailableException);
+    const f = setup(); f.api.pesquisarPartidasPorPeriodo.mockRejectedValue(new ServiceUnavailableException());
+    await expect(f.service.pesquisar({ dataInicial: '2030-10-03', dataFinal: '2030-10-03' })).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('adiciona snapshot oficial com proxima ordem, sem resultado ou gols', async () => {
@@ -238,21 +268,21 @@ describe('Administracao de partidas do Desafio', () => {
     expect(f.tx.desafioPartida.update).not.toHaveBeenCalled();
   });
 
-  it.each(['2030-10-01T12:00:00Z', '2030-10-03T11:59:59Z', '2030-10-04T23:00:01Z'])('nao publica horario oficial invalido: %s', async dataHoraInicio => {
+  it.each(['2030-10-01T12:00:00Z', '2030-09-30T11:59:59Z'])('nao publica horario oficial iniciado: %s', async dataHoraInicio => {
     const f = setup([partida()]); f.api.buscarPartidasPorIds.mockResolvedValue([oficial(123, 'TIMED', { dataHoraInicio })]);
     await expect(f.admin.publicar(7)).rejects.toBeInstanceOf(BadRequestException);
     expect(f.state.desafio!.publicadoEm).toBeNull();
     expect(f.state.partidas[0].dataInicio).toEqual(new Date('2030-10-03T16:00:00Z'));
   });
 
-  it.each(['2030-10-03T12:00:00Z', '2030-10-04T23:00:00Z'])('aceita horario nos limites inclusivos: %s', async dataHoraInicio => {
+  it.each(['2030-10-03T11:59:59Z', '2030-10-04T23:00:01Z'])('aceita horario fora do antigo periodo: %s', async dataHoraInicio => {
     const f = setup([partida()]); f.api.buscarPartidasPorIds.mockResolvedValue([oficial(123, 'TIMED', { dataHoraInicio })]);
     await expect(f.admin.publicar(7)).resolves.toMatchObject({ status: 'ABERTO' });
   });
 
-  it('rejeita periodo atual alterado e snapshot interno nao agendado', async () => {
+  it('recalcula periodo antigo e rejeita snapshot interno nao agendado', async () => {
     const f = setup([partida()]); f.state.desafio!.dataFim = new Date('2030-10-03T15:00:00Z');
-    await expect(f.admin.publicar(7)).rejects.toThrow('fora do periodo');
+    await expect(f.admin.publicar(7)).resolves.toMatchObject({ dataInicio: '2030-10-03T16:00:00.000Z', dataFim: '2030-10-03T19:00:00.000Z' });
     const g = setup([partida(1, { status: 'ANULADA' })]);
     await expect(g.admin.publicar(7)).rejects.toBeInstanceOf(BadRequestException);
   });
@@ -289,5 +319,17 @@ describe('Administracao de partidas do Desafio', () => {
     await expect(f.admin.publicar(7)).rejects.toThrow('falha de escrita');
     expect(f.state.partidas[0].dataInicio).toEqual(new Date('2030-10-03T16:00:00Z'));
     expect(f.state.desafio!.status).toBe('RASCUNHO');
+  });
+
+  it('rollback se a escrita da publicacao atravessar o primeiro kickoff', async () => {
+    const f = setup([partida()]);
+    f.tx.desafio.update.mockImplementationOnce(async ({ data }) => {
+      f.state.desafio = { ...f.state.desafio!, ...data };
+      jest.setSystemTime(f.state.desafio.dataInicio);
+      return { ...f.state.desafio, criadoPor: { idUsuario: 42, nome: 'Admin' } };
+    });
+    await expect(f.admin.publicar(7)).rejects.toThrow('Primeira partida ja iniciou');
+    expect(f.state.desafio!.status).toBe('RASCUNHO');
+    expect(f.state.desafio!.publicadoEm).toBeNull();
   });
 });

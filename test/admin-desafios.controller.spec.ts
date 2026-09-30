@@ -63,6 +63,13 @@ describe('AdminDesafiosController HTTP', () => {
     expect(service.criar).toHaveBeenLastCalledWith(42, expect.objectContaining({ valorInscricao: '2.00' }));
   });
 
+  it('aceita criar e editar apenas dados basicos, sem as quatro datas', async () => {
+    const basico = { nome: 'Desafio simplificado', tipoAcesso: 'FREE', valorInscricao: '0' };
+    expect((await request('POST', '', basico)).status).toBe(201);
+    expect(service.criar).toHaveBeenCalledWith(42, basico);
+    expect((await request('PATCH', '/7', basico)).status).toBe(200);
+  });
+
   it.each(['id', 'status', 'criadoPorUsuarioId', 'criadoPorId', 'criadoPor', 'publicadoEm', 'createdAt', 'updatedAt', 'criadoEm', 'atualizadoEm'])
   ('rejeita campo controlado pelo servidor: %s', async campo => {
     expect((await request('POST', '', { ...body, [campo]: 1 })).status).toBe(400);

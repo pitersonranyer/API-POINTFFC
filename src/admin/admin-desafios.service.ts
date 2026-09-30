@@ -3,6 +3,7 @@ import { DesafioStatus, DesafioTipoAcesso, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminDesafioPartidasService } from './admin-desafio-partidas.service';
 import { AtualizarAdminDesafioDto, CriarAdminDesafioDto, ListarAdminDesafiosQueryDto } from './dto/admin-desafios.dto';
+import { periodoDasPartidas, statusDoDesafio } from '../desafios/desafio-periodo';
 
 const desafioSelect = {
   id: true, nome: true, descricao: true, tipoAcesso: true, valorInscricao: true, status: true,
@@ -17,7 +18,7 @@ type Configuracao = Pick<DesafioRow, 'nome' | 'descricao' | 'tipoAcesso' | 'valo
 
 function mapear(row: DesafioRow): Record<string, unknown> {
   return {
-    ...row, valorInscricao: row.valorInscricao.toFixed(2),
+    ...row, status: statusDoDesafio(row), valorInscricao: row.valorInscricao.toFixed(2),
     inicioInscricao: row.inicioInscricao.toISOString(), fimInscricao: row.fimInscricao.toISOString(),
     dataInicio: row.dataInicio.toISOString(), dataFim: row.dataFim.toISOString(),
     publicadoEm: row.publicadoEm?.toISOString() ?? null,
@@ -46,7 +47,7 @@ function preparar(dto: AtualizarAdminDesafioDto): Partial<Configuracao> {
   return data;
 }
 
-function validar(estado: Configuracao): void {
+function validar(estado: Configuracao, validarDatas = true): void {
   if (typeof estado.nome !== 'string' || !estado.nome.trim() || estado.nome.length > 255) {
     throw new BadRequestException('Nome obrigatorio, com ate 255 caracteres.');
   }
@@ -65,12 +66,12 @@ function validar(estado: Configuracao): void {
     throw new BadRequestException('Desafio PAGO deve ter valorInscricao maior que zero.');
   }
   const { inicioInscricao, fimInscricao, dataInicio, dataFim, limiteParticipantes } = estado;
-  if ([inicioInscricao, fimInscricao, dataInicio, dataFim].some(data => !(data instanceof Date) || !Number.isFinite(data.getTime()))) {
+  if (validarDatas && [inicioInscricao, fimInscricao, dataInicio, dataFim].some(data => !(data instanceof Date) || !Number.isFinite(data.getTime()))) {
     throw new BadRequestException('Datas obrigatorias e validas.');
   }
-  if (inicioInscricao >= fimInscricao) throw new BadRequestException('inicioInscricao deve ser anterior a fimInscricao.');
-  if (fimInscricao > dataInicio) throw new BadRequestException('fimInscricao nao pode ser posterior a dataInicio.');
-  if (dataInicio >= dataFim) throw new BadRequestException('dataInicio deve ser anterior a dataFim.');
+  if (validarDatas && inicioInscricao >= fimInscricao) throw new BadRequestException('inicioInscricao deve ser anterior a fimInscricao.');
+  if (validarDatas && fimInscricao > dataInicio) throw new BadRequestException('fimInscricao nao pode ser posterior a dataInicio.');
+  if (validarDatas && dataInicio >= dataFim) throw new BadRequestException('dataInicio deve ser anterior a dataFim.');
   if (limiteParticipantes !== null && (!Number.isInteger(limiteParticipantes)
     || limiteParticipantes <= 0 || limiteParticipantes > 4294967295)) {
     throw new BadRequestException('limiteParticipantes deve ser inteiro positivo ou null.');
@@ -82,7 +83,7 @@ export class AdminDesafiosService {
   constructor(private readonly prisma: PrismaService, private readonly partidas: AdminDesafioPartidasService) {}
 
   async criar(usuarioId: number, dto: CriarAdminDesafioDto): Promise<Record<string, unknown>> {
-    const estado = { descricao: null, limiteParticipantes: null, ...preparar(dto) } as Configuracao;
+    const estado = { descricao: null, limiteParticipantes: null, ...periodoDasPartidas([]), ...preparar(dto) } as Configuracao;
     validar(estado);
     return mapear(await this.prisma.desafio.create({
       data: { ...estado, criadoPorId: usuarioId, status: DesafioStatus.RASCUNHO, publicadoEm: null },
@@ -91,8 +92,14 @@ export class AdminDesafiosService {
   }
 
   async listar(query: ListarAdminDesafiosQueryDto): Promise<Record<string, unknown>> {
+    const agora = new Date();
+    const status: Prisma.DesafioWhereInput = query.status === 'ABERTO'
+      ? { status: 'ABERTO', dataInicio: { gt: agora } }
+      : query.status === 'EM_ANDAMENTO'
+        ? { OR: [{ status: 'EM_ANDAMENTO' }, { status: 'ABERTO', dataInicio: { lte: agora } }] }
+        : query.status !== undefined ? { status: query.status } : {};
     const where: Prisma.DesafioWhereInput = {
-      ...(query.status !== undefined ? { status: query.status } : {}),
+      ...status,
       ...(query.tipoAcesso !== undefined ? { tipoAcesso: query.tipoAcesso } : {}),
     };
     const [total, rows] = await this.prisma.$transaction([
@@ -113,9 +120,12 @@ export class AdminDesafiosService {
   }
 
   atualizar(id: number, dto: AtualizarAdminDesafioDto): Promise<Record<string, unknown>> {
-    return this.alterarComBloqueio(id, atual => {
+    return this.alterarComBloqueio(id, async (atual, tx) => {
       this.exigirRascunho(atual);
       const data = preparar(dto);
+      if (['inicioInscricao', 'fimInscricao', 'dataInicio', 'dataFim'].some(campo => campo in data)) {
+        Object.assign(data, await this.partidas.recalcularPeriodo(tx, id));
+      }
       validar({ ...atual, ...data });
       return data;
     });
@@ -125,20 +135,23 @@ export class AdminDesafiosService {
     const inicial = await this.prisma.desafio.findUnique({ where: { id }, select: desafioSelect });
     if (!inicial) throw new NotFoundException('Desafio nao encontrado.');
     this.exigirRascunho(inicial);
-    validar(inicial);
+    validar(inicial, false);
     // Consultas externas fora do lock; o estado atual e a composicao serao conferidos sob lock.
     const preparacao = await this.partidas.prepararPublicacao(id);
     return this.alterarComBloqueio(id, async (atual, tx) => {
       this.exigirRascunho(atual);
-      validar(atual);
-      await this.partidas.aplicarPublicacao(tx, atual, preparacao);
-      return { status: DesafioStatus.ABERTO, publicadoEm: new Date() };
+      validar(atual, false);
+      const periodo = await this.partidas.aplicarPublicacao(tx, atual, preparacao);
+      const publicadoEm = new Date();
+      if (periodo.dataInicio <= publicadoEm) throw new ConflictException('Primeira partida ja iniciou.');
+      return { ...periodo, inicioInscricao: publicadoEm, status: DesafioStatus.ABERTO, publicadoEm };
     });
   }
 
   cancelar(id: number): Promise<Record<string, unknown>> {
     return this.alterarComBloqueio(id, atual => {
-      if (atual.status !== DesafioStatus.RASCUNHO && atual.status !== DesafioStatus.ABERTO) {
+      const status = statusDoDesafio(atual);
+      if (status !== DesafioStatus.RASCUNHO && status !== DesafioStatus.ABERTO) {
         throw new ConflictException('Somente desafios RASCUNHO ou ABERTO podem ser cancelados.');
       }
       return { status: DesafioStatus.CANCELADO };
@@ -158,7 +171,10 @@ export class AdminDesafiosService {
       const atual = await tx.desafio.findUnique({ where: { id }, select: desafioSelect });
       if (!atual) throw new NotFoundException('Desafio nao encontrado.');
       const data = await prepararAlteracao(atual, tx);
-      return mapear(await tx.desafio.update({ where: { id }, data, select: desafioSelect }));
+      const salvo = await tx.desafio.update({ where: { id }, data, select: desafioSelect });
+      // Uma escrita lenta que atravesse o kickoff tambem deve desfazer a publicacao.
+      if (data.publicadoEm && salvo.dataInicio <= new Date()) throw new ConflictException('Primeira partida ja iniciou.');
+      return mapear(salvo);
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 }

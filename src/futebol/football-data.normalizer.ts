@@ -104,7 +104,7 @@ export function mapDesafioMatch(input: unknown): DesafioFixture {
   };
 }
 
-export function parseDesafioMatches(input: unknown): DesafioFixture[] {
+export function parseDesafioMatches(input: unknown, pesquisaSuportadas = false): DesafioFixture[] {
   const value = parse<{ matches: unknown[]; resultSet?: { count: number }; count?: number }>(
     Joi.object({ matches: Joi.array().items(Joi.object().unknown(true)).required(),
       resultSet: Joi.object({ count: Joi.number().integer().min(0).required() }).unknown(true).optional(),
@@ -112,7 +112,13 @@ export function parseDesafioMatches(input: unknown): DesafioFixture[] {
     }).unknown(true).required(), input);
   if ((value.resultSet && value.resultSet.count !== value.matches.length)
     || (value.count !== undefined && value.count !== value.matches.length)) throw new FootballDataError('football-data: lista incompleta.');
-  const matches = value.matches.map(mapDesafioMatch);
+  const rows = pesquisaSuportadas ? value.matches.filter(row => {
+    const code = (row as { competition?: { code?: unknown } }).competition?.code;
+    if (typeof code !== 'string' || !code.trim()) throw new FootballDataError('football-data: codigo da competicao ausente.');
+    return (FUTEBOL_COMPETICOES as readonly string[]).includes(code);
+  }) : value.matches;
+  const matches = rows.map(mapDesafioMatch);
+  if (pesquisaSuportadas) return [...new Map(matches.map(match => [match.fixtureId, match])).values()];
   if (new Set(matches.map(match => match.fixtureId)).size !== matches.length) throw new FootballDataError('football-data: partidas duplicadas na resposta.');
   return matches;
 }

@@ -15,8 +15,8 @@ const row = (change: Record<string, unknown> = {}) => ({
   ...dto(), id: 7, descricao: null, limiteParticipantes: null, criadoPorId: 42,
   criadoPor: { idUsuario: 42, nome: 'Admin' }, status: DesafioStatus.RASCUNHO,
   valorInscricao: new Prisma.Decimal('0.00'), publicadoEm: null,
-  inicioInscricao: new Date(dto().inicioInscricao), fimInscricao: new Date(dto().fimInscricao),
-  dataInicio: new Date(dto().dataInicio), dataFim: new Date(dto().dataFim),
+  inicioInscricao: new Date(dto().inicioInscricao!), fimInscricao: new Date(dto().fimInscricao!),
+  dataInicio: new Date(dto().dataInicio!), dataFim: new Date(dto().dataFim!),
   criadoEm: new Date('2026-09-28T00:00:00Z'), atualizadoEm: new Date('2026-09-28T00:00:00Z'), ...change,
 });
 
@@ -25,13 +25,16 @@ describe('AdminDesafiosService', () => {
   const tx = { desafio, $queryRaw: jest.fn() };
   const prisma = { desafio, $transaction: jest.fn(async (input: Array<Promise<unknown>> | ((client: typeof tx) => Promise<unknown>)) =>
     typeof input === 'function' ? input(tx) : Promise.all(input)) };
-  const partidas = { prepararPublicacao: jest.fn(), aplicarPublicacao: jest.fn() };
+  const partidas = { prepararPublicacao: jest.fn(), aplicarPublicacao: jest.fn(), recalcularPeriodo: jest.fn() };
   const service = new AdminDesafiosService(prisma as unknown as PrismaService, partidas as unknown as AdminDesafioPartidasService);
 
   beforeEach(() => {
     jest.clearAllMocks();
     partidas.prepararPublicacao.mockResolvedValue({ partidas: [], fixtures: new Map() });
-    partidas.aplicarPublicacao.mockResolvedValue(undefined);
+    const periodo = { inicioInscricao: new Date(), fimInscricao: new Date('2099-10-03T16:00:00Z'),
+      dataInicio: new Date('2099-10-03T16:00:00Z'), dataFim: new Date('2099-10-03T19:00:00Z') };
+    partidas.aplicarPublicacao.mockResolvedValue(periodo);
+    partidas.recalcularPeriodo.mockResolvedValue(periodo);
     tx.$queryRaw.mockResolvedValue([{ ID: 7n }]);
     desafio.findUnique.mockResolvedValue(row());
     desafio.create.mockImplementation(async ({ data }) => row(data));
@@ -70,6 +73,13 @@ describe('AdminDesafiosService', () => {
     ['nome vazio', { nome: '  ' }],
   ];
 
+  it.each(['FREE', 'PAGO'] as const)('cria rascunho %s sem datas operacionais', async tipoAcesso => {
+    const result = await service.criar(42, { nome: 'Sem datas', tipoAcesso, valorInscricao: tipoAcesso === 'FREE' ? '0' : '2' });
+    expect(result.status).toBe('RASCUNHO');
+    expect(result.publicadoEm).toBeNull();
+    expect(new Date(result.dataInicio as string).getTime()).toBeGreaterThan(new Date(result.inicioInscricao as string).getTime());
+  });
+
   it.each(invalidos)('rejeita criacao: %s', async (_label, change) => {
     await expect(service.criar(42, dto(change))).rejects.toBeInstanceOf(BadRequestException);
     expect(desafio.create).not.toHaveBeenCalled();
@@ -89,8 +99,10 @@ describe('AdminDesafiosService', () => {
       .resolves.toMatchObject({ tipoAcesso: 'FREE', valorInscricao: '0.00' });
   });
 
-  it('revalida datas e limite apos PATCH parcial', async () => {
-    await expect(service.atualizar(7, { dataInicio: '2026-10-01T12:00:00Z' })).rejects.toBeInstanceOf(BadRequestException);
+  it('datas enviadas no PATCH cedem ao periodo das partidas; limite continua validado', async () => {
+    await expect(service.atualizar(7, { dataInicio: '2026-10-01T12:00:00Z' })).resolves.toMatchObject({ dataInicio: '2099-10-03T16:00:00.000Z' });
+    expect(partidas.recalcularPeriodo).toHaveBeenCalledWith(tx, 7);
+    desafio.update.mockClear();
     await expect(service.atualizar(7, { limiteParticipantes: 0 })).rejects.toBeInstanceOf(BadRequestException);
     expect(desafio.update).not.toHaveBeenCalled();
   });
@@ -112,14 +124,13 @@ describe('AdminDesafiosService', () => {
     const publicadoEm = new Date(result.publicadoEm as string).getTime();
     expect(publicadoEm).toBeGreaterThanOrEqual(inicio);
     expect(publicadoEm).toBeLessThanOrEqual(Date.now());
-    expect(desafio.update.mock.calls[0][0].data).toEqual({ status: 'ABERTO', publicadoEm: expect.any(Date) });
+    expect(desafio.update.mock.calls[0][0].data).toMatchObject({ status: 'ABERTO', publicadoEm: expect.any(Date), inicioInscricao: new Date(result.publicadoEm as string) });
   });
 
   it.each([
     { nome: '' }, { tipoAcesso: 'INVALIDO' }, { valorInscricao: new Prisma.Decimal('1') },
     { tipoAcesso: 'PAGO', valorInscricao: new Prisma.Decimal('0') },
-    { fimInscricao: new Date('2026-10-03T00:00:00Z') }, { dataFim: new Date(dto().dataInicio) },
-    { inicioInscricao: new Date(dto().fimInscricao) }, { limiteParticipantes: 0 },
+    { limiteParticipantes: 0 },
   ])('nao publica configuracao invalida persistida: %j', async change => {
     desafio.findUnique.mockResolvedValue(row(change));
     await expect(service.publicar(7)).rejects.toBeInstanceOf(BadRequestException);
@@ -170,6 +181,15 @@ describe('AdminDesafiosService', () => {
     await expect(service.listar({ pagina: 1, limite: 20 })).resolves.toEqual({ itens: [],
       paginacao: { pagina: 1, limite: 20, total: 0, totalPaginas: 0 } });
     expect(desafio.count).toHaveBeenCalledWith({ where: {} });
+  });
+
+  it('filtros administrativos acompanham o status derivado no kickoff', async () => {
+    await service.listar({ pagina: 1, limite: 20, status: 'ABERTO' });
+    expect(desafio.count).toHaveBeenLastCalledWith({ where: { status: 'ABERTO', dataInicio: { gt: expect.any(Date) } } });
+    await service.listar({ pagina: 1, limite: 20, status: 'EM_ANDAMENTO' });
+    expect(desafio.count).toHaveBeenLastCalledWith({ where: { OR: [
+      { status: 'EM_ANDAMENTO' }, { status: 'ABERTO', dataInicio: { lte: expect.any(Date) } },
+    ] } });
   });
 
   it('retorna 404 na consulta e em todas as mutacoes de ID inexistente', async () => {

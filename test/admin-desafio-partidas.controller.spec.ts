@@ -35,7 +35,7 @@ describe('Admin Desafio partidas HTTP', () => {
   });
 
   it.each([
-    ['GET', '/fixtures?date=2030-10-03', undefined, 200], ['POST', '/7/partidas', { fixtureId: 123 }, 201],
+    ['GET', '/fixtures?dataInicial=2030-10-03&dataFinal=2030-10-03', undefined, 200], ['POST', '/7/partidas', { fixtureId: 123 }, 201],
     ['GET', '/7/partidas', undefined, 200], ['DELETE', '/7/partidas/1', undefined, 200],
     ['PATCH', '/7/partidas/ordem', { partidaIds: [1, 2] }, 200],
   ])('exige JWT e PLATFORM_ADMIN ativo em %s %s', async (method, path, body, status) => {
@@ -49,13 +49,14 @@ describe('Admin Desafio partidas HTTP', () => {
   });
 
   it('rota fixtures precede :id e converte filtros sem persistencia', async () => {
-    expect((await request('GET', '/fixtures?date=2030-10-03&league=71&team=127&season=2030')).status).toBe(200);
-    expect(partidas.pesquisar).toHaveBeenCalledWith({ date: '2030-10-03', league: 71, team: 127, season: 2030 });
+    expect((await request('GET', '/fixtures?dataInicial=2030-10-03&dataFinal=2030-10-03')).status).toBe(200);
+    expect(partidas.pesquisar).toHaveBeenCalledWith({ dataInicial: '2030-10-03', dataFinal: '2030-10-03' });
     expect(desafios.buscar).not.toHaveBeenCalled();
-    expect((await request('GET', '/fixtures?from=2030-10-01&to=2030-10-07&league=71&season=2030')).status).toBe(200);
+    expect((await request('GET', '/fixtures?dataInicial=2030-10-01&dataFinal=2030-10-07')).status).toBe(200);
   });
 
-  it.each(['date=2030-02-30', 'date=ontem', 'league=0', 'team=-1', 'season=abc', 'league=4294967296', 'timezone=America/Sao_Paulo'])
+  it.each(['dataInicial=2030-02-30&dataFinal=2030-03-01', 'dataInicial=ontem', 'dataFinal=2030-10-01',
+    'dataInicial=2030-10-01&dataFinal=2030-10-02&league=71', 'date=2030-10-01', 'season=2030', 'timezone=America/Sao_Paulo'])
   ('rejeita filtro invalido/nao suportado: %s', async query => {
     expect((await request('GET', `/fixtures?${query}`)).status).toBe(400);
     expect(partidas.pesquisar).not.toHaveBeenCalled();
@@ -63,7 +64,7 @@ describe('Admin Desafio partidas HTTP', () => {
 
   it('preserva erro externo sem expor headers ou resposta bruta', async () => {
     partidas.pesquisar.mockRejectedValueOnce(new ServiceUnavailableException('football-data.org indisponivel para esta consulta.'));
-    const result = await request('GET', '/fixtures?date=2030-10-03');
+    const result = await request('GET', '/fixtures?dataInicial=2030-10-03&dataFinal=2030-10-03');
     expect(result.status).toBe(503);
     expect(await result.json()).toMatchObject({ statusCode: 503, message: 'football-data.org indisponivel para esta consulta.' });
   });

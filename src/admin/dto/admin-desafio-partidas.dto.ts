@@ -1,27 +1,16 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Transform, Type } from 'class-transformer';
-import { ArrayUnique, IsArray, IsDateString, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { ArrayUnique, IsArray, IsDateString, IsInt, Matches, Max, Min } from 'class-validator';
 import { AdminIdParamsDto } from './admin-common.dto';
 
 export class PesquisarAdminFixturesDto {
-  @ApiPropertyOptional({ example: '2026-10-03' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true })
-  date?: string;
+  @ApiProperty({ example: '2026-10-01', description: 'Dia inicial inclusivo em UTC' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true })
+  dataInicial!: string;
 
-  @ApiPropertyOptional({ example: '2026-10-01' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true })
-  from?: string;
-
-  @ApiPropertyOptional({ example: '2026-10-07' }) @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true })
-  to?: string;
-
-  @ApiPropertyOptional({ minimum: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(4294967295)
-  league?: number;
-
-  @ApiPropertyOptional({ minimum: 1 }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(4294967295)
-  team?: number;
-
-  @ApiPropertyOptional({ description: 'Ano de inicio da temporada; obrigatorio com league/team', example: 2026 })
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1900) @Max(9999)
-  season?: number;
+  @ApiProperty({ example: '2026-10-07', description: 'Dia final inclusivo em UTC; maximo de 7 dias' })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsDateString({ strict: true })
+  dataFinal!: string;
 }
 
 export class AdicionarAdminDesafioPartidaDto {

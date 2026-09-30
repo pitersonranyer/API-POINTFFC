@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { DesafioDetalheDto, DesafioPalpiteSalvoDto, DesafioResumoDto, DesafiosPaginaDto } from './dto/desafios-response.dto';
 import { ListarDesafiosQueryDto, SalvarDesafioPalpiteDto } from './dto/desafios.dto';
 import { mapearMinhaDesafioInscricao, minhaDesafioInscricaoSelect } from './desafio-inscricao';
+import { statusDoDesafio } from './desafio-periodo';
 
 const desafioSelect = {
   id: true, nome: true, descricao: true, tipoAcesso: true, valorInscricao: true, status: true,
@@ -23,12 +24,12 @@ const estadosPublicos: DesafioStatus[] = [DesafioStatus.ABERTO, DesafioStatus.EM
 
 function visiveis(agora: Date): Prisma.DesafioWhereInput {
   return { status: { in: estadosPublicos }, publicadoEm: { lte: agora },
-    inicioInscricao: { lte: agora }, dataFim: { gt: agora } };
+    inicioInscricao: { lte: agora } };
 }
 
 function disponivel(desafio: DesafioRow, agora: Date): boolean {
   return estadosPublicos.includes(desafio.status) && desafio.publicadoEm !== null && desafio.publicadoEm <= agora
-    && desafio.inicioInscricao <= agora && agora < desafio.dataFim;
+    && desafio.inicioInscricao <= agora;
 }
 
 function partidaAberta(partida: PartidaRow, agora: Date): boolean {
@@ -39,7 +40,7 @@ function partidaAberta(partida: PartidaRow, agora: Date): boolean {
 function mapear(desafio: DesafioRow): DesafioResumoDto {
   return {
     id: desafio.id, nome: desafio.nome, descricao: desafio.descricao, tipoAcesso: desafio.tipoAcesso,
-    valorInscricao: desafio.valorInscricao.toFixed(2), status: desafio.status,
+    valorInscricao: desafio.valorInscricao.toFixed(2), status: statusDoDesafio(desafio),
     inicioInscricao: desafio.inicioInscricao.toISOString(), fimInscricao: desafio.fimInscricao.toISOString(),
     dataInicio: desafio.dataInicio.toISOString(), dataFim: desafio.dataFim.toISOString(),
   };
@@ -85,7 +86,7 @@ export class DesafiosService {
       nomeVisitante: partida.nomeVisitante, logoVisitanteUrl: partida.logoVisitanteUrl,
       dataInicio: partida.dataInicio.toISOString(), status: partida.status,
       fechamentoEm: partida.dataInicio.toISOString(),
-      podeAlterarPalpite: usuarioId !== undefined && partidaAberta(partida, agora),
+      podeAlterarPalpite: usuarioId !== undefined && agora < desafio.dataFim && partidaAberta(partida, agora),
       ...(usuarioId === undefined ? {} : { meuPalpite: meusPalpites.get(partida.id) ?? null }),
     })) };
   }
@@ -106,7 +107,7 @@ export class DesafiosService {
       const validar = () => {
         // Hora do backend lida depois dos locks; fimInscricao e dataInicio global nao fecham palpites.
         const agora = new Date();
-        if (!disponivel(desafio, agora)) throw new ConflictException('Desafio indisponivel para palpites.');
+        if (!disponivel(desafio, agora) || agora >= desafio.dataFim) throw new ConflictException('Desafio indisponivel para palpites.');
         if (!partidaAberta(partida, agora)) throw new ConflictException('Partida fechada ou nao elegivel para palpites.');
       };
       validar();

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import { DesafioStatus, DesafioTipoAcesso } from '@prisma/client';
-import { IsDateString, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 
 export class CriarAdminDesafioDto {
   @ApiProperty() @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
@@ -18,17 +18,17 @@ export class CriarAdminDesafioDto {
   @IsString() @Matches(/^\d{1,10}(\.\d{1,2})?$/)
   valorInscricao!: string;
 
-  @ApiProperty({ format: 'date-time' }) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
-  inicioInscricao!: string;
+  @ApiPropertyOptional({ format: 'date-time', deprecated: true }) @ValidateIf((_o, value) => value !== undefined) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
+  inicioInscricao?: string;
 
-  @ApiProperty({ format: 'date-time' }) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
-  fimInscricao!: string;
+  @ApiPropertyOptional({ format: 'date-time', deprecated: true }) @ValidateIf((_o, value) => value !== undefined) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
+  fimInscricao?: string;
 
-  @ApiProperty({ format: 'date-time' }) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
-  dataInicio!: string;
+  @ApiPropertyOptional({ format: 'date-time', deprecated: true }) @ValidateIf((_o, value) => value !== undefined) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
+  dataInicio?: string;
 
-  @ApiProperty({ format: 'date-time' }) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
-  dataFim!: string;
+  @ApiPropertyOptional({ format: 'date-time', deprecated: true }) @ValidateIf((_o, value) => value !== undefined) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
+  dataFim?: string;
 
   @ApiPropertyOptional({ nullable: true, minimum: 1, maximum: 4294967295 })
   @IsOptional() @IsInt() @Min(1) @Max(4294967295)
