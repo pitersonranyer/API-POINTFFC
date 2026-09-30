@@ -14,10 +14,14 @@ export class CriarAdminDesafioDto {
   @ApiProperty({ enum: DesafioTipoAcesso }) @IsEnum(DesafioTipoAcesso)
   tipoAcesso!: DesafioTipoAcesso;
 
-  @ApiProperty({ example: '2.00', description: 'Reais como texto decimal, ate duas casas e dez digitos inteiros' })
+  @ApiProperty({ example: '2.00', description: 'Reais como texto decimal ou numero, ate duas casas e dez digitos inteiros',
+    oneOf: [{ type: 'string', pattern: '^\\d{1,10}(\\.\\d{1,2})?$' }, { type: 'number', minimum: 0, maximum: 9999999999.99, multipleOf: 0.01 }] })
+  @Transform(({ value }) => typeof value === 'number' && Number.isFinite(value) ? String(value) : value)
   @IsString() @Matches(/^\d{1,10}(\.\d{1,2})?$/)
   valorInscricao!: string;
 
+  // Omissao e permitida; null e valores explicitos invalidos continuam rejeitados.
+  // IsOptional tambem ignoraria null, alterando o contrato legado.
   @ApiPropertyOptional({ format: 'date-time', deprecated: true }) @ValidateIf((_o, value) => value !== undefined) @IsDateString({ strict: true }) @Matches(/T.*(?:Z|[+-]\d{2}:\d{2})$/)
   inicioInscricao?: string;
 

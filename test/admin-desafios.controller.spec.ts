@@ -80,7 +80,7 @@ describe('AdminDesafiosController HTTP', () => {
 
   it.each([
     { nome: '  ' }, { nome: null }, { tipoAcesso: null }, { tipoAcesso: 'OUTRO' },
-    { valorInscricao: null }, { valorInscricao: 2 }, { valorInscricao: true }, { valorInscricao: '2.001' },
+    { valorInscricao: null }, { valorInscricao: -1 }, { valorInscricao: 0.001 }, { valorInscricao: true }, { valorInscricao: '2.001' },
     { valorInscricao: '10000000000.00' }, { valorInscricao: '-1.00' }, { valorInscricao: '2,00' },
     { inicioInscricao: null }, { inicioInscricao: 0 }, { inicioInscricao: '2026-02-30T00:00:00Z' },
     { fimInscricao: 'invalida' }, { dataInicio: '2026-10-02' }, { dataFim: null },
