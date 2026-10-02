@@ -25,12 +25,20 @@ export class DesafioPartidaDto {
   @ApiProperty({ type: String, nullable: true }) logoVisitanteUrl!: string | null;
   @ApiProperty({ format: 'date-time' }) dataInicio!: string;
   @ApiProperty({ enum: DesafioPartidaStatus }) status!: DesafioPartidaStatus;
+  @ApiProperty({ enum: DesafioPartidaStatus, description: 'Mesmo status persistido, preservando o campo status existente' })
+  statusInterno!: DesafioPartidaStatus;
+  @ApiProperty({ type: Number, nullable: true }) golsMandante!: number | null;
+  @ApiProperty({ type: Number, nullable: true }) golsVisitante!: number | null;
   @ApiProperty({ format: 'date-time', description: 'Instante de inicio desta partida; limite exclusivo para salvar palpites' })
   fechamentoEm!: string;
   @ApiProperty({ description: 'Considera autenticacao, estado do Desafio, elegibilidade e horario do servidor; false para anonimos' })
   podeAlterarPalpite!: boolean;
   @ApiPropertyOptional({ enum: DesafioResultado, nullable: true, description: 'Somente autenticado; null quando ainda nao palpitou' })
   meuPalpite?: DesafioResultado | null;
+  @ApiPropertyOptional({ type: Number, nullable: true, description: 'Pontos persistidos do proprio palpite; null sem palpite ou apuracao' })
+  pontos?: number | null;
+  @ApiPropertyOptional({ description: 'Somente autenticado; false sem palpite ou apuracao' })
+  apurado?: boolean;
 }
 
 export class DesafioDetalheDto extends DesafioResumoDto {

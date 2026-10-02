@@ -14,8 +14,8 @@ const desafio = (id = 7, change: Partial<Desafio> = {}): Desafio => ({
 });
 const partida = (id = 1, change: Partial<DesafioPartida> = {}): DesafioPartida => ({
   id, desafioId: 7, fixtureIdApiFootball: 100 + id, leagueIdApiFootball: 2013, nomeCompeticao: 'Serie A',
-  mandanteIdApiFootball: 1, nomeMandante: 'Mandante', logoMandanteUrl: 'https://example.com/home.png',
-  visitanteIdApiFootball: 2, nomeVisitante: 'Visitante', logoVisitanteUrl: null,
+  mandanteIdApiFootball: 900001, nomeMandante: 'Mandante', logoMandanteUrl: 'https://example.com/home.png',
+  visitanteIdApiFootball: 900002, nomeVisitante: 'Visitante', logoVisitanteUrl: null,
   dataInicio: new Date('2030-10-03T16:00:00Z'), status: 'AGENDADA', resultado: null,
   golsMandante: null, golsVisitante: null, ordem: id, criadoEm: new Date(), atualizadoEm: new Date(), ...change,
 });
@@ -93,6 +93,47 @@ describe('Desafios publicos e meus palpites', () => {
   beforeEach(() => { jest.useFakeTimers(); jest.setSystemTime(agora); });
   afterEach(() => jest.useRealTimers());
 
+  it('reutiliza nomes de Futebol por ID sem modificar snapshots e preserva desconhecidos', async () => {
+    const f = setup();
+    f.state.partidas = [partida(1, { mandanteIdApiFootball: 1783, nomeMandante: 'CR Flamengo',
+      visitanteIdApiFootball: 1903, nomeVisitante: 'Sport Lisboa e Benfica' }),
+    partida(2, { mandanteIdApiFootball: 4294967295, nomeMandante: 'Clube desconhecido' })];
+    const result = await f.service.buscar(7);
+    expect(result.partidas[0]).toMatchObject({ nomeMandante: 'Flamengo', nomeVisitante: 'Benfica' });
+    expect(result.partidas[1].nomeMandante).toBe('Clube desconhecido');
+    expect(f.state.partidas[0]).toMatchObject({ nomeMandante: 'CR Flamengo', nomeVisitante: 'Sport Lisboa e Benfica' });
+  });
+
+  it.each(['AGENDADA', 'EM_ANDAMENTO', 'FINALIZADA', 'ANULADA'] as const)
+  ('expoe placar persistido e preserva status %s sem derivar pelo horario', async status => {
+    const f = setup();
+    f.state.partidas = [partida(1, { status }), partida(2, { status, golsMandante: 2, golsVisitante: 0 })];
+    const result = await f.service.buscar(7);
+    expect(result.partidas[0]).toMatchObject({ status, statusInterno: status, golsMandante: null, golsVisitante: null });
+    expect(result.partidas[1]).toMatchObject({ status, statusInterno: status, golsMandante: 2, golsVisitante: 0 });
+  });
+
+  it.each([
+    { status: 'AGENDADA', palpite: 'CASA', pontos: null, apurado: false },
+    { status: 'FINALIZADA', palpite: 'CASA', pontos: 1, apurado: true },
+    { status: 'FINALIZADA', palpite: 'FORA', pontos: 0, apurado: true },
+    { status: 'ANULADA', palpite: 'CASA', pontos: null, apurado: false },
+  ] as const)('expoe a apuracao persistida do proprio palpite: %j', async caso => {
+    const f = setup();
+    f.state.partidas[0].status = caso.status;
+    f.state.palpites = [palpite(42, 1, { palpite: caso.palpite,
+      pontos: caso.pontos === null ? null : new Prisma.Decimal(caso.pontos), apurado: caso.apurado }),
+    palpite(43, 1, { pontos: new Prisma.Decimal(99), apurado: true })];
+    expect((await f.service.buscar(7, 42)).partidas[0]).toMatchObject({
+      meuPalpite: caso.palpite, pontos: caso.pontos, apurado: caso.apurado, statusInterno: caso.status,
+    });
+    expect((await f.service.buscar(7, 99)).partidas[0]).toMatchObject({ meuPalpite: null, pontos: null, apurado: false });
+    f.tx.desafioPalpite.findMany.mockClear();
+    const publico = (await f.service.buscar(7)).partidas[0];
+    for (const campo of ['meuPalpite', 'pontos', 'apurado', 'usuarioId']) expect(publico).not.toHaveProperty(campo);
+    expect(f.tx.desafioPalpite.findMany).not.toHaveBeenCalled();
+  });
+
   it('deriva andamento exatamente no kickoff e preserva visibilidade apos referencia final', async () => {
     const f = setup();
     f.state.desafios[0].dataInicio = new Date(+agora + 1);
@@ -146,7 +187,8 @@ describe('Desafios publicos e meus palpites', () => {
     expect(result).toMatchObject({ valorInscricao: '0.00', dataInicio: '2030-10-03T11:00:00.000Z' });
     expect(result.partidas[0]).toEqual({ id: 1, ordem: 1, nomeCompeticao: 'Serie A', nomeMandante: 'Mandante',
       logoMandanteUrl: 'https://example.com/home.png', nomeVisitante: 'Visitante', logoVisitanteUrl: null,
-      dataInicio: '2030-10-03T16:00:00.000Z', status: 'AGENDADA', fechamentoEm: '2030-10-03T16:00:00.000Z', podeAlterarPalpite: false });
+      dataInicio: '2030-10-03T16:00:00.000Z', status: 'AGENDADA', statusInterno: 'AGENDADA',
+      golsMandante: null, golsVisitante: null, fechamentoEm: '2030-10-03T16:00:00.000Z', podeAlterarPalpite: false });
     expect(f.tx.desafioPalpite.findMany).not.toHaveBeenCalled();
     expect(f.tx.desafioInscricao.findUnique).not.toHaveBeenCalled();
     expect(result).not.toHaveProperty('inscrito');
@@ -164,7 +206,7 @@ describe('Desafios publicos e meus palpites', () => {
     expect(result.partidas.map(p => [p.meuPalpite, p.podeAlterarPalpite])).toEqual([['CASA', false], ['EMPATE', true], [null, true]]);
     expect(result).toMatchObject({ inscrito: false, minhaInscricao: null });
     expect(f.tx.desafioPalpite.findMany).toHaveBeenCalledWith({ where: { desafioId: 7, usuarioId: 42 },
-      select: { desafioPartidaId: true, palpite: true } });
+      select: { desafioPartidaId: true, palpite: true, pontos: true, apurado: true } });
     expect(f.proibido).not.toHaveBeenCalled();
   });
 

@@ -5,6 +5,7 @@ import { DesafioDetalheDto, DesafioPalpiteSalvoDto, DesafioResumoDto, DesafiosPa
 import { ListarDesafiosQueryDto, SalvarDesafioPalpiteDto } from './dto/desafios.dto';
 import { mapearMinhaDesafioInscricao, minhaDesafioInscricaoSelect } from './desafio-inscricao';
 import { statusDoDesafio } from './desafio-periodo';
+import { nomesClube } from '../futebol/futebol-clubes';
 
 const desafioSelect = {
   id: true, nome: true, descricao: true, tipoAcesso: true, valorInscricao: true, status: true,
@@ -15,6 +16,7 @@ const partidaSelect = {
   id: true, ordem: true, nomeCompeticao: true, nomeMandante: true, logoMandanteUrl: true,
   nomeVisitante: true, logoVisitanteUrl: true, dataInicio: true, status: true,
   resultado: true, golsMandante: true, golsVisitante: true,
+  mandanteIdApiFootball: true, visitanteIdApiFootball: true,
 } satisfies Prisma.DesafioPartidaSelect;
 
 type DesafioRow = Prisma.DesafioGetPayload<{ select: typeof desafioSelect }>;
@@ -70,9 +72,9 @@ export class DesafiosService {
     });
     if (!desafio) throw new NotFoundException('Desafio nao encontrado ou indisponivel.');
     const palpites = usuarioId === undefined ? [] : await this.prisma.desafioPalpite.findMany({
-      where: { desafioId: id, usuarioId }, select: { desafioPartidaId: true, palpite: true },
+      where: { desafioId: id, usuarioId }, select: { desafioPartidaId: true, palpite: true, pontos: true, apurado: true },
     });
-    const meusPalpites = new Map(palpites.map(palpite => [palpite.desafioPartidaId, palpite.palpite]));
+    const meusPalpites = new Map(palpites.map(palpite => [palpite.desafioPartidaId, palpite]));
     const minhaInscricao = usuarioId === undefined ? null : await this.prisma.desafioInscricao.findUnique({
       where: { desafioId_usuarioId: { desafioId: id, usuarioId } }, select: minhaDesafioInscricaoSelect,
     });
@@ -82,12 +84,17 @@ export class DesafiosService {
       inscrito: minhaInscricao?.status === 'ATIVA', minhaInscricao: minhaInscricao ? mapearMinhaDesafioInscricao(minhaInscricao) : null,
     }), partidas: desafio.partidas.map(partida => ({
       id: partida.id, ordem: partida.ordem, nomeCompeticao: partida.nomeCompeticao,
-      nomeMandante: partida.nomeMandante, logoMandanteUrl: partida.logoMandanteUrl,
-      nomeVisitante: partida.nomeVisitante, logoVisitanteUrl: partida.logoVisitanteUrl,
+      nomeMandante: nomesClube(partida.mandanteIdApiFootball, partida.nomeMandante, null).nome, logoMandanteUrl: partida.logoMandanteUrl,
+      nomeVisitante: nomesClube(partida.visitanteIdApiFootball, partida.nomeVisitante, null).nome, logoVisitanteUrl: partida.logoVisitanteUrl,
       dataInicio: partida.dataInicio.toISOString(), status: partida.status,
+      statusInterno: partida.status, golsMandante: partida.golsMandante, golsVisitante: partida.golsVisitante,
       fechamentoEm: partida.dataInicio.toISOString(),
       podeAlterarPalpite: usuarioId !== undefined && agora < desafio.dataFim && partidaAberta(partida, agora),
-      ...(usuarioId === undefined ? {} : { meuPalpite: meusPalpites.get(partida.id) ?? null }),
+      ...(usuarioId === undefined ? {} : {
+        meuPalpite: meusPalpites.get(partida.id)?.palpite ?? null,
+        pontos: meusPalpites.get(partida.id)?.pontos?.toNumber() ?? null,
+        apurado: meusPalpites.get(partida.id)?.apurado ?? false,
+      }),
     })) };
   }
 
