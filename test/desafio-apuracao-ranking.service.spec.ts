@@ -78,21 +78,21 @@ describe('Apuracao e ranking de Desafios', () => {
   it('ranking inclui apenas ATIVA, mesmo que nao tenha acertos/palpites', async () => {
     const f = desafioApuracaoFixture(); f.state.inscricoes = f.state.inscricoes.filter(i => i.usuarioId !== 1);
     f.state.inscricoes[0].status = 'CANCELADA';
-    f.state.inscricoes.push({ usuarioId: 4, desafioId: 7, status: 'ATIVA', usuario: { idUsuario: 4, nome: 'Sem palpite', fotoUrl: null } });
+    f.state.inscricoes.push({ id: 4, sequencia: 1, usuarioId: 4, desafioId: 7, status: 'ATIVA', usuario: { idUsuario: 4, nome: 'Sem palpite', fotoUrl: null } });
     await f.service.apurar(7);
     const result = await f.ranking.consultar(7, pagina);
     expect(result.ranking.map(r => [r.participante.idUsuario, r.pontos, r.posicao])).toEqual([[3, 0, 1], [4, 0, 1]]);
     expect(f.tx.desafioInscricao.findMany).toHaveBeenCalledWith({ where: { desafioId: 7, status: 'ATIVA' },
-      select: { usuarioId: true, usuario: { select: { idUsuario: true, nome: true, fotoUrl: true } } } });
+      select: { id: true, sequencia: true, usuarioId: true, usuario: { select: { idUsuario: true, nome: true, fotoUrl: true } } } });
   });
 
   it('posicoes 1,1,3,4,4 permanecem compartilhadas inclusive entre paginas', async () => {
     const f = desafioApuracaoFixture();
     f.state.partidas = Array.from({ length: 8 }, (_, n) => ({ ...f.state.partidas[0], id: n + 1, status: 'FINALIZADA', resultado: 'CASA', golsMandante: 1, golsVisitante: 0 }));
-    f.state.inscricoes = [5, 4, 3, 2, 1].map(usuarioId => ({ usuarioId, desafioId: 7, status: 'ATIVA',
+    f.state.inscricoes = [5, 4, 3, 2, 1].map(usuarioId => ({ id: usuarioId, sequencia: 1, usuarioId, desafioId: 7, status: 'ATIVA',
       usuario: { idUsuario: usuarioId, nome: `Nome ${usuarioId}`, fotoUrl: null } }));
     f.state.palpites = [8, 8, 7, 6, 6].flatMap((pontos, n) => Array.from({ length: pontos }, (_, partida) => ({
-      usuarioId: n + 1, desafioId: 7, desafioPartidaId: partida + 1, apurado: true, pontos: new Prisma.Decimal(1),
+      usuarioId: n + 1, inscricaoId: n + 1, desafioId: 7, desafioPartidaId: partida + 1, apurado: true, pontos: new Prisma.Decimal(1),
     })));
     const result = await f.ranking.consultar(7, pagina);
     expect(result.ranking.map(r => [r.posicao, r.pontos, r.acertos])).toEqual([[1, 8, 8], [1, 8, 8], [3, 7, 7], [4, 6, 6], [4, 6, 6]]);

@@ -63,6 +63,19 @@ describe('AdminDesafiosController HTTP', () => {
     expect(service.criar).toHaveBeenLastCalledWith(42, expect.objectContaining({ valorInscricao: '2.00' }));
   });
 
+  it('permite Admin configurar limite por usuario na criacao e edicao', async () => {
+    expect((await request('POST', '', { ...body, limiteInscricoesPorUsuario: 3 })).status).toBe(201);
+    expect(service.criar).toHaveBeenCalledWith(42, expect.objectContaining({ limiteInscricoesPorUsuario: 3 }));
+    expect((await request('PATCH', '/7', { limiteInscricoesPorUsuario: 2 })).status).toBe(200);
+    expect(service.atualizar).toHaveBeenCalledWith(7, { limiteInscricoesPorUsuario: 2 });
+  });
+
+  it.each([null, 0, -1, 1.5, '2', 4294967296])('rejeita limite por usuario invalido: %j', async limiteInscricoesPorUsuario => {
+    expect((await request('POST', '', { ...body, limiteInscricoesPorUsuario })).status).toBe(400);
+    expect((await request('PATCH', '/7', { limiteInscricoesPorUsuario })).status).toBe(400);
+    expect(service.criar).not.toHaveBeenCalled(); expect(service.atualizar).not.toHaveBeenCalled();
+  });
+
   it('aceita criar e editar apenas dados basicos, sem as quatro datas', async () => {
     const basico = { nome: 'Desafio simplificado', tipoAcesso: 'FREE', valorInscricao: '0' };
     expect((await request('POST', '', basico)).status).toBe(201);

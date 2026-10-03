@@ -9,7 +9,7 @@ const desafio = (id = 7, change: Partial<Desafio> = {}): Desafio => ({
   id, nome: 'Desafio publico', descricao: 'Jogos do dia', tipoAcesso: 'FREE', valorInscricao: new Prisma.Decimal(0),
   status: 'ABERTO', inicioInscricao: new Date('2030-10-01T00:00:00Z'), fimInscricao: new Date('2030-10-03T10:00:00Z'),
   dataInicio: new Date('2030-10-03T11:00:00Z'), dataFim: new Date('2030-10-04T23:00:00Z'),
-  limiteParticipantes: 1, criadoPorId: 99, publicadoEm: new Date('2030-09-30T00:00:00Z'),
+  limiteParticipantes: 1, limiteInscricoesPorUsuario: 1, criadoPorId: 99, publicadoEm: new Date('2030-09-30T00:00:00Z'),
   criadoEm: new Date(), atualizadoEm: new Date(), ...change,
 });
 const partida = (id = 1, change: Partial<DesafioPartida> = {}): DesafioPartida => ({
@@ -20,12 +20,16 @@ const partida = (id = 1, change: Partial<DesafioPartida> = {}): DesafioPartida =
   golsMandante: null, golsVisitante: null, ordem: id, criadoEm: new Date(), atualizadoEm: new Date(), ...change,
 });
 const palpite = (usuarioId = 42, partidaId = 1, change: Partial<DesafioPalpite> = {}): DesafioPalpite => ({
-  id: usuarioId * 10 + partidaId, desafioId: 7, desafioPartidaId: partidaId, usuarioId, palpite: 'CASA',
+  id: usuarioId * 10 + partidaId, inscricaoId: usuarioId, desafioId: 7, desafioPartidaId: partidaId, usuarioId, palpite: 'CASA',
   pontos: null, apurado: false, criadoEm: new Date(), atualizadoEm: new Date(), ...change,
 });
 
 type FiltroPublico = { id?: number; status: { in: string[] }; publicadoEm: { lte: Date };
   inicioInscricao: { lte: Date }; tipoAcesso?: string };
+
+const inscricao = (usuarioId = 42): DesafioInscricao => ({ id: usuarioId, desafioId: 7, usuarioId,
+  sequencia: 1, chaveIdempotencia: null, status: 'RASCUNHO', valorInscricao: new Prisma.Decimal(0),
+  movimentacaoDebitoId: null, dataInscricao: agora, criadoEm: agora, atualizadoEm: agora });
 
 function setup() {
   const state = { desafios: [desafio()], partidas: [partida()], palpites: [] as DesafioPalpite[], inscricoes: [] as DesafioInscricao[] };
@@ -54,21 +58,31 @@ function setup() {
       findMany: jest.fn(async ({ where }: { where: { desafioId: number; usuarioId: number } }) =>
         state.palpites.filter(p => p.desafioId === where.desafioId && p.usuarioId === where.usuarioId)),
       upsert: jest.fn(async ({ where, create, update }: {
-        where: { desafioPartidaId_usuarioId: { desafioPartidaId: number; usuarioId: number } };
-        create: Pick<DesafioPalpite, 'desafioId' | 'desafioPartidaId' | 'usuarioId' | 'palpite'>;
+        where: { inscricaoId_desafioPartidaId: { desafioPartidaId: number; inscricaoId: number } };
+        create: Pick<DesafioPalpite, 'desafioId' | 'desafioPartidaId' | 'usuarioId' | 'palpite' | 'inscricaoId'>;
         update: Pick<DesafioPalpite, 'palpite'>;
       }) => {
-        const key = where.desafioPartidaId_usuarioId;
-        const row = state.palpites.find(p => p.desafioPartidaId === key.desafioPartidaId && p.usuarioId === key.usuarioId);
+        const key = where.inscricaoId_desafioPartidaId;
+        const row = state.palpites.find(p => p.desafioPartidaId === key.desafioPartidaId && p.inscricaoId === key.inscricaoId);
         if (row) { row.palpite = update.palpite; return row; }
         const novo = palpite(create.usuarioId, create.desafioPartidaId, create);
         state.palpites.push(novo); return novo;
       }),
     },
-    desafioInscricao: { ...foraDoEscopo, findUnique: jest.fn(async ({ where }: {
-      where: { desafioId_usuarioId: { desafioId: number; usuarioId: number } };
-    }) => state.inscricoes.find(i => i.desafioId === where.desafioId_usuarioId.desafioId
-      && i.usuarioId === where.desafioId_usuarioId.usuarioId) ?? null) },
+    desafioInscricao: {
+      findUnique: jest.fn(async ({ where }: { where: { desafioId_usuarioId_sequencia: {
+        desafioId: number; usuarioId: number; sequencia: number } } }) => {
+        const key = where.desafioId_usuarioId_sequencia;
+        return state.inscricoes.find(i => i.desafioId === key.desafioId && i.usuarioId === key.usuarioId && i.sequencia === key.sequencia) ?? null;
+      }),
+      findMany: jest.fn(async ({ where }: { where: { desafioId: number; usuarioId: number } }) =>
+        state.inscricoes.filter(i => i.desafioId === where.desafioId && i.usuarioId === where.usuarioId)),
+      findFirst: jest.fn(async ({ where }: { where: { id: number; desafioId: number; usuarioId: number } }) =>
+        state.inscricoes.find(i => i.id === where.id && i.desafioId === where.desafioId && i.usuarioId === where.usuarioId) ?? null),
+      create: jest.fn(async ({ data }: { data: Partial<DesafioInscricao> & { usuarioId: number } }) => {
+        const row = { ...inscricao(data.usuarioId), ...data }; state.inscricoes.push(row); return row;
+      }),
+    },
     carteira: foraDoEscopo, movimentacaoCarteira: foraDoEscopo,
     $queryRaw: jest.fn(async (sql: TemplateStringsArray, ...values: number[]) => {
       const existe = sql.join(' ').includes('DESAFIO_PARTIDA')
@@ -84,7 +98,8 @@ function setup() {
     queue = new Promise<void>(resolve => { liberar = resolve; });
     await anterior;
     const backup = state.palpites.map(p => ({ ...p }));
-    try { return await acao(tx); } catch (error) { state.palpites = backup; throw error; } finally { liberar(); }
+    const backupInscricoes = state.inscricoes.map(i => ({ ...i }));
+    try { return await acao(tx); } catch (error) { state.palpites = backup; state.inscricoes = backupInscricoes; throw error; } finally { liberar(); }
   }) };
   return { state, tx, prisma, proibido, service: new DesafiosService(prisma as unknown as PrismaService) };
 }
@@ -104,6 +119,32 @@ describe('Desafios publicos e meus palpites', () => {
     expect(f.state.partidas[0]).toMatchObject({ nomeMandante: 'CR Flamengo', nomeVisitante: 'Sport Lisboa e Benfica' });
   });
 
+  it('detalhe autenticado identifica cartelas e palpites independentes; publico omite dados pessoais', async () => {
+    const f = setup(); f.state.desafios[0].limiteInscricoesPorUsuario = 3;
+    f.state.inscricoes = [{ ...inscricao(), status: 'ATIVA' }, { ...inscricao(), id: 100, sequencia: 2, status: 'ATIVA' },
+      { ...inscricao(), id: 101, sequencia: 3 }, { ...inscricao(43), status: 'ATIVA' }];
+    f.state.palpites = [palpite(42, 1, { pontos: new Prisma.Decimal(1), apurado: true }),
+      palpite(42, 1, { inscricaoId: 100, palpite: 'FORA', pontos: new Prisma.Decimal(0), apurado: true }), palpite(43)];
+    const result = await f.service.buscar(7, 42);
+    expect(result).toMatchObject({ limiteInscricoesPorUsuario: 3, quantidadeUtilizada: 2, inscrito: true });
+    expect(result.minhasInscricoes?.map(i => [i.id, i.numero, i.nome, i.status, i.palpites[0].meuPalpite, i.palpites[0].pontos, i.palpites[0].apurado]))
+      .toEqual([[42, 1, 'Palpite 1', 'ATIVA', 'CASA', 1, true], [100, 2, 'Palpite 2', 'ATIVA', 'FORA', 0, true],
+        [101, 3, 'Palpite 3', 'RASCUNHO', null, null, false]]);
+    expect(result.partidas[0]).toMatchObject({ meuPalpite: 'CASA', pontos: 1, apurado: true });
+    const publico = await f.service.buscar(7);
+    for (const campo of ['minhasInscricoes', 'quantidadeUtilizada', 'minhaInscricao', 'inscrito']) expect(publico).not.toHaveProperty(campo);
+    for (const campo of ['meuPalpite', 'pontos', 'apurado']) expect(publico.partidas[0]).not.toHaveProperty(campo);
+  });
+
+  it('inscrito considera qualquer cartela ativa e sequencia nao depende da posicao no array', async () => {
+    const f = setup();
+    f.state.inscricoes = [{ ...inscricao(), id: 100, sequencia: 2, status: 'ATIVA' }];
+    const result = await f.service.buscar(7, 42);
+    expect(result).toMatchObject({ inscrito: true, quantidadeUtilizada: 1, minhaInscricao: null });
+    expect(result.minhasInscricoes?.[0]).toMatchObject({ numero: 2, nome: 'Palpite 2' });
+    expect(result.partidas[0].meuPalpite).toBeNull();
+  });
+
   it.each(['AGENDADA', 'EM_ANDAMENTO', 'FINALIZADA', 'ANULADA'] as const)
   ('expoe placar persistido e preserva status %s sem derivar pelo horario', async status => {
     const f = setup();
@@ -121,6 +162,7 @@ describe('Desafios publicos e meus palpites', () => {
   ] as const)('expoe a apuracao persistida do proprio palpite: %j', async caso => {
     const f = setup();
     f.state.partidas[0].status = caso.status;
+    f.state.inscricoes = [inscricao()];
     f.state.palpites = [palpite(42, 1, { palpite: caso.palpite,
       pontos: caso.pontos === null ? null : new Prisma.Decimal(caso.pontos), apurado: caso.apurado }),
     palpite(43, 1, { pontos: new Prisma.Decimal(99), apurado: true })];
@@ -200,19 +242,20 @@ describe('Desafios publicos e meus palpites', () => {
   it('inclui somente meus palpites, inclusive fechados, sem depender de inscricao', async () => {
     const f = setup();
     f.state.partidas = [partida(1, { dataInicio: agora }), partida(2), partida(3)];
+    f.state.inscricoes = [inscricao()];
     f.state.palpites = [palpite(), palpite(42, 2, { palpite: 'EMPATE' }), palpite(43, 3, { palpite: 'FORA' }),
       palpite(42, 3, { desafioId: 8, palpite: 'CASA' })];
     const result = await f.service.buscar(7, 42);
     expect(result.partidas.map(p => [p.meuPalpite, p.podeAlterarPalpite])).toEqual([['CASA', false], ['EMPATE', true], [null, true]]);
     expect(result).toMatchObject({ inscrito: false, minhaInscricao: null });
     expect(f.tx.desafioPalpite.findMany).toHaveBeenCalledWith({ where: { desafioId: 7, usuarioId: 42 },
-      select: { desafioPartidaId: true, palpite: true, pontos: true, apurado: true } });
+      select: { inscricaoId: true, desafioPartidaId: true, palpite: true, pontos: true, apurado: true } });
     expect(f.proibido).not.toHaveBeenCalled();
   });
 
   it('detalhe informa somente a minha inscricao, sem IDs financeiros ou dados de outro usuario', async () => {
     const f = setup();
-    const inscricao: DesafioInscricao = { id: 10, desafioId: 7, usuarioId: 42, status: 'ATIVA',
+    const inscricao: DesafioInscricao = { id: 10, desafioId: 7, usuarioId: 42, status: 'ATIVA', sequencia: 1, chaveIdempotencia: null,
       valorInscricao: new Prisma.Decimal('2.00'), movimentacaoDebitoId: 100,
       dataInscricao: agora, criadoEm: agora, atualizadoEm: agora };
     f.state.inscricoes = [inscricao, { ...inscricao, id: 11, usuarioId: 43 }];
@@ -224,7 +267,7 @@ describe('Desafios publicos e meus palpites', () => {
     expect(await f.service.buscar(7, 99)).toMatchObject({ inscrito: false, minhaInscricao: null });
     inscricao.status = 'CANCELADA';
     expect(await f.service.buscar(7, 42)).toMatchObject({ inscrito: false, minhaInscricao: { status: 'CANCELADA' } });
-    await expect(f.service.salvarPalpite(7, 1, 42, { palpite: 'FORA' })).resolves.toMatchObject({ palpite: 'FORA' });
+    await expect(f.service.salvarPalpite(7, 1, 42, { palpite: 'FORA' })).rejects.toBeInstanceOf(ConflictException);
     expect(f.proibido).not.toHaveBeenCalled();
   });
 
@@ -250,8 +293,8 @@ describe('Desafios publicos e meus palpites', () => {
     expect(f.state.palpites).toHaveLength(1);
     expect(f.state.palpites[0]).toMatchObject({ id: originalId, usuarioId: 42, palpite: 'FORA', apurado: false, pontos: null });
     expect(f.tx.desafioPalpite.upsert.mock.calls[0][0]).toEqual({
-      where: { desafioPartidaId_usuarioId: { desafioPartidaId: 1, usuarioId: 42 } },
-      create: { desafioId: 7, desafioPartidaId: 1, usuarioId: 42, palpite: 'CASA' }, update: { palpite: 'CASA' }, select: { palpite: true },
+      where: { inscricaoId_desafioPartidaId: { desafioPartidaId: 1, inscricaoId: 42 } },
+      create: { desafioId: 7, desafioPartidaId: 1, usuarioId: 42, inscricaoId: 42, palpite: 'CASA' }, update: { palpite: 'CASA' }, select: { palpite: true },
     });
     expect(f.proibido).not.toHaveBeenCalled();
   });

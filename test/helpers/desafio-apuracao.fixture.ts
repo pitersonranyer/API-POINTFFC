@@ -19,8 +19,8 @@ export function desafioApuracaoFixture() {
       mandanteIdApiFootball: 1, visitanteIdApiFootball: 2, status: 'AGENDADA', resultado: null,
       golsMandante: null, golsVisitante: null, dataInicio: data, atualizadoEm: data }],
     palpites: ['CASA', 'EMPATE', 'FORA'].map((palpite, index) => ({ id: index + 1, desafioId: 7,
-      desafioPartidaId: 1, usuarioId: index + 1, palpite, pontos: null, apurado: false })),
-    inscricoes: [1, 2, 3].map(usuarioId => ({ usuarioId, desafioId: 7, status: 'ATIVA',
+      desafioPartidaId: 1, usuarioId: index + 1, inscricaoId: index + 1, palpite, pontos: null, apurado: false })),
+    inscricoes: [1, 2, 3].map(usuarioId => ({ id: usuarioId, sequencia: 1, usuarioId, desafioId: 7, status: 'ATIVA',
       usuario: { idUsuario: usuarioId, nome: `Usuario ${usuarioId}`, fotoUrl: null } })),
   };
   const proibido = jest.fn(() => { throw new Error('Apuracao/ranking nao pode movimentar dinheiro'); });
@@ -52,11 +52,11 @@ export function desafioApuracaoFixture() {
       }),
       groupBy: jest.fn(async ({ where }) => {
         const soma = new Map<number, number>();
-        state.palpites.filter(p => p.desafioId === where.desafioId && where.usuarioId.in.includes(p.usuarioId)
+        state.palpites.filter(p => p.desafioId === where.desafioId && where.inscricaoId.in.includes(p.inscricaoId)
           && where.desafioPartidaId.in.includes(p.desafioPartidaId) && p.apurado === where.apurado
           && p.pontos !== null && where.pontos.in.includes(Number(p.pontos)))
-          .forEach(p => soma.set(p.usuarioId, (soma.get(p.usuarioId) ?? 0) + Number(p.pontos)));
-        return [...soma].map(([usuarioId, pontos]) => ({ usuarioId, _sum: { pontos: new Prisma.Decimal(pontos) } }));
+          .forEach(p => soma.set(p.inscricaoId, (soma.get(p.inscricaoId) ?? 0) + Number(p.pontos)));
+        return [...soma].map(([inscricaoId, pontos]) => ({ inscricaoId, _sum: { pontos: new Prisma.Decimal(pontos) } }));
       }),
     },
     desafioInscricao: { findMany: jest.fn(async ({ where }) => state.inscricoes.filter(i => i.desafioId === where.desafioId && i.status === where.status)) },

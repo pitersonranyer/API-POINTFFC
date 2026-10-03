@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Header, Param, Put, Query, UseGuards } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
+import { Body, Controller, Get, Header, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiConflictResponse, ApiCreatedResponse, ApiForbiddenResponse, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags, ApiUnauthorizedResponse } from '@nestjs/swagger';
 import { Usuario } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/authenticated-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -7,6 +7,7 @@ import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { DesafiosService } from './desafios.service';
 import { DesafioIdParamsDto, DesafioPartidaParamsDto, ListarDesafiosQueryDto, SalvarDesafioPalpiteDto } from './dto/desafios.dto';
 import { DesafioDetalheDto, DesafioPalpiteSalvoDto, DesafiosPaginaDto } from './dto/desafios-response.dto';
+import { CriarDesafioCartelaDto, MinhaDesafioInscricaoDto } from './dto/desafio-participacao.dto';
 
 @ApiTags('desafios')
 @ApiBadRequestResponse({ description: 'Parametros ou payload invalidos' })
@@ -32,6 +33,16 @@ export class DesafiosController {
   @ApiForbiddenResponse({ description: 'Usuario bloqueado' })
   buscar(@Param() params: DesafioIdParamsDto, @AuthenticatedUser() usuario?: Usuario) {
     return this.desafios.buscar(params.id, usuario?.idUsuario);
+  }
+
+  @Post(':id/inscricoes')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('jwt')
+  @ApiOperation({ summary: 'Cria cartela em rascunho sem cobrar; mesma chave retorna a mesma cartela' })
+  @ApiCreatedResponse({ type: MinhaDesafioInscricaoDto })
+  criarCartela(@Param() params: DesafioIdParamsDto, @AuthenticatedUser() usuario: Usuario,
+    @Body() dto: CriarDesafioCartelaDto) {
+    return this.desafios.criarCartela(params.id, usuario.idUsuario, dto);
   }
 
   @Put(':id/partidas/:partidaId/palpite')

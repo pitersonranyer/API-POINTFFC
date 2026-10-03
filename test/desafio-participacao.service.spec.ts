@@ -13,9 +13,9 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     f.state.carteiras = [];
     const palpites = f.state.palpites.map(p => ({ ...p }));
     const result = await f.service.participar(7, 42);
-    expect(result).toEqual({ inscricao: { id: expect.any(Number), desafioId: 7, status: 'ATIVA',
+    expect(result).toEqual({ inscricao: { id: expect.any(Number), desafioId: 7, status: 'ATIVA', numero: 1, nome: 'Palpite 1',
       valorInscricao: '0.00', dataInscricao: f.agora.toISOString() }, tipoAcesso: 'FREE', valorCobrado: '0.00' });
-    expect(f.state.inscricoes).toHaveLength(1);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1);
     expect(f.state.inscricoes[0]).toMatchObject({ usuarioId: 42, status: 'ATIVA', movimentacaoDebitoId: null });
     expect(f.state.inscricoes[0].valorInscricao.isZero()).toBe(true);
     expect(f.tx.carteira.findUnique).not.toHaveBeenCalled();
@@ -37,7 +37,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     expect(f.prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(f.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'ReadCommitted', maxWait: 10000, timeout: 20000 });
     expect(debitar).toHaveBeenCalledWith(f.tx, { usuarioId: 42, valor: new Prisma.Decimal('2.00'), origem: 'INSCRICAO',
-      referenciaId: 'desafio:7:usuario:42', descricao: 'Participacao no Desafio 7' });
+      referenciaId: 'desafio:7:inscricao:7042', descricao: 'Participacao no Desafio 7 - Palpite 1' });
     expect(f.state.movimentos).toHaveLength(1);
     const movimento = f.state.movimentos[0];
     expect(movimento).toMatchObject({ tipo: 'DEBITO', origem: 'INSCRICAO', status: 'CONFIRMADA', carteiraId: 42 });
@@ -70,7 +70,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
       statusCode: 409, code: 'SALDO_INSUFICIENTE', message: expect.stringContaining('Adicione saldo'),
       saldoDisponivel: ausente ? '0.00' : '1.25', valorNecessario: '2.00', valorFaltante: ausente ? '2.00' : '0.75', moeda: 'BRL',
     } });
-    expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
     expect(f.state.movimentos).toEqual([]);
     expect(f.tx.carteira.update).not.toHaveBeenCalled();
     expect(f.tx.carteira.upsert).not.toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
   it('rejeita carteira bloqueada antes de debitar', async () => {
     const f = desafioParticipacaoFixture(); f.state.carteiras[0].status = 'BLOQUEADA';
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro('CARTEIRA_BLOQUEADA'));
-    expect(f.state.inscricoes).toEqual([]); expect(f.state.movimentos).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]); expect(f.state.movimentos).toEqual([]);
   });
 
   it('palpites de outro usuario/desafio nao completam os obrigatorios e nada e preenchido automaticamente', async () => {
@@ -89,7 +89,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     f.state.palpites.push({ desafioId: 8, usuarioId: 42, desafioPartidaId: 2, palpite: 'FORA' });
     await expect(f.service.participar(7, 42)).rejects.toMatchObject({ response: { code: 'PALPITES_INCOMPLETOS', partidaIds: [2] } });
     expect(f.tx.carteira.findUnique).not.toHaveBeenCalled();
-    expect(f.state.inscricoes).toEqual([]); expect(f.state.movimentos).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]); expect(f.state.movimentos).toEqual([]);
     expect(f.proibido).not.toHaveBeenCalled();
   });
 
@@ -109,12 +109,12 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     f.desafio.valorInscricao = new Prisma.Decimal('9'); f.desafio.status = 'ENCERRADO';
     jest.setSystemTime(f.desafio.dataFim);
     expect(await f.service.participar(7, 42)).toEqual(original);
-    expect(f.state.inscricoes).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
     expect(f.tx.carteira.update).toHaveBeenCalledTimes(1);
   });
 
   it('nao reativa inscricao cancelada nem cobra novamente', async () => {
-    const f = desafioParticipacaoFixture(); f.state.inscricoes.push({ desafioId: 7, usuarioId: 42, status: 'CANCELADA' });
+    const f = desafioParticipacaoFixture(); f.state.inscricoes[0].status = 'CANCELADA';
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro('INSCRICAO_CANCELADA'));
     expect(f.tx.carteira.update).not.toHaveBeenCalled(); expect(f.state.movimentos).toEqual([]);
   });
@@ -131,7 +131,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
   it.each(['RASCUNHO', 'EM_ANDAMENTO', 'ENCERRADO', 'CANCELADO'])('rejeita novas participacoes no status %s', async status => {
     const f = desafioParticipacaoFixture(); f.desafio.status = status;
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro('DESAFIO_INDISPONIVEL'));
-    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
   });
 
   it.each(['inicioInscricao', 'fimInscricao', 'dataInicio', 'dataFim', 'publicadoEm', 'naoPublicado'])
@@ -141,7 +141,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     else f.desafio[campo] = new Date(+f.agora + (['inicioInscricao', 'publicadoEm'].includes(campo) ? 1 : 0));
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro(['publicadoEm', 'naoPublicado'].includes(campo)
       ? 'DESAFIO_INDISPONIVEL' : 'FORA_JANELA_INSCRICAO'));
-    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
   });
 
   it('aceita inicio inclusivo e 1ms antes do fim, bloqueando exatamente no fim', async () => {
@@ -155,7 +155,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     { resultado: 'CASA' }, { golsMandante: 0 }, { golsVisitante: 0 }])('impede entrada tardia/partida nao elegivel: %j', async change => {
     const f = desafioParticipacaoFixture(); Object.assign(f.state.partidas[0], change);
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro('PARTIDAS_INDISPONIVEIS'));
-    expect(f.state.inscricoes).toEqual([]); expect(f.state.movimentos).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]); expect(f.state.movimentos).toEqual([]);
   });
 
   it.each([['FREE', '2'], ['PAGO', '0'], ['PAGO', '-1'], ['PAGO', '0.001'], ['PAGO', '10000000000']])
@@ -176,39 +176,39 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
 
   it.each(['saldo', 'movimento', 'inscricao'])('rollback integral quando falha depois de escrever %s', async etapa => {
     const f = desafioParticipacaoFixture();
-    const mock = etapa === 'saldo' ? f.tx.carteira.update : etapa === 'movimento' ? f.tx.movimentacaoCarteira.create : f.tx.desafioInscricao.create;
+    const mock = etapa === 'saldo' ? f.tx.carteira.update : etapa === 'movimento' ? f.tx.movimentacaoCarteira.create : f.tx.desafioInscricao.update;
     const original = mock.getMockImplementation();
     mock.mockImplementationOnce(async (args: unknown) => { await original(args); throw new Error('falha simulada'); });
     await expect(f.service.participar(7, 42)).rejects.toThrow('falha simulada');
     expect(f.state.carteiras[0].saldoDisponivel.toFixed(2)).toBe('10.00');
-    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
     await expect(f.service.participar(7, 42)).resolves.toMatchObject({ valorCobrado: '2.00' });
     expect(f.state.movimentos).toHaveLength(1);
   });
 
   it('rollback do debito se a escrita da inscricao atravessa o prazo', async () => {
-    const f = desafioParticipacaoFixture(); const criar = f.tx.desafioInscricao.create.getMockImplementation();
-    f.tx.desafioInscricao.create.mockImplementationOnce(async (args: unknown) => {
+    const f = desafioParticipacaoFixture(); const criar = f.tx.desafioInscricao.update.getMockImplementation();
+    f.tx.desafioInscricao.update.mockImplementationOnce(async (args: unknown) => {
       const row = await criar(args); jest.setSystemTime(f.desafio.fimInscricao); return row;
     });
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro('FORA_JANELA_INSCRICAO'));
     expect(f.state.carteiras[0].saldoDisponivel.toFixed(2)).toBe('10.00');
-    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
   });
 
   it.each(['P2002', 'P2034', 'P2028'])('constraint/conflito %s aborta toda a transacao', async code => {
     const f = desafioParticipacaoFixture();
-    f.tx.desafioInscricao.create.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('conflito', { code, clientVersion: 'test' }));
+    f.tx.desafioInscricao.update.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('conflito', { code, clientVersion: 'test' }));
     await expect(f.service.participar(7, 42)).rejects.toEqual(erro(code === 'P2002' ? 'INSCRICAO_DUPLICADA' : 'PARTICIPACAO_CONCORRENTE'));
     expect(f.state.carteiras[0].saldoDisponivel.toFixed(2)).toBe('10.00');
-    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.movimentos).toEqual([]); expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
   });
 
   it('requisicoes simultaneas do mesmo usuario geram uma inscricao e um debito', async () => {
     const f = desafioParticipacaoFixture();
     const results = await Promise.all(Array.from({ length: 5 }, () => f.service.participar(7, 42)));
     expect(results.every(r => r.inscricao.id === results[0].inscricao.id)).toBe(true);
-    expect(f.state.inscricoes).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
     expect(f.state.carteiras[0].saldoDisponivel.toFixed(2)).toBe('8.00');
   });
 
@@ -218,7 +218,7 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     expect(results.map(r => r.status).sort()).toEqual(['fulfilled', 'rejected']);
     const falha = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
     expect(falha.reason).toEqual(erro('LIMITE_PARTICIPANTES_ATINGIDO'));
-    expect(f.state.inscricoes).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
     expect(f.state.carteiras.map(c => c.saldoDisponivel.toFixed(2)).sort()).toEqual(['10.00', '8.00']);
   });
 
@@ -226,12 +226,13 @@ describe('Participacao no Desafio com CarteiraService real e persistencia simula
     const f = desafioParticipacaoFixture(); f.state.carteiras[0].saldoDisponivel = new Prisma.Decimal('2');
     f.state.desafios.push({ ...f.desafio, id: 8 });
     f.state.partidas.push({ ...f.state.partidas[0], id: 3, desafioId: 8 });
-    f.state.palpites.push({ usuarioId: 42, desafioId: 8, desafioPartidaId: 3, palpite: 'EMPATE' });
+    f.state.inscricoes.push({ ...f.state.inscricoes[0], id: 8042, desafioId: 8 });
+    f.state.palpites.push({ usuarioId: 42, inscricaoId: 8042, desafioId: 8, desafioPartidaId: 3, palpite: 'EMPATE' });
     const results = await Promise.allSettled([f.service.participar(7, 42), f.service.participar(8, 42)]);
     expect(results.map(r => r.status).sort()).toEqual(['fulfilled', 'rejected']);
     const falha = results.find(r => r.status === 'rejected') as PromiseRejectedResult;
     expect(falha.reason).toEqual(erro('SALDO_INSUFICIENTE'));
     expect(f.state.carteiras[0].saldoDisponivel.toFixed(2)).toBe('0.00');
-    expect(f.state.inscricoes).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1); expect(f.state.movimentos).toHaveLength(1);
   });
 });

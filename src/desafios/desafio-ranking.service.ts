@@ -21,15 +21,16 @@ export class DesafioRankingService {
       const apuradas = validas.filter(p => p.status === 'FINALIZADA' && p.resultado !== null
         && p.golsMandante !== null && p.golsVisitante !== null);
       const inscritos = await tx.desafioInscricao.findMany({ where: { desafioId: id, status: 'ATIVA' },
-        select: { usuarioId: true, usuario: { select: { idUsuario: true, nome: true, fotoUrl: true } } } });
+        select: { id: true, sequencia: true, usuarioId: true, usuario: { select: { idUsuario: true, nome: true, fotoUrl: true } } } });
       const somas = !apuradas.length || !inscritos.length ? [] : await tx.desafioPalpite.groupBy({
-        by: ['usuarioId'], where: { desafioId: id, usuarioId: { in: inscritos.map(i => i.usuarioId) },
+        by: ['inscricaoId'], where: { desafioId: id, inscricaoId: { in: inscritos.map(i => i.id) },
           desafioPartidaId: { in: apuradas.map(p => p.id) }, apurado: true, pontos: { in: [0, 1] } },
         _sum: { pontos: true },
       });
-      const porUsuario = new Map(somas.map(s => [s.usuarioId, s._sum.pontos?.toNumber() ?? 0]));
-      const ordenados = inscritos.map(i => ({ participante: i.usuario, pontos: porUsuario.get(i.usuarioId) ?? 0 }))
-        .sort((a, b) => b.pontos - a.pontos || a.participante.idUsuario - b.participante.idUsuario);
+      const porInscricao = new Map(somas.map(s => [s.inscricaoId, s._sum.pontos?.toNumber() ?? 0]));
+      const ordenados = inscritos.map(i => ({ participante: i.usuario, inscricaoId: i.id,
+        numero: i.sequencia, nome: `Palpite ${i.sequencia}`, pontos: porInscricao.get(i.id) ?? 0 }))
+        .sort((a, b) => b.pontos - a.pontos || a.participante.idUsuario - b.participante.idUsuario || a.numero - b.numero);
       let posicao = 0;
       const ranking = ordenados.map((row, index) => {
         if (index === 0 || row.pontos !== ordenados[index - 1].pontos) posicao = index + 1;

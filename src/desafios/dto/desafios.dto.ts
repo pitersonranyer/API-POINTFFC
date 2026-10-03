@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { DesafioResultado, DesafioTipoAcesso } from '@prisma/client';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, Max, Min, ValidateIf } from 'class-validator';
 
 const integer = ({ value }: { value: unknown }): number =>
   typeof value === 'string' && /^[0-9]+$/.test(value) ? Number(value) : typeof value === 'number' ? value : NaN;
@@ -36,4 +36,7 @@ export class SalvarDesafioPalpiteDto {
   @ApiProperty({ enum: DesafioResultado })
   @IsEnum(DesafioResultado)
   palpite!: DesafioResultado;
+  @ApiPropertyOptional({ description: 'Cartela propria; omissao usa somente Palpite 1 (legado)' })
+  @ValidateIf((_o, value) => value !== undefined) @IsInt() @Min(1) @Max(4294967295)
+  inscricaoId?: number;
 }

@@ -10,7 +10,7 @@ describe('Desafios publicos HTTP', () => {
   let app: INestApplication;
   let base: string;
   const auth = { authenticateJwt: jest.fn() };
-  const service = { listar: jest.fn(), buscar: jest.fn(), salvarPalpite: jest.fn() };
+  const service = { listar: jest.fn(), buscar: jest.fn(), salvarPalpite: jest.fn(), criarCartela: jest.fn() };
   const request = (method: string, path: string, body?: unknown, authorization?: string) => fetch(`${base}/desafios${path}`, {
     method, headers: { 'Content-Type': 'application/json', ...(authorization === undefined ? {} : { Authorization: authorization }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -111,10 +111,40 @@ describe('Desafios publicos HTTP', () => {
     expect(service.salvarPalpite).not.toHaveBeenCalled();
   });
 
-  it.each(['usuarioId', 'desafioId', 'desafioPartidaId', 'id', 'pontos', 'apurado', 'dataInicio', 'fechamentoEm', 'inscricaoId'])
+  it.each(['usuarioId', 'desafioId', 'desafioPartidaId', 'id', 'pontos', 'apurado', 'dataInicio', 'fechamentoEm'])
   ('nao aceita controle/identidade pelo body: %s', async campo => {
     expect((await request('PUT', '/7/partidas/1/palpite', { palpite: 'CASA', [campo]: 999 }, 'Bearer valid')).status).toBe(400);
     expect(service.salvarPalpite).not.toHaveBeenCalled();
+  });
+
+  it('aceita inscricaoId para selecionar a cartela e passa somente o dono autenticado', async () => {
+    expect((await request('PUT', '/7/partidas/1/palpite', { palpite: 'FORA', inscricaoId: 123 }, 'Bearer valid')).status).toBe(200);
+    expect(service.salvarPalpite).toHaveBeenCalledWith(7, 1, 42, { palpite: 'FORA', inscricaoId: 123 });
+  });
+
+  it.each([null, 0, -1, 1.5, '123', 4294967296])('rejeita selecao invalida de cartela: %j', async inscricaoId => {
+    expect((await request('PUT', '/7/partidas/1/palpite', { palpite: 'CASA', inscricaoId }, 'Bearer valid')).status).toBe(400);
+    expect(service.salvarPalpite).not.toHaveBeenCalled();
+  });
+
+  it('cria rascunho autenticado com chave de idempotencia, sem identidade no body', async () => {
+    service.criarCartela.mockResolvedValue({ id: 123, numero: 2, nome: 'Palpite 2', status: 'RASCUNHO' });
+    const response = await request('POST', '/7/inscricoes', { chaveIdempotencia: 'nova-2' }, 'Bearer valid');
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ id: 123, numero: 2, status: 'RASCUNHO' });
+    expect(service.criarCartela).toHaveBeenCalledWith(7, 42, { chaveIdempotencia: 'nova-2' });
+  });
+
+  it.each([{}, { chaveIdempotencia: '' }, { chaveIdempotencia: 'x'.repeat(101) },
+    { chaveIdempotencia: 'a', usuarioId: 43 }, { chaveIdempotencia: 'a', sequencia: 2 }])
+  ('rejeita criacao de cartela invalida: %j', async body => {
+    expect((await request('POST', '/7/inscricoes', body, 'Bearer valid')).status).toBe(400);
+    expect(service.criarCartela).not.toHaveBeenCalled();
+  });
+
+  it('exige autenticacao para criar cartela', async () => {
+    expect((await request('POST', '/7/inscricoes', { chaveIdempotencia: 'a' })).status).toBe(401);
+    expect(service.criarCartela).not.toHaveBeenCalled();
   });
 
   it.each(['0', '-1', '1.2', 'abc', '4294967296', '1e2'])('valida IDs do detalhe e da partida: %s', async id => {

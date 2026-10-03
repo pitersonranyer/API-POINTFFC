@@ -18,6 +18,9 @@ export class DesafioRankingParticipanteDto {
 }
 
 export class DesafioRankingItemDto {
+  @ApiProperty() inscricaoId!: number;
+  @ApiProperty() numero!: number;
+  @ApiProperty({ example: 'Palpite 1' }) nome!: string;
   @ApiProperty({ description: 'Posicao compartilhada: 1, 1, 3, 4, 4' }) posicao!: number;
   @ApiProperty({ type: DesafioRankingParticipanteDto }) participante!: DesafioRankingParticipanteDto;
   @ApiProperty() pontos!: number;

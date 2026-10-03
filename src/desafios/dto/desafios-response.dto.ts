@@ -5,6 +5,7 @@ import { MinhaDesafioInscricaoDto } from './desafio-participacao.dto';
 export class DesafioResumoDto {
   @ApiProperty() id!: number;
   @ApiProperty() nome!: string;
+  @ApiProperty({ default: 1 }) limiteInscricoesPorUsuario!: number;
   @ApiProperty({ type: String, nullable: true }) descricao!: string | null;
   @ApiProperty({ enum: DesafioTipoAcesso }) tipoAcesso!: DesafioTipoAcesso;
   @ApiProperty({ example: '2.00', description: 'BRL como texto decimal com duas casas' }) valorInscricao!: string;
@@ -41,10 +42,24 @@ export class DesafioPartidaDto {
   apurado?: boolean;
 }
 
+export class DesafioCartelaPalpiteDto {
+  @ApiProperty() partidaId!: number;
+  @ApiProperty({ enum: DesafioResultado, nullable: true }) meuPalpite!: DesafioResultado | null;
+  @ApiProperty({ type: Number, nullable: true }) pontos!: number | null;
+  @ApiProperty() apurado!: boolean;
+  @ApiProperty() podeAlterarPalpite!: boolean;
+}
+
+export class MinhaDesafioCartelaDto extends MinhaDesafioInscricaoDto {
+  @ApiProperty({ type: [DesafioCartelaPalpiteDto] }) palpites!: DesafioCartelaPalpiteDto[];
+}
+
 export class DesafioDetalheDto extends DesafioResumoDto {
   @ApiProperty({ type: [DesafioPartidaDto] }) partidas!: DesafioPartidaDto[];
   @ApiPropertyOptional({ description: 'Somente autenticado; true quando possui inscricao ATIVA' }) inscrito?: boolean;
   @ApiPropertyOptional({ type: MinhaDesafioInscricaoDto, nullable: true }) minhaInscricao?: MinhaDesafioInscricaoDto | null;
+  @ApiPropertyOptional({ type: [MinhaDesafioCartelaDto] }) minhasInscricoes?: MinhaDesafioCartelaDto[];
+  @ApiPropertyOptional({ description: 'Quantidade de cartelas ATIVAS do usuario autenticado' }) quantidadeUtilizada?: number;
 }
 
 export class DesafiosPaginacaoDto {

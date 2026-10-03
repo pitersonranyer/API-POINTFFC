@@ -8,13 +8,13 @@ import { periodoDasPartidas, statusDoDesafio } from '../desafios/desafio-periodo
 const desafioSelect = {
   id: true, nome: true, descricao: true, tipoAcesso: true, valorInscricao: true, status: true,
   inicioInscricao: true, fimInscricao: true, dataInicio: true, dataFim: true,
-  limiteParticipantes: true, criadoPorId: true, publicadoEm: true, criadoEm: true, atualizadoEm: true,
+  limiteParticipantes: true, limiteInscricoesPorUsuario: true, criadoPorId: true, publicadoEm: true, criadoEm: true, atualizadoEm: true,
   criadoPor: { select: { idUsuario: true, nome: true } },
 } satisfies Prisma.DesafioSelect;
 
 type DesafioRow = Prisma.DesafioGetPayload<{ select: typeof desafioSelect }>;
 type Configuracao = Pick<DesafioRow, 'nome' | 'descricao' | 'tipoAcesso' | 'valorInscricao'
-  | 'inicioInscricao' | 'fimInscricao' | 'dataInicio' | 'dataFim' | 'limiteParticipantes'>;
+  | 'inicioInscricao' | 'fimInscricao' | 'dataInicio' | 'dataFim' | 'limiteParticipantes' | 'limiteInscricoesPorUsuario'>;
 
 function mapear(row: DesafioRow): Record<string, unknown> {
   return {
@@ -32,6 +32,7 @@ function preparar(dto: AtualizarAdminDesafioDto): Partial<Configuracao> {
   if (dto.descricao !== undefined) data.descricao = dto.descricao;
   if (dto.tipoAcesso !== undefined) data.tipoAcesso = dto.tipoAcesso;
   if (dto.limiteParticipantes !== undefined) data.limiteParticipantes = dto.limiteParticipantes;
+  if (dto.limiteInscricoesPorUsuario !== undefined) data.limiteInscricoesPorUsuario = dto.limiteInscricoesPorUsuario;
   if (dto.valorInscricao !== undefined) {
     if (typeof dto.valorInscricao !== 'string' || !/^\d{1,10}(\.\d{1,2})?$/.test(dto.valorInscricao)) {
       throw new BadRequestException('valorInscricao deve ser texto decimal com ate duas casas.');
@@ -48,6 +49,10 @@ function preparar(dto: AtualizarAdminDesafioDto): Partial<Configuracao> {
 }
 
 function validar(estado: Configuracao, validarDatas = true): void {
+  if (!Number.isInteger(estado.limiteInscricoesPorUsuario) || estado.limiteInscricoesPorUsuario < 1
+    || estado.limiteInscricoesPorUsuario > 4294967295) {
+    throw new BadRequestException('limiteInscricoesPorUsuario deve ser inteiro positivo.');
+  }
   if (typeof estado.nome !== 'string' || !estado.nome.trim() || estado.nome.length > 255) {
     throw new BadRequestException('Nome obrigatorio, com ate 255 caracteres.');
   }
@@ -83,7 +88,8 @@ export class AdminDesafiosService {
   constructor(private readonly prisma: PrismaService, private readonly partidas: AdminDesafioPartidasService) {}
 
   async criar(usuarioId: number, dto: CriarAdminDesafioDto): Promise<Record<string, unknown>> {
-    const estado = { descricao: null, limiteParticipantes: null, ...periodoDasPartidas([]), ...preparar(dto) } as Configuracao;
+    const estado = { descricao: null, limiteParticipantes: null, limiteInscricoesPorUsuario: 1,
+      ...periodoDasPartidas([]), ...preparar(dto) } as Configuracao;
     validar(estado);
     return mapear(await this.prisma.desafio.create({
       data: { ...estado, criadoPorId: usuarioId, status: DesafioStatus.RASCUNHO, publicadoEm: null },

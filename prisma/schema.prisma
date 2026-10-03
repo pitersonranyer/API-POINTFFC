@@ -477,6 +477,7 @@ enum DesafioResultado {
 }
 
 enum DesafioInscricaoStatus {
+  RASCUNHO
   ATIVA
   CANCELADA
 }
@@ -494,6 +495,7 @@ model Desafio {
   dataInicio DateTime @map("DATA_INICIO")
   dataFim DateTime @map("DATA_FIM")
   limiteParticipantes Int? @map("LIMITE_PARTICIPANTES") @db.UnsignedInt
+  limiteInscricoesPorUsuario Int @default(1) @map("LIMITE_INSCRICOES_POR_USUARIO") @db.UnsignedInt
   criadoPorId Int @map("CRIADO_POR_ID") @db.UnsignedInt
   publicadoEm DateTime? @map("PUBLICADO_EM")
   criadoEm DateTime @default(now()) @map("CRIADO_EM")
@@ -544,6 +546,7 @@ model DesafioPalpite {
   desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
   desafioPartidaId Int @map("DESAFIO_PARTIDA_ID") @db.UnsignedInt
   usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  inscricaoId Int @map("INSCRICAO_ID") @db.UnsignedInt
   palpite DesafioResultado @map("PALPITE")
   pontos Decimal? @map("PONTOS") @db.Decimal(12, 2)
   apurado Boolean @default(false) @map("APURADO")
@@ -552,8 +555,10 @@ model DesafioPalpite {
   desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
   desafioPartida DesafioPartida @relation(fields: [desafioPartidaId, desafioId], references: [id, desafioId], onDelete: Restrict, onUpdate: Restrict)
   usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  inscricao DesafioInscricao @relation(fields: [inscricaoId, desafioId, usuarioId], references: [id, desafioId, usuarioId], onDelete: Restrict, onUpdate: Restrict)
 
-  @@unique([desafioPartidaId, usuarioId])
+  @@unique([inscricaoId, desafioPartidaId])
+  @@index([inscricaoId, desafioId, usuarioId])
   @@index([desafioPartidaId, desafioId])
   @@index([desafioId, apurado])
   @@index([usuarioId, desafioId])
@@ -564,6 +569,8 @@ model DesafioInscricao {
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
   desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
   usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  sequencia Int @default(1) @map("SEQUENCIA") @db.UnsignedInt
+  chaveIdempotencia String? @map("CHAVE_IDEMPOTENCIA") @db.VarChar(100)
   status DesafioInscricaoStatus @default(ATIVA) @map("STATUS")
   valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
   movimentacaoDebitoId Int? @unique @map("MOVIMENTACAO_DEBITO_ID") @db.UnsignedInt
@@ -573,8 +580,11 @@ model DesafioInscricao {
   desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
   usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
   movimentacaoDebito MovimentacaoCarteira? @relation(fields: [movimentacaoDebitoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  palpites DesafioPalpite[]
 
-  @@unique([desafioId, usuarioId])
+  @@unique([desafioId, usuarioId, sequencia])
+  @@unique([desafioId, usuarioId, chaveIdempotencia])
+  @@unique([id, desafioId, usuarioId])
   @@index([usuarioId])
   @@index([desafioId, status])
   @@map("DESAFIO_INSCRICAO")

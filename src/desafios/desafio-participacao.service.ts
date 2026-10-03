@@ -2,7 +2,7 @@ import { ConflictException, ForbiddenException, Injectable, InternalServerErrorE
 import { Desafio, DesafioPartida, Prisma } from '@prisma/client';
 import { CarteiraService } from '../carteira/carteira.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { mapearMinhaDesafioInscricao, MinhaDesafioInscricaoRow, minhaDesafioInscricaoSelect } from './desafio-inscricao';
+import { mapearMinhaDesafioInscricao, MinhaDesafioInscricaoRow, minhaDesafioInscricaoSelect, resolverDesafioInscricao } from './desafio-inscricao';
 import { DesafioParticipacaoDto } from './dto/desafio-participacao.dto';
 
 const conflito = (code: string, message: string, dados: Record<string, unknown> = {}) =>
@@ -33,7 +33,7 @@ function validarPrazo(desafio: Desafio, partidas: PartidaElegivel[], agora: Date
 export class DesafioParticipacaoService {
   constructor(private readonly prisma: PrismaService, private readonly carteiras: CarteiraService) {}
 
-  async participar(desafioId: number, usuarioId: number): Promise<DesafioParticipacaoDto> {
+  async participar(desafioId: number, usuarioId: number, inscricaoId?: number): Promise<DesafioParticipacaoDto> {
     try {
       return await this.prisma.$transaction(async tx => {
         // Serializa vagas, composicao, palpites e inscricoes antes de contar ou cobrar.
@@ -47,12 +47,10 @@ export class DesafioParticipacaoService {
         const usuario = await tx.usuario.findUnique({ where: { idUsuario: usuarioId }, select: { status: true } });
         if (!usuario || usuario.status !== 'ATIVO') throw new ForbiddenException('Usuario indisponivel.');
 
-        const existente = await tx.desafioInscricao.findUnique({
-          where: { desafioId_usuarioId: { desafioId, usuarioId } }, select: minhaDesafioInscricaoSelect,
-        });
+        const existente = await resolverDesafioInscricao(tx, desafioId, usuarioId, inscricaoId);
         // Replay antes de vagas/prazo/saldo: confirma o snapshot original sem nova operacao.
         if (existente?.status === 'ATIVA') return resposta(existente);
-        if (existente) throw conflito('INSCRICAO_CANCELADA', 'Inscricao cancelada nao pode ser reativada neste fluxo.');
+        if (existente.status === 'CANCELADA') throw conflito('INSCRICAO_CANCELADA', 'Inscricao cancelada nao pode ser reativada neste fluxo.');
 
         const desafio = await tx.desafio.findUnique({ where: { id: desafioId } });
         if (!desafio) throw new NotFoundException('Desafio nao encontrado.');
@@ -60,6 +58,11 @@ export class DesafioParticipacaoService {
           select: { id: true, status: true, dataInicio: true, resultado: true, golsMandante: true, golsVisitante: true },
           orderBy: { id: 'asc' } });
         validarPrazo(desafio, partidas, new Date());
+
+        const utilizadas = await tx.desafioInscricao.count({ where: { desafioId, usuarioId, status: 'ATIVA' } });
+        if (utilizadas >= desafio.limiteInscricoesPorUsuario) {
+          throw conflito('LIMITE_INSCRICOES_USUARIO_ATINGIDO', 'Limite de participacoes por usuario atingido.');
+        }
 
         const valor = desafio.valorInscricao;
         if (!valor.isFinite() || valor.isNegative() || valor.gt('9999999999.99') || valor.decimalPlaces() > 2
@@ -73,7 +76,7 @@ export class DesafioParticipacaoService {
           }
         }
         const palpites = await tx.desafioPalpite.findMany({
-          where: { desafioId, usuarioId, desafioPartidaId: { in: partidas.map(p => p.id) } },
+          where: { desafioId, usuarioId, inscricaoId: existente.id, desafioPartidaId: { in: partidas.map(p => p.id) } },
           select: { desafioPartidaId: true },
         });
         const preenchidas = new Set(palpites.map(p => p.desafioPartidaId));
@@ -95,11 +98,11 @@ export class DesafioParticipacaoService {
           });
           validarPrazo(desafio, partidas, new Date());
           const debito = await this.carteiras.debitarEmTransacao(tx, { usuarioId, valor, origem: 'INSCRICAO',
-            referenciaId: `desafio:${desafioId}:usuario:${usuarioId}`, descricao: `Participacao no Desafio ${desafioId}` });
+            referenciaId: `desafio:${desafioId}:inscricao:${existente.id}`, descricao: `Participacao no Desafio ${desafioId} - Palpite ${existente.sequencia}` });
           movimentacaoDebitoId = debito.id;
         }
         validarPrazo(desafio, partidas, new Date());
-        const inscricao = await tx.desafioInscricao.create({ data: { desafioId, usuarioId, status: 'ATIVA',
+        const inscricao = await tx.desafioInscricao.update({ where: { id: existente.id }, data: { status: 'ATIVA',
           valorInscricao: valor, movimentacaoDebitoId, dataInscricao: new Date() }, select: minhaDesafioInscricaoSelect });
         // Escrita que atravessa o prazo tambem desfaz debito, movimento e inscricao.
         validarPrazo(desafio, partidas, new Date());

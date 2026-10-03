@@ -12,7 +12,7 @@ const dto = (change: Partial<CriarAdminDesafioDto> = {}): CriarAdminDesafioDto =
 });
 
 const row = (change: Record<string, unknown> = {}) => ({
-  ...dto(), id: 7, descricao: null, limiteParticipantes: null, criadoPorId: 42,
+  ...dto(), id: 7, descricao: null, limiteParticipantes: null, limiteInscricoesPorUsuario: 1, criadoPorId: 42,
   criadoPor: { idUsuario: 42, nome: 'Admin' }, status: DesafioStatus.RASCUNHO,
   valorInscricao: new Prisma.Decimal('0.00'), publicadoEm: null,
   inicioInscricao: new Date(dto().inicioInscricao!), fimInscricao: new Date(dto().fimInscricao!),
@@ -138,7 +138,7 @@ describe('AdminDesafiosService', () => {
   });
 
   it.each(['RASCUNHO', 'ABERTO'])('cancela %s alterando somente status', async status => {
-    desafio.findUnique.mockResolvedValue(row({ status }));
+    desafio.findUnique.mockResolvedValue(row({ status, dataInicio: new Date('2099-10-02T00:00:00Z') }));
     await expect(service.cancelar(7)).resolves.toMatchObject({ status: 'CANCELADO' });
     expect(desafio.update.mock.calls[0][0].data).toEqual({ status: 'CANCELADO' });
     // O cliente de transacao nao possui exclusao, inscricoes ou operacoes financeiras.

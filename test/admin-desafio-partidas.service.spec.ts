@@ -27,7 +27,7 @@ function setup(iniciais: DesafioPartida[] = []) {
     desafio: { id: 7, nome: 'Desafio misto', descricao: null, tipoAcesso: 'FREE', valorInscricao: new Prisma.Decimal(0),
       status: 'RASCUNHO', inicioInscricao: new Date('2030-10-01T00:00:00Z'), fimInscricao: new Date('2030-10-03T12:00:00Z'),
       dataInicio: new Date('2030-10-03T12:00:00Z'), dataFim: new Date('2030-10-04T23:00:00Z'), limiteParticipantes: null,
-      criadoPorId: 42, publicadoEm: null, criadoEm: new Date(), atualizadoEm: new Date() },
+      limiteInscricoesPorUsuario: 1, criadoPorId: 42, publicadoEm: null, criadoEm: new Date(), atualizadoEm: new Date() },
     partidas: iniciais, dependencias: 0,
   };
   const desafio = {
@@ -112,7 +112,7 @@ describe('Administracao de partidas do Desafio', () => {
     expect(participacao.state.movimentos).toHaveLength(tipoAcesso === 'FREE' ? 0 : 1);
     jest.setSystemTime(f.state.desafio!.dataInicio);
     await expect(participacao.service.participar(7, 43)).rejects.toBeInstanceOf(ConflictException);
-    expect(participacao.state.inscricoes).toHaveLength(1);
+    expect(participacao.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1);
     expect(participacao.state.movimentos).toHaveLength(tipoAcesso === 'FREE' ? 0 : 1);
     await expect(f.admin.buscar(7)).resolves.toMatchObject({ status: 'EM_ANDAMENTO' });
     await expect(f.admin.cancelar(7)).rejects.toBeInstanceOf(ConflictException);

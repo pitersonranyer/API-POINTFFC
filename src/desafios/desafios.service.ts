@@ -3,13 +3,15 @@ import { DesafioPartidaStatus, DesafioStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DesafioDetalheDto, DesafioPalpiteSalvoDto, DesafioResumoDto, DesafiosPaginaDto } from './dto/desafios-response.dto';
 import { ListarDesafiosQueryDto, SalvarDesafioPalpiteDto } from './dto/desafios.dto';
-import { mapearMinhaDesafioInscricao, minhaDesafioInscricaoSelect } from './desafio-inscricao';
+import { mapearMinhaDesafioInscricao, minhaDesafioInscricaoSelect, resolverDesafioInscricao } from './desafio-inscricao';
+import { CriarDesafioCartelaDto, MinhaDesafioInscricaoDto } from './dto/desafio-participacao.dto';
 import { statusDoDesafio } from './desafio-periodo';
 import { nomesClube } from '../futebol/futebol-clubes';
 
 const desafioSelect = {
   id: true, nome: true, descricao: true, tipoAcesso: true, valorInscricao: true, status: true,
   inicioInscricao: true, fimInscricao: true, dataInicio: true, dataFim: true, publicadoEm: true,
+  limiteInscricoesPorUsuario: true,
 } satisfies Prisma.DesafioSelect;
 
 const partidaSelect = {
@@ -42,6 +44,7 @@ function partidaAberta(partida: PartidaRow, agora: Date): boolean {
 function mapear(desafio: DesafioRow): DesafioResumoDto {
   return {
     id: desafio.id, nome: desafio.nome, descricao: desafio.descricao, tipoAcesso: desafio.tipoAcesso,
+    limiteInscricoesPorUsuario: desafio.limiteInscricoesPorUsuario,
     valorInscricao: desafio.valorInscricao.toFixed(2), status: statusDoDesafio(desafio),
     inicioInscricao: desafio.inicioInscricao.toISOString(), fimInscricao: desafio.fimInscricao.toISOString(),
     dataInicio: desafio.dataInicio.toISOString(), dataFim: desafio.dataFim.toISOString(),
@@ -72,16 +75,26 @@ export class DesafiosService {
     });
     if (!desafio) throw new NotFoundException('Desafio nao encontrado ou indisponivel.');
     const palpites = usuarioId === undefined ? [] : await this.prisma.desafioPalpite.findMany({
-      where: { desafioId: id, usuarioId }, select: { desafioPartidaId: true, palpite: true, pontos: true, apurado: true },
+      where: { desafioId: id, usuarioId }, select: { inscricaoId: true, desafioPartidaId: true, palpite: true, pontos: true, apurado: true },
     });
-    const meusPalpites = new Map(palpites.map(palpite => [palpite.desafioPartidaId, palpite]));
-    const minhaInscricao = usuarioId === undefined ? null : await this.prisma.desafioInscricao.findUnique({
-      where: { desafioId_usuarioId: { desafioId: id, usuarioId } }, select: minhaDesafioInscricaoSelect,
+    const inscricoes = usuarioId === undefined ? [] : await this.prisma.desafioInscricao.findMany({
+      where: { desafioId: id, usuarioId }, select: minhaDesafioInscricaoSelect, orderBy: { sequencia: 'asc' },
     });
+    const primeira = inscricoes.find(i => i.sequencia === 1);
+    const minhaInscricao = primeira?.status === 'RASCUNHO' ? null : primeira;
+    const meusPalpites = new Map(palpites.filter(p => p.inscricaoId === primeira?.id).map(p => [p.desafioPartidaId, p]));
+    const porCartela = new Map(palpites.map(p => [`${p.inscricaoId}:${p.desafioPartidaId}`, p]));
     const agora = new Date();
     if (!disponivel(desafio, agora)) throw new NotFoundException('Desafio nao encontrado ou indisponivel.');
     return { ...mapear(desafio), ...(usuarioId === undefined ? {} : {
-      inscrito: minhaInscricao?.status === 'ATIVA', minhaInscricao: minhaInscricao ? mapearMinhaDesafioInscricao(minhaInscricao) : null,
+      inscrito: inscricoes.some(i => i.status === 'ATIVA'), minhaInscricao: minhaInscricao ? mapearMinhaDesafioInscricao(minhaInscricao) : null,
+      quantidadeUtilizada: inscricoes.filter(i => i.status === 'ATIVA').length,
+      minhasInscricoes: inscricoes.map(i => ({ ...mapearMinhaDesafioInscricao(i), palpites: desafio.partidas.map(p => {
+        const palpite = porCartela.get(`${i.id}:${p.id}`);
+        return { partidaId: p.id, meuPalpite: palpite?.palpite ?? null, pontos: palpite?.pontos?.toNumber() ?? null,
+          apurado: palpite?.apurado ?? false,
+          podeAlterarPalpite: i.status !== 'CANCELADA' && agora < desafio.dataFim && partidaAberta(p, agora) };
+      }) })),
     }), partidas: desafio.partidas.map(partida => ({
       id: partida.id, ordem: partida.ordem, nomeCompeticao: partida.nomeCompeticao,
       nomeMandante: nomesClube(partida.mandanteIdApiFootball, partida.nomeMandante, null).nome, logoMandanteUrl: partida.logoMandanteUrl,
@@ -89,13 +102,38 @@ export class DesafiosService {
       dataInicio: partida.dataInicio.toISOString(), status: partida.status,
       statusInterno: partida.status, golsMandante: partida.golsMandante, golsVisitante: partida.golsVisitante,
       fechamentoEm: partida.dataInicio.toISOString(),
-      podeAlterarPalpite: usuarioId !== undefined && agora < desafio.dataFim && partidaAberta(partida, agora),
+      podeAlterarPalpite: usuarioId !== undefined && primeira?.status !== 'CANCELADA'
+        && agora < desafio.dataFim && partidaAberta(partida, agora),
       ...(usuarioId === undefined ? {} : {
         meuPalpite: meusPalpites.get(partida.id)?.palpite ?? null,
         pontos: meusPalpites.get(partida.id)?.pontos?.toNumber() ?? null,
         apurado: meusPalpites.get(partida.id)?.apurado ?? false,
       }),
     })) };
+  }
+
+  criarCartela(id: number, usuarioId: number, dto: CriarDesafioCartelaDto): Promise<MinhaDesafioInscricaoDto> {
+    return this.prisma.$transaction(async tx => {
+      const locks = await tx.$queryRaw<Array<{ ID: number | bigint }>>`SELECT ID FROM DESAFIO WHERE ID = ${id} FOR UPDATE`;
+      if (!locks.length) throw new NotFoundException('Desafio nao encontrado.');
+      const existente = await tx.desafioInscricao.findUnique({ where: {
+        desafioId_usuarioId_chaveIdempotencia: { desafioId: id, usuarioId, chaveIdempotencia: dto.chaveIdempotencia },
+      }, select: minhaDesafioInscricaoSelect });
+      if (existente) return mapearMinhaDesafioInscricao(existente);
+      const desafio = await tx.desafio.findUnique({ where: { id }, select: desafioSelect });
+      const agora = new Date();
+      if (!desafio || !disponivel(desafio, agora) || agora >= desafio.dataFim) {
+        throw new ConflictException('Desafio indisponivel para nova cartela.');
+      }
+      const ultima = await tx.desafioInscricao.findFirst({ where: { desafioId: id, usuarioId },
+        select: { sequencia: true }, orderBy: { sequencia: 'desc' } });
+      const sequencia = (ultima?.sequencia ?? 0) + 1;
+      if (sequencia > 4294967295) throw new ConflictException('Limite de cartelas atingido.');
+      const row = await tx.desafioInscricao.create({ data: { desafioId: id, usuarioId, sequencia,
+        chaveIdempotencia: dto.chaveIdempotencia, status: 'RASCUNHO', valorInscricao: new Prisma.Decimal(0) },
+      select: minhaDesafioInscricaoSelect });
+      return mapearMinhaDesafioInscricao(row);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
   salvarPalpite(id: number, partidaId: number, usuarioId: number, dto: SalvarDesafioPalpiteDto): Promise<DesafioPalpiteSalvoDto> {
@@ -118,9 +156,11 @@ export class DesafiosService {
         if (!partidaAberta(partida, agora)) throw new ConflictException('Partida fechada ou nao elegivel para palpites.');
       };
       validar();
+      const inscricao = await resolverDesafioInscricao(tx, id, usuarioId, dto.inscricaoId);
+      if (inscricao.status === 'CANCELADA') throw new ConflictException('Cartela cancelada nao aceita palpites.');
       const salvo = await tx.desafioPalpite.upsert({
-        where: { desafioPartidaId_usuarioId: { desafioPartidaId: partidaId, usuarioId } },
-        create: { desafioId: id, desafioPartidaId: partidaId, usuarioId, palpite: dto.palpite },
+        where: { inscricaoId_desafioPartidaId: { inscricaoId: inscricao.id, desafioPartidaId: partidaId } },
+        create: { desafioId: id, desafioPartidaId: partidaId, usuarioId, inscricaoId: inscricao.id, palpite: dto.palpite },
         update: { palpite: dto.palpite }, select: { palpite: true },
       });
       // Se a escrita atravessou o fechamento, desfaz a transacao em vez de aceitar um palpite tardio.

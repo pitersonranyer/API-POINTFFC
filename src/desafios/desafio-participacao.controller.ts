@@ -18,13 +18,12 @@ export class DesafioParticipacaoController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Confirma participacao com os palpites existentes; repeticao nao cobra novamente' })
   @ApiOkResponse({ type: DesafioParticipacaoDto })
-  @ApiBadRequestResponse({ description: 'ID ou body invalido; aceita body ausente ou {}' })
+  @ApiBadRequestResponse({ description: 'ID ou body invalido; aceita { inscricaoId } ou body ausente/{} para Palpite 1' })
   @ApiUnauthorizedResponse({ description: 'JWT ausente ou invalido' })
   @ApiForbiddenResponse({ description: 'Usuario nao ativo' })
   @ApiNotFoundResponse({ description: 'Desafio ou usuario inexistente' })
   @ApiConflictResponse({ description: 'Saldo insuficiente (code SALDO_INSUFICIENTE) ou impedimento de participacao; demais conflitos tambem possuem code', type: DesafioSaldoInsuficienteDto })
   participar(@Param() params: DesafioIdParamsDto, @AuthenticatedUser() usuario: Usuario, @Body() dto: ParticiparDesafioDto) {
-    void dto;
-    return this.participacao.participar(params.id, usuario.idUsuario);
+    return this.participacao.participar(params.id, usuario.idUsuario, dto?.inscricaoId);
   }
 }

@@ -37,6 +37,10 @@ export class CriarAdminDesafioDto {
   @ApiPropertyOptional({ nullable: true, minimum: 1, maximum: 4294967295 })
   @IsOptional() @IsInt() @Min(1) @Max(4294967295)
   limiteParticipantes?: number | null;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 4294967295, default: 1 })
+  @ValidateIf((_o, value) => value !== undefined) @IsInt() @Min(1) @Max(4294967295)
+  limiteInscricoesPorUsuario?: number;
 }
 
 // NULL so e permitido nos campos explicitamente opcionais do DTO de criacao.

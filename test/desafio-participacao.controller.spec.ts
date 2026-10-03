@@ -12,7 +12,7 @@ describe('POST /desafios/:id/participar HTTP com servicos reais', () => {
   let base: string;
   let f: ReturnType<typeof desafioParticipacaoFixture>;
   const auth = { authenticateJwt: jest.fn() };
-  const participar = jest.fn((id: number, usuarioId: number) => f.service.participar(id, usuarioId));
+  const participar = jest.fn((id: number, usuarioId: number, inscricaoId?: number) => f.service.participar(id, usuarioId, inscricaoId));
   const request = (body?: unknown, authorization: string | null = 'Bearer valid', id = '7') => fetch(`${base}/desafios/${id}/participar`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...(authorization === null ? {} : { Authorization: authorization }) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -42,12 +42,12 @@ describe('POST /desafios/:id/participar HTTP com servicos reais', () => {
     expect(primeira.status).toBe(200);
     const original = await primeira.json();
     expect(original).toEqual({ tipoAcesso: 'PAGO', valorCobrado: '2.00', inscricao: {
-      id: expect.any(Number), desafioId: 7, status: 'ATIVA', valorInscricao: '2.00', dataInscricao: expect.any(String),
+      id: expect.any(Number), desafioId: 7, status: 'ATIVA', numero: 1, nome: 'Palpite 1', valorInscricao: '2.00', dataInscricao: expect.any(String),
     } });
     const segunda = await request({});
     expect(segunda.status).toBe(200); expect(await segunda.json()).toEqual(original);
-    expect(participar).toHaveBeenCalledWith(7, 42);
-    expect(f.state.movimentos).toHaveLength(1); expect(f.state.inscricoes).toHaveLength(1);
+    expect(participar).toHaveBeenCalledWith(7, 42, undefined);
+    expect(f.state.movimentos).toHaveLength(1); expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toHaveLength(1);
     expect(f.proibido).not.toHaveBeenCalled();
   });
 
@@ -59,6 +59,19 @@ describe('POST /desafios/:id/participar HTTP com servicos reais', () => {
     expect(f.state.movimentos).toEqual([]); expect(f.state.carteiras).toEqual([]);
   });
 
+  it('confirma a cartela indicada e rejeita inscricao de outro usuario', async () => {
+    expect((await request({ inscricaoId: 7043 })).status).toBe(404);
+    const response = await request({ inscricaoId: 7042 });
+    expect(response.status).toBe(200);
+    expect(participar).toHaveBeenLastCalledWith(7, 42, 7042);
+    expect((await response.json()).inscricao).toMatchObject({ id: 7042, numero: 1, status: 'ATIVA' });
+  });
+
+  it.each([null, 0, -1, 1.5, '7042', 4294967296])('rejeita inscricaoId invalido: %j', async inscricaoId => {
+    expect((await request({ inscricaoId })).status).toBe(400);
+    expect(participar).not.toHaveBeenCalled();
+  });
+
   it('retorna codigo e valores de saldo insuficiente para o frontend sem iniciar PIX', async () => {
     f.state.carteiras[0].saldoDisponivel = new Prisma.Decimal('0.50');
     const response = await request({});
@@ -66,7 +79,7 @@ describe('POST /desafios/:id/participar HTTP com servicos reais', () => {
     expect(await response.json()).toEqual({ statusCode: 409, code: 'SALDO_INSUFICIENTE',
       message: 'Adicione saldo a carteira para participar do Desafio.', saldoDisponivel: '0.50',
       valorNecessario: '2.00', valorFaltante: '1.50', moeda: 'BRL' });
-    expect(f.state.inscricoes).toEqual([]); expect(f.state.movimentos).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]); expect(f.state.movimentos).toEqual([]);
     expect(f.proibido).not.toHaveBeenCalled();
   });
 
@@ -75,7 +88,7 @@ describe('POST /desafios/:id/participar HTTP com servicos reais', () => {
     const response = await request();
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ code: 'PALPITES_INCOMPLETOS', partidaIds: [1, 2] });
-    expect(f.state.inscricoes).toEqual([]); expect(f.state.movimentos).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]); expect(f.state.movimentos).toEqual([]);
   });
 
   it('exige JWT e rejeita token malformado ou expirado', async () => {
@@ -92,7 +105,7 @@ describe('POST /desafios/:id/participar HTTP com servicos reais', () => {
     expect(participar).not.toHaveBeenCalled();
     f.state.usuarios[0].status = 'INATIVO';
     expect((await request()).status).toBe(403);
-    expect(f.state.inscricoes).toEqual([]);
+    expect(f.state.inscricoes.filter(i => i.status === 'ATIVA')).toEqual([]);
   });
 
   it.each(['usuarioId', 'valorInscricao', 'tipoAcesso', 'palpite', 'palpites', 'carteiraId', 'movimentacaoDebitoId', 'status'])
