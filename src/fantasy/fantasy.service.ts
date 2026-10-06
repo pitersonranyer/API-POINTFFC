@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ApiFootballClient } from './api-football.client';
-import { mapEstatisticas, mapSumario } from './api-football.mapper';
-import { EstatisticasPartida, SumarioPartida } from './fantasy.types';
+import { mapEstatisticas, mapFormacao, mapSumario } from './api-football.mapper';
+import { EstatisticasPartida, FormacaoPartida, SumarioPartida } from './fantasy.types';
 
 @Injectable()
 export class FantasyService {
@@ -18,6 +18,13 @@ export class FantasyService {
     const fixture = await this.client.fixture(id);
     const statistics = await this.client.statistics(id);
     return mapEstatisticas(fixture, statistics);
+  }
+
+  async formacao(fixtureId: string): Promise<FormacaoPartida> {
+    const id = this.validarFixtureId(fixtureId);
+    const fixture = await this.client.fixture(id);
+    const lineups = await this.client.lineups(id);
+    return mapFormacao(fixture, lineups);
   }
 
   private validarFixtureId(fixtureId: string): number {

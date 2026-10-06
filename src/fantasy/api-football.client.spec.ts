@@ -2,7 +2,7 @@ import { BadGatewayException, GatewayTimeoutException, NotFoundException, Servic
 import { ConfigService } from '@nestjs/config';
 import { ApiFootballClient } from './api-football.client';
 
-describe.each(['events', 'statistics'] as const)('ApiFootballClient (%s)', method => {
+describe.each(['events', 'statistics', 'lineups'] as const)('ApiFootballClient (%s)', method => {
   const key = 'segredo-apenas-de-teste';
   let client: ApiFootballClient;
   let fetchMock: jest.SpyInstance;
@@ -47,10 +47,12 @@ describe.each(['events', 'statistics'] as const)('ApiFootballClient (%s)', metho
     response(200, { errors: [], response: [{ fixture: { id: 2 } }] });
     await expect(client.fixture(1)).rejects.toBeInstanceOf(BadGatewayException);
   });
-  it('item malformado é 502', async () => {
-    response(200, { errors: [], response: [null] });
-    await expect(client[method](1)).rejects.toBeInstanceOf(BadGatewayException);
-  });
+  if (method !== 'lineups') {
+    it('item malformado é 502', async () => {
+      response(200, { errors: [], response: [null] });
+      await expect(client[method](1)).rejects.toBeInstanceOf(BadGatewayException);
+    });
+  }
   it('erro de rede não vaza mensagem ou chave', async () => {
     fetchMock.mockRejectedValue(new Error(key));
     await expect(client[method](1)).rejects.toThrow('Não foi possível conectar ao serviço de partidas');

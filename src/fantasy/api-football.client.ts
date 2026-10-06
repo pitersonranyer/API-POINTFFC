@@ -48,6 +48,11 @@ export class ApiFootballClient {
     return rows;
   }
 
+  lineups(id: number): Promise<unknown[]> {
+    // Os campos parciais e dados essenciais de lineups são validados no mapper.
+    return this.request<unknown>(`/fixtures/lineups?fixture=${id}`);
+  }
+
   private async request<T>(path: string): Promise<T[]> {
     const key = this.config.get<string>('API_FOOTBALL_KEY')?.trim();
     if (!key) throw new ServiceUnavailableException('Serviço de partidas não configurado');

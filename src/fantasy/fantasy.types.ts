@@ -61,3 +61,22 @@ export interface EstatisticasPartida {
   mandante: Equipe & { estatisticas: EstatisticasEquipe };
   visitante: Equipe & { estatisticas: EstatisticasEquipe };
 }
+
+export interface TreinadorFormacao extends Participante { foto: string | null }
+export interface JogadorFormacao extends Participante {
+  idExterno: number;
+  numero: number | null;
+  posicao: string | null;
+  grid: string | null;
+}
+export interface EquipeFormacao extends Equipe {
+  formacao: string | null;
+  treinador: TreinadorFormacao | null;
+  titulares: JogadorFormacao[];
+  reservas: JogadorFormacao[];
+}
+export interface FormacaoPartida {
+  partida: { idExterno: number };
+  mandante: EquipeFormacao;
+  visitante: EquipeFormacao;
+}

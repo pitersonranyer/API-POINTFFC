@@ -164,3 +164,76 @@ A disponibilidade depende do provider. Não se completam cartões ausentes usand
 `fantasy-estatisticas.spec.ts` cobre os 18 campos, associação por ID com array invertido, percentuais, zero, null, decimais, campos desconhecidos, valores inválidos, respostas parciais/vazias e ID inválido sem provider. `api-football.client.spec.ts` verifica o tratamento externo existente para events e statistics, além da estrutura de statistics. Os testes do Sumário permanecem passando.
 
 107 testes do módulo Fantasy passaram, assim como lint, typecheck e build. A inspeção inicial consultou somente statistics; após implementar, foi feita uma validação real isolada pelo serviço com o fixture 1180729, sem bootstrap ou migrations. Os seis valores conhecidos do Botafogo coincidiram: 8, 8, 17, 1, 10 e 7. Foram confirmados IDs 120/126, posse 46%, defesas 0, cartões null e xG 1.88. Nenhuma divergência encontrada.
+
+## Formação — terceira etapa da POC
+
+`GET /fantasy/partidas/:fixtureId/formacao` fornece a escalação informada pelo provider, reutilizando o client, ConfigService, validação de fixtureId, timeout e tratamento externo das fases anteriores. A rota permanece pública temporariamente e stateless, sem cache, banco ou retry.
+
+### Fonte e chamadas externas
+
+São duas requisições por acesso válido: `/fixtures?id=:fixtureId`, seguida de `/fixtures/lineups?fixture=:fixtureId`, em `https://v3.football.api-sports.io`. Lineups identifica equipes por ID, sem informar semanticamente mandante/visitante. O fixture fornece essa identificação; o mapper associa por ID, independentemente da posição no array. Não consulta eventos, estatísticas ou outros endpoints. Fixture inexistente interrompe antes de consultar lineups; ID inválido e chave ausente não geram chamadas externas.
+
+### Contrato POINT FFC
+
+`FormacaoPartida`, em `fantasy.types.ts`, possui `partida: { idExterno }`, `mandante` e `visitante`. Cada equipe tem:
+
+```ts
+{
+  idExterno: number | null;
+  nome: string | null;
+  logo: string | null;
+  formacao: string | null;
+  treinador: {
+    idExterno: number | null;
+    nome: string | null;
+    foto: string | null;
+  } | null;
+  titulares: JogadorFormacao[];
+  reservas: JogadorFormacao[];
+}
+```
+
+Os metadados das equipes vêm do fixture, seguindo Estatísticas. Cada `JogadorFormacao` contém `idExterno: number`, `nome: string | null`, `numero: number | null`, `posicao: string | null` e `grid: string | null`. O mapper remove os wrappers `player`, renomeia os campos e não repassa o JSON bruto. Propriedades adicionais do provider, como cores da equipe, são ignoradas.
+
+Titulares vêm exclusivamente de `startXI`; reservas, de `substitutes`. Ambos preservam a ordem recebida. Não se deduz titularidade por minutos ou eventos. Não se traduzem posições G/D/M/F nem se restringem novos códigos textuais. Formação e grid são preservados como texto, sem validação matemática, correção, inferência ou cálculo de coordenadas.
+
+### Ausência de dados e validações
+
+Número, nome, posição ou grid ausentes viram null. Número informado como zero permanece zero. Número informado com tipo inválido, negativo ou fracionário retorna 502; não é convertido para zero ou null. Cada jogador incluído deve possuir um ID inteiro positivo seguro; o nome pode estar ausente porque o ID permite identificar o jogador.
+
+Formação ausente vira null. Treinador ausente, null ou com todos os atributos ausentes/null vira null; se parcialmente informado, mantém os atributos disponíveis e completa os ausentes com null. Foto ausente não invalida a resposta.
+
+Fixture existente sem lineup (`response: []`) retorna HTTP 200 com as equipes identificadas e, para cada uma, `formacao: null`, `treinador: null`, `titulares: []`, `reservas: []`. Equipe omitida recebe a mesma representação sem copiar dados do adversário. Grupos omitidos ou null são tratados como listas vazias; grupos informados com estrutura inválida retornam 502. A resposta não exige exatamente 11 titulares, aceitando dados parciais.
+
+O mapper recebe os itens de lineups como `unknown` e valida sua estrutura antes de incluí-los. Rejeita IDs inválidos de fixture/equipes/jogadores, equipe estranha ao fixture, equipes duplicadas, jogadores duplicados na mesma equipe (inclusive entre titulares e reservas), wrappers inválidos e atributos informados com tipos inválidos. O tratamento do envelope, JSON e erros externos permanece no client existente.
+
+### Erros e limites
+
+400 para ID inválido antes de consultar o provider; 404 para fixture inexistente; 503 para chave ausente ou HTTP 429; 504 para timeout; 502 para falhas de rede, HTTP externo não bem-sucedido, JSON/envelope inválido, `errors` não vazio ou payload essencial inválido. Mensagens públicas são fixas e não expõem chave, headers ou corpo de erro externo. Lineup indisponível é ausência de dados, não erro técnico.
+
+Não há estatísticas individuais, scouts, pontuação fantasy, posições para pontuação, pré-jogo, desenho de campo ou persistência. A disponibilidade e a semântica factual de formação/posição/grid dependem do provider. Antes da exposição pública real, revisar proteção e consumo da API externa.
+
+### Validação real — fixture 1180729
+
+Feitas uma inspeção inicial de lineups e uma validação pós-implementação pelo serviço isolado, sem iniciar o bootstrap ou executar migrations. A validação final comparou todos os jogadores com os itens do provider, incluindo ordem de ambos os grupos, IDs, nomes, números, posições e grids. Não foram forçados valores esperados.
+
+| Equipe | Formação real | Treinador | Titulares | Reservas |
+|---|---|---|---:|---:|
+| Botafogo (120) | 3-3-1-3 | Artur Jorge (12089), com foto | 11 | 12 |
+| Sao Paulo (126) | 3-4-1-2 | L. Zubeldía (846), com foto | 11 | 11 |
+
+| Equipe | Jogador | ID | Número | Posição | Grid |
+|---|---|---:|---:|---|---|
+| Botafogo | John | 70366 | 12 | G | 1:1 |
+| Botafogo | Gregore | 10031 | 26 | D | 2:3 |
+| Botafogo | J. Savarino | 51214 | 10 | M | 4:1 |
+| Botafogo | Igor Jesus | 9366 | 99 | F | 5:2 |
+| Sao Paulo | Jandrei | 30763 | 93 | G | 1:1 |
+| Sao Paulo | Igor Vinícius | 9949 | 2 | M | 3:4 |
+| Sao Paulo | William | 449243 | 39 | F | 5:1 |
+
+Todos os reservas vieram com grid null. Exemplos: Allan (326), número 28, posição M; M. Araújo (51701), número 15, posição M. A formação real do Botafogo foi 3-3-1-3, e Gregore veio como D: esses dados foram preservados, sem correção por conhecimento externo. Não houve divergência entre o contrato normalizado e o payload.
+
+### Testes
+
+`fantasy-formacao.spec.ts` cobre associação por ID com `response[0]` sendo visitante, formação, treinador, jogadores, campos ausentes/null/zero, separação e ordem dos grupos, respostas vazias/parciais, dados essenciais inválidos e validação de ID antes do provider. A suíte de erros de `api-football.client.spec.ts` também é executada para lineups; a validação estrutural dessa nova rota é verificada no mapper e no service. Os testes das duas fases anteriores continuam passando. Os 178 testes do módulo Fantasy, lint, typecheck, build e `git diff --check` passaram. A suíte geral passou com 79 suítes e 1727 testes; 10 suítes/45 testes de integrações opcionais ficaram desativados, sem acesso ao banco/Redis ou migrations reais.
