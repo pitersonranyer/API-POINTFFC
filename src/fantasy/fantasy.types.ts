@@ -31,3 +31,33 @@ export interface SumarioPartida {
     status: string; data: string; estadio: string | null; mandante: Equipe; visitante: Equipe; placar: Placar };
   eventos: EventoSumario[];
 }
+
+export interface ApiTeamStatistics {
+  team: ApiFixture['teams']['home'];
+  statistics: { type: string; value: number | string | null }[];
+}
+export interface EstatisticasEquipe {
+  finalizacoesNoGol: number | null;
+  finalizacoesFora: number | null;
+  finalizacoes: number | null;
+  finalizacoesBloqueadas: number | null;
+  finalizacoesDentroArea: number | null;
+  finalizacoesForaArea: number | null;
+  faltas: number | null;
+  escanteios: number | null;
+  impedimentos: number | null;
+  posseBola: number | null;
+  cartoesAmarelos: number | null;
+  cartoesVermelhos: number | null;
+  defesasGoleiro: number | null;
+  passes: number | null;
+  passesCertos: number | null;
+  precisaoPasses: number | null;
+  golsEsperados: number | null;
+  golsEvitados: number | null;
+}
+export interface EstatisticasPartida {
+  partida: { idExterno: number };
+  mandante: Equipe & { estatisticas: EstatisticasEquipe };
+  visitante: Equipe & { estatisticas: EstatisticasEquipe };
+}

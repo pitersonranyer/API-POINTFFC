@@ -1,6 +1,6 @@
 import { BadGatewayException, GatewayTimeoutException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ApiEvent, ApiFixture } from './fantasy.types';
+import { ApiEvent, ApiFixture, ApiTeamStatistics } from './fantasy.types';
 
 @Injectable()
 export class ApiFootballClient {
@@ -31,6 +31,18 @@ export class ApiFootballClient {
       || typeof row.type !== 'string' || typeof row.detail !== 'string'
       || (row.time.elapsed !== null && !Number.isInteger(row.time.elapsed))
       || (row.time.extra !== null && !Number.isInteger(row.time.extra)))) {
+      throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    }
+    return rows;
+  }
+
+  async statistics(id: number): Promise<ApiTeamStatistics[]> {
+    const rows = await this.request<ApiTeamStatistics>(`/fixtures/statistics?fixture=${id}`);
+    if (rows.some(row => !row?.team || !Number.isSafeInteger(row.team.id) || row.team.id <= 0
+      || typeof row.team.name !== 'string' || (row.team.logo !== null && typeof row.team.logo !== 'string')
+      || !Array.isArray(row.statistics) || row.statistics.some(stat => !stat || typeof stat.type !== 'string'
+        || !Object.prototype.hasOwnProperty.call(stat, 'value')
+        || (stat.value !== null && typeof stat.value !== 'number' && typeof stat.value !== 'string')))) {
       throw new BadGatewayException('Resposta inválida do serviço de partidas');
     }
     return rows;

@@ -1,4 +1,5 @@
-import { ApiEvent, ApiFixture, Equipe, EventoSumario, Participante, SumarioPartida } from './fantasy.types';
+import { BadGatewayException } from '@nestjs/common';
+import { ApiEvent, ApiFixture, ApiTeamStatistics, Equipe, EstatisticasEquipe, EstatisticasPartida, EventoSumario, Participante, SumarioPartida } from './fantasy.types';
 
 function participante(value: ApiEvent['player']): Participante | null {
   return value && (value.id !== null || value.name !== null) ? { idExterno: value.id, nome: value.name } : null;
@@ -61,4 +62,69 @@ function statusPartida(status: string): string {
   if (status === 'ABD') return 'ABANDONADA';
   if (['AWD', 'WO'].includes(status)) return 'RESULTADO_ADMINISTRATIVO';
   return 'DESCONHECIDO';
+}
+
+const CAMPOS_ESTATISTICAS: ReadonlyArray<{
+  origem: string; campo: keyof EstatisticasEquipe; formato: 'inteiro' | 'percentual' | 'decimal' | 'decimalAssinado';
+}> = [
+  { origem: 'Shots on Goal', campo: 'finalizacoesNoGol', formato: 'inteiro' },
+  { origem: 'Shots off Goal', campo: 'finalizacoesFora', formato: 'inteiro' },
+  { origem: 'Total Shots', campo: 'finalizacoes', formato: 'inteiro' },
+  { origem: 'Blocked Shots', campo: 'finalizacoesBloqueadas', formato: 'inteiro' },
+  { origem: 'Shots insidebox', campo: 'finalizacoesDentroArea', formato: 'inteiro' },
+  { origem: 'Shots outsidebox', campo: 'finalizacoesForaArea', formato: 'inteiro' },
+  { origem: 'Fouls', campo: 'faltas', formato: 'inteiro' },
+  { origem: 'Corner Kicks', campo: 'escanteios', formato: 'inteiro' },
+  { origem: 'Offsides', campo: 'impedimentos', formato: 'inteiro' },
+  { origem: 'Ball Possession', campo: 'posseBola', formato: 'percentual' },
+  { origem: 'Yellow Cards', campo: 'cartoesAmarelos', formato: 'inteiro' },
+  { origem: 'Red Cards', campo: 'cartoesVermelhos', formato: 'inteiro' },
+  { origem: 'Goalkeeper Saves', campo: 'defesasGoleiro', formato: 'inteiro' },
+  { origem: 'Total passes', campo: 'passes', formato: 'inteiro' },
+  { origem: 'Passes accurate', campo: 'passesCertos', formato: 'inteiro' },
+  { origem: 'Passes %', campo: 'precisaoPasses', formato: 'percentual' },
+  { origem: 'expected_goals', campo: 'golsEsperados', formato: 'decimal' },
+  { origem: 'goals_prevented', campo: 'golsEvitados', formato: 'decimalAssinado' },
+];
+
+function valorEstatistica(value: number | string | null, formato: typeof CAMPOS_ESTATISTICAS[number]['formato']): number | null {
+  if (value === null) return null;
+  let normalized: number;
+  if (typeof value === 'number') normalized = value;
+  else {
+    const text = value.trim();
+    const pattern = formato === 'percentual' ? /^\d+(?:\.\d+)?%?$/ : /^-?\d+(?:\.\d+)?$/;
+    if (!pattern.test(text)) throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    normalized = Number(text.replace(/%$/, ''));
+  }
+  if (!Number.isFinite(normalized) || (formato !== 'decimalAssinado' && normalized < 0)
+    || (formato === 'inteiro' && !Number.isSafeInteger(normalized))
+    || (formato === 'percentual' && normalized > 100)) {
+    throw new BadGatewayException('Resposta inválida do serviço de partidas');
+  }
+  return normalized;
+}
+
+function estatisticasEquipe(row?: ApiTeamStatistics): EstatisticasEquipe {
+  const result = {} as EstatisticasEquipe;
+  for (const definition of CAMPOS_ESTATISTICAS) {
+    const matches = row?.statistics.filter(stat => stat.type === definition.origem) ?? [];
+    if (matches.length > 1) throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    result[definition.campo] = matches.length ? valorEstatistica(matches[0].value, definition.formato) : null;
+  }
+  return result;
+}
+
+export function mapEstatisticas(fixture: ApiFixture, rows: ApiTeamStatistics[]): EstatisticasPartida {
+  const homeId = fixture.teams.home.id;
+  const awayId = fixture.teams.away.id;
+  const ids = rows.map(row => row.team.id);
+  if (homeId === awayId || new Set(ids).size !== ids.length || ids.some(id => id !== homeId && id !== awayId)) {
+    throw new BadGatewayException('Resposta inválida do serviço de partidas');
+  }
+  return {
+    partida: { idExterno: fixture.fixture.id },
+    mandante: { ...equipe(fixture.teams.home), estatisticas: estatisticasEquipe(rows.find(row => row.team.id === homeId)) },
+    visitante: { ...equipe(fixture.teams.away), estatisticas: estatisticasEquipe(rows.find(row => row.team.id === awayId)) },
+  };
 }
