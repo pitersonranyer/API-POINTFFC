@@ -1,6 +1,7 @@
 import { BadGatewayException, GatewayTimeoutException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiEvent, ApiFixture, ApiTeamStatistics } from './fantasy.types';
+import { marcarDiagnostico } from './formacao-diagnostico';
 
 @Injectable()
 export class ApiFootballClient {
@@ -20,7 +21,7 @@ export class ApiFootballClient {
       || [row.teams.home, row.teams.away].some(team => !Number.isSafeInteger(team.id) || team.id <= 0
         || typeof team.name !== 'string' || (team.logo !== null && typeof team.logo !== 'string'))
       || [row.goals.home, row.goals.away].some(goal => goal !== null && (!Number.isInteger(goal) || goal < 0))) {
-      throw new BadGatewayException('Resposta inválida do serviço de partidas');
+      throw marcarDiagnostico(new BadGatewayException('Resposta inválida do serviço de partidas'), 'FIXTURE_INVALIDO');
     }
     return row;
   }
@@ -69,11 +70,13 @@ export class ApiFootballClient {
       try { body = await response.json(); }
       catch {
         if (controller.signal.aborted) throw new GatewayTimeoutException('Tempo limite do serviço de partidas excedido');
-        throw new BadGatewayException('Resposta inválida do serviço de partidas');
+        throw marcarDiagnostico(new BadGatewayException('Resposta inválida do serviço de partidas'), 'JSON_INVALIDO');
       }
       if (!body || typeof body !== 'object' || !body.errors || typeof body.errors !== 'object'
         || Object.keys(body.errors).length || !Array.isArray(body.response)) {
-        throw new BadGatewayException('Resposta inválida do serviço de partidas');
+        const categoria = body && typeof body === 'object' && body.errors && typeof body.errors === 'object'
+          && Object.keys(body.errors).length ? 'PROVIDER_ERRORS' : 'ENVELOPE_INVALIDO';
+        throw marcarDiagnostico(new BadGatewayException('Resposta inválida do serviço de partidas'), categoria);
       }
       return body.response as T[];
     } catch (error) {

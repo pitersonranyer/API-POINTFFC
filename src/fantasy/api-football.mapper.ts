@@ -1,4 +1,5 @@
 import { BadGatewayException } from '@nestjs/common';
+import { CategoriaFormacao, marcarDiagnostico } from './formacao-diagnostico';
 import { ApiEvent, ApiFixture, ApiTeamStatistics, Equipe, EquipeFormacao, EstatisticasEquipe, EstatisticasPartida, EventoSumario, FormacaoPartida, JogadorFormacao, Participante, SumarioPartida, TreinadorFormacao } from './fantasy.types';
 
 function participante(value: ApiEvent['player']): Participante | null {
@@ -129,34 +130,38 @@ export function mapEstatisticas(fixture: ApiFixture, rows: ApiTeamStatistics[]):
   };
 }
 
-function registroLineup(value: unknown): Record<string, unknown> {
+function erroFormacao(categoria: CategoriaFormacao): BadGatewayException {
+  return marcarDiagnostico(new BadGatewayException('Resposta inválida do serviço de partidas'), categoria);
+}
+
+function registroLineup(value: unknown, categoria: CategoriaFormacao = 'ATRIBUTO_INVALIDO'): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    throw erroFormacao(categoria);
   }
   return value as Record<string, unknown>;
 }
 
 function textoLineup(value: unknown): string | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== 'string') throw new BadGatewayException('Resposta inválida do serviço de partidas');
+  if (typeof value !== 'string') throw erroFormacao('ATRIBUTO_INVALIDO');
   return value;
 }
 
-function numeroLineup(value: unknown, minimo: number): number | null {
+function numeroLineup(value: unknown, minimo: number, categoria: CategoriaFormacao = 'ATRIBUTO_INVALIDO'): number | null {
   if (value === undefined || value === null) return null;
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimo) {
-    throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    throw erroFormacao(categoria);
   }
   return value;
 }
 
 function jogadoresLineup(value: unknown): JogadorFormacao[] {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new BadGatewayException('Resposta inválida do serviço de partidas');
+  if (!Array.isArray(value)) throw erroFormacao('JOGADOR_INVALIDO');
   return value.map(entry => {
-    const player = registroLineup(registroLineup(entry).player);
-    const id = numeroLineup(player.id, 1);
-    if (id === null) throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    const player = registroLineup(registroLineup(entry, 'JOGADOR_INVALIDO').player, 'JOGADOR_INVALIDO');
+    const id = numeroLineup(player.id, 1, 'JOGADOR_INVALIDO');
+    if (id === null) throw erroFormacao('JOGADOR_INVALIDO');
     return { idExterno: id, nome: textoLineup(player.name), numero: numeroLineup(player.number, 0),
       posicao: textoLineup(player.pos), grid: textoLineup(player.grid) };
   });
@@ -172,25 +177,25 @@ function treinadorLineup(value: unknown): TreinadorFormacao | null {
 export function mapFormacao(fixture: ApiFixture, rows: unknown[]): FormacaoPartida {
   // Valida inclusive quando chamado isoladamente, sem passar pelo client.
   if (!Number.isSafeInteger(fixture?.fixture?.id) || fixture.fixture.id <= 0 || !Array.isArray(rows)) {
-    throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    throw erroFormacao(!Array.isArray(rows) ? 'ENVELOPE_INVALIDO' : 'FIXTURE_INVALIDO');
   }
-  const homeId = numeroLineup(fixture.teams?.home?.id, 1);
-  const awayId = numeroLineup(fixture.teams?.away?.id, 1);
+  const homeId = numeroLineup(fixture.teams?.home?.id, 1, 'EQUIPE_INVALIDA');
+  const awayId = numeroLineup(fixture.teams?.away?.id, 1, 'EQUIPE_INVALIDA');
   if (homeId === null || awayId === null || homeId === awayId) {
-    throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    throw erroFormacao('EQUIPE_INVALIDA');
   }
   const equipes = new Map<number, Omit<EquipeFormacao, keyof Equipe>>();
   for (const value of rows) {
-    const row = registroLineup(value);
-    const team = registroLineup(row.team);
-    const id = numeroLineup(team.id, 1);
+    const row = registroLineup(value, 'EQUIPE_INVALIDA');
+    const team = registroLineup(row.team, 'EQUIPE_INVALIDA');
+    const id = numeroLineup(team.id, 1, 'EQUIPE_INVALIDA');
     if (id === null || (id !== homeId && id !== awayId) || equipes.has(id)) {
-      throw new BadGatewayException('Resposta inválida do serviço de partidas');
+      throw erroFormacao(id !== null && equipes.has(id) ? 'ID_DUPLICADO' : 'EQUIPE_INVALIDA');
     }
     const titulares = jogadoresLineup(row.startXI);
     const reservas = jogadoresLineup(row.substitutes);
     const ids = [...titulares, ...reservas].map(player => player.idExterno);
-    if (new Set(ids).size !== ids.length) throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    if (new Set(ids).size !== ids.length) throw erroFormacao('ID_DUPLICADO');
     equipes.set(id, { formacao: textoLineup(row.formation), treinador: treinadorLineup(row.coach), titulares, reservas });
   }
   const ausente = () => ({ formacao: null, treinador: null, titulares: [], reservas: [] });
