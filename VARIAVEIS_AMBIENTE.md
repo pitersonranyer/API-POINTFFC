@@ -106,6 +106,10 @@ Elas não precisam ser configuradas para a versão atual da API. Podem ser manti
 
 ## Observações
 
+- `API_FOOTBALL_KEY` é opcional no bootstrap e lida exclusivamente pelo `ConfigService`. Configure-a para consultar `GET /fantasy/partidas/:fixtureId/sumario` via API-SPORTS. Ausente ou vazia, a rota retorna 503. Não registre nem exponha a chave.
+- A rota Fantasy é pública temporariamente na POC. Antes da exposição pública real, revisar proteção e controle de consumo da API externa. A integração não usa cache, persistência ou retry.
+- Fixture de referência para validação manual: `1180729`. Não iniciar o bootstrap apenas para essa validação, pois ele executa migrations; instanciar o serviço isoladamente com `ConfigService` e `ApiFootballClient`.
+
 - Preserve os caracteres `\n` da `FIREBASE_PRIVATE_KEY` quando usar uma única linha. O código os converte em quebras de linha reais.
 - Não adicione o `.env` ao Git.
 - Após configurar o banco de produção, execute `npx prisma migrate deploy`.

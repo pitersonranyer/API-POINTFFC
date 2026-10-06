@@ -22,6 +22,7 @@ import { PocMercadoPagoModule } from './poc/mercado-pago/poc-mercado-pago.module
 import { LigasCompeticoesModule } from './ligas-competicoes/ligas-competicoes.module';
 import { AdminModule } from './admin/admin.module';
 import { DesafiosModule } from './desafios/desafios.module';
+import { FantasyModule } from './fantasy/fantasy.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { DesafiosModule } from './desafios/desafios.module';
     LigasCompeticoesModule,
     AdminModule,
     DesafiosModule,
+    FantasyModule,
   ],
 })
 export class AppModule {}

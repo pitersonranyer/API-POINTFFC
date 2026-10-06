@@ -1,0 +1,68 @@
+import { BadGatewayException, GatewayTimeoutException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ApiEvent, ApiFixture } from './fantasy.types';
+
+@Injectable()
+export class ApiFootballClient {
+  constructor(private readonly config: ConfigService) {}
+
+  async fixture(id: number): Promise<ApiFixture> {
+    const rows = await this.request<ApiFixture>(`/fixtures?id=${id}`);
+    if (!rows.length) throw new NotFoundException('Partida não encontrada');
+    const row = rows[0];
+    if (rows.length !== 1 || row?.fixture?.id !== id || !row.fixture.status || !row.fixture.venue
+      || !row.league || !row.teams?.home || !row.teams?.away || !row.goals
+      || typeof row.fixture.date !== 'string' || !Number.isFinite(Date.parse(row.fixture.date))
+      || typeof row.fixture.status.short !== 'string'
+      || (row.fixture.venue.name !== null && typeof row.fixture.venue.name !== 'string')
+      || typeof row.league.name !== 'string'
+      || (row.league.round !== null && typeof row.league.round !== 'string')
+      || [row.teams.home, row.teams.away].some(team => !Number.isSafeInteger(team.id) || team.id <= 0
+        || typeof team.name !== 'string' || (team.logo !== null && typeof team.logo !== 'string'))
+      || [row.goals.home, row.goals.away].some(goal => goal !== null && (!Number.isInteger(goal) || goal < 0))) {
+      throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    }
+    return row;
+  }
+
+  async events(id: number): Promise<ApiEvent[]> {
+    const rows = await this.request<ApiEvent>(`/fixtures/events?fixture=${id}`);
+    if (rows.some(row => !row || !row.time || !row.team || !row.player || !row.assist
+      || typeof row.type !== 'string' || typeof row.detail !== 'string'
+      || (row.time.elapsed !== null && !Number.isInteger(row.time.elapsed))
+      || (row.time.extra !== null && !Number.isInteger(row.time.extra)))) {
+      throw new BadGatewayException('Resposta inválida do serviço de partidas');
+    }
+    return rows;
+  }
+
+  private async request<T>(path: string): Promise<T[]> {
+    const key = this.config.get<string>('API_FOOTBALL_KEY')?.trim();
+    if (!key) throw new ServiceUnavailableException('Serviço de partidas não configurado');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch('https://v3.football.api-sports.io' + path, {
+        method: 'GET', headers: { 'x-apisports-key': key, Accept: 'application/json' },
+        signal: controller.signal, redirect: 'error',
+      });
+      if (response.status === 429) throw new ServiceUnavailableException('Limite do serviço de partidas atingido');
+      if (!response.ok) throw new BadGatewayException('Falha ao consultar o serviço de partidas');
+      let body: { errors?: unknown; response?: unknown } | null;
+      try { body = await response.json(); }
+      catch {
+        if (controller.signal.aborted) throw new GatewayTimeoutException('Tempo limite do serviço de partidas excedido');
+        throw new BadGatewayException('Resposta inválida do serviço de partidas');
+      }
+      if (!body || typeof body !== 'object' || !body.errors || typeof body.errors !== 'object'
+        || Object.keys(body.errors).length || !Array.isArray(body.response)) {
+        throw new BadGatewayException('Resposta inválida do serviço de partidas');
+      }
+      return body.response as T[];
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (controller.signal.aborted) throw new GatewayTimeoutException('Tempo limite do serviço de partidas excedido');
+      throw new BadGatewayException('Não foi possível conectar ao serviço de partidas');
+    } finally { clearTimeout(timer); }
+  }
+}
