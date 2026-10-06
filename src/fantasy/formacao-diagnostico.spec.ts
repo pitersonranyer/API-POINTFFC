@@ -45,7 +45,9 @@ describe('Instrumentação temporária de Formação', () => {
     expect(error.getStatus()).toBe(502);
     expect(error.getResponse()).toEqual(publicError);
     // O único argumento é o marcador e os dois valores controlados; sem erro/stack/payload.
-    expect(warn.mock.calls).toEqual([[`[FANTASY_FORMACAO] etapa=${sample.etapa} categoria=${sample.categoria}`]]);
+    const expected = [[`[FANTASY_FORMACAO] etapa=${sample.etapa} categoria=${sample.categoria}`]];
+    if (sample.categoria === 'PROVIDER_ERRORS') expected.unshift(['[FANTASY_API_FOOTBALL] provider_error_keys=["token"]']);
+    expect(warn.mock.calls).toEqual(expected);
   });
 
   it('relança a mesma exceção de lineups e não adiciona metadados serializáveis', async () => {
@@ -79,6 +81,6 @@ describe('Instrumentação temporária de Formação', () => {
   it.each(['sumario', 'estatisticas'] as const)('%s continua sem logs de Formação em falhas', async method => {
     fetchMock.mockResolvedValueOnce(response({ errors: { token: 'segredo' }, response: [] }));
     await expect(service[method]('1180729')).rejects.toBeInstanceOf(BadGatewayException);
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn.mock.calls).toEqual([['[FANTASY_API_FOOTBALL] provider_error_keys=["token"]']]);
   });
 });

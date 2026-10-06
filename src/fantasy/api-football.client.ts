@@ -1,10 +1,11 @@
-import { BadGatewayException, GatewayTimeoutException, HttpException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadGatewayException, GatewayTimeoutException, HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiEvent, ApiFixture, ApiTeamStatistics } from './fantasy.types';
 import { marcarDiagnostico } from './formacao-diagnostico';
 
 @Injectable()
 export class ApiFootballClient {
+  private readonly logger = new Logger(ApiFootballClient.name);
   constructor(private readonly config: ConfigService) {}
 
   async fixture(id: number): Promise<ApiFixture> {
@@ -76,6 +77,7 @@ export class ApiFootballClient {
         || Object.keys(body.errors).length || !Array.isArray(body.response)) {
         const categoria = body && typeof body === 'object' && body.errors && typeof body.errors === 'object'
           && Object.keys(body.errors).length ? 'PROVIDER_ERRORS' : 'ENVELOPE_INVALIDO';
+        if (categoria === 'PROVIDER_ERRORS') this.registrarChavesProvider(body!.errors as object);
         throw marcarDiagnostico(new BadGatewayException('Resposta inválida do serviço de partidas'), categoria);
       }
       return body.response as T[];
@@ -84,5 +86,14 @@ export class ApiFootballClient {
       if (controller.signal.aborted) throw new GatewayTimeoutException('Tempo limite do serviço de partidas excedido');
       throw new BadGatewayException('Não foi possível conectar ao serviço de partidas');
     } finally { clearTimeout(timer); }
+  }
+
+  private registrarChavesProvider(errors: object): void {
+    // Temporário: só rótulos controlados. Nunca interpolar chaves arbitrárias ou valores externos.
+    const permitidas = ['requests', 'rateLimit', 'token', 'subscription', 'season', 'request',
+      'authentication', 'authorization', 'access', 'plan', 'parameters', 'fixture'];
+    const chaves = Array.isArray(errors) ? ['FORMATO_ARRAY']
+      : [...new Set(Object.keys(errors).map(chave => permitidas.includes(chave) ? chave : 'OUTRO'))].sort().slice(0, 8);
+    this.logger.warn(`[FANTASY_API_FOOTBALL] provider_error_keys=${JSON.stringify(chaves)}`);
   }
 }
