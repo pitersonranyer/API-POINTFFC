@@ -39,7 +39,9 @@ describe('football-data: resultado seguro de 90 minutos', () => {
     ['CANCELLED', 'ANULADA'], ['SUSPENDED', 'ANULADA'], ['AWARDED', 'ANULADA']])
   ('traduz %s para %s sem pontuar placar parcial/administrativo', (status, statusApuracao) => {
     expect(mapDesafioResultado(match({ duration: 'REGULAR', fullTime: { home: 2, away: 1 } }, status)))
-      .toMatchObject({ statusApuracao, resultado: null, golsMandante: null, golsVisitante: null });
+      .toMatchObject({ statusApuracao, resultado: null,
+        golsMandante: statusApuracao === 'EM_ANDAMENTO' ? 2 : null,
+        golsVisitante: statusApuracao === 'EM_ANDAMENTO' ? 1 : null });
   });
 
   it('status desconhecido permanece pendente, nunca anulado/finalizado', () => {

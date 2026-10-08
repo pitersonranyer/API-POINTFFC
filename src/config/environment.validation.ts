@@ -2,6 +2,7 @@ import * as Joi from 'joi';
 
 export const environmentValidationSchema = Joi.object({
   FUTEBOL_SYNC_SCHEDULER_ENABLED: Joi.boolean().default(false),
+  DESAFIOS_SYNC_SCHEDULER_ENABLED: Joi.boolean().default(false),
   FOOTBALL_DATA_API_TOKEN: Joi.string().optional().allow(''),
   API_FOOTBALL_KEY: Joi.string().optional().allow(''),
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),

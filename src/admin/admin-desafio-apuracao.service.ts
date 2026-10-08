@@ -6,7 +6,7 @@ import { FootballDataError } from '../futebol/football-data.normalizer';
 import { PrismaService } from '../prisma/prisma.service';
 
 const include = { partidas: { orderBy: { id: 'asc' as const } } } satisfies Prisma.DesafioInclude;
-type DesafioApuracao = Prisma.DesafioGetPayload<{ include: typeof include }>;
+export type DesafioApuracao = Prisma.DesafioGetPayload<{ include: typeof include }>;
 const permitido = (status: DesafioStatus) => status === 'ABERTO' || status === 'EM_ANDAMENTO' || status === 'ENCERRADO';
 
 @Injectable()
@@ -28,9 +28,16 @@ export class AdminDesafioApuracaoService {
       }
       throw new BadGatewayException('Falha ao consultar resultados oficiais.');
     }
+    return this.aplicarResultados(inicial, oficiais);
+  }
+
+  async aplicarResultados(inicial: DesafioApuracao, oficiais: DesafioResultadoOficial[], automatico = false) {
+    const id = inicial.id;
+    this.validar(inicial);
     const porId = new Map(oficiais.map(p => [p.fixtureId, p]));
-    if (porId.size !== oficiais.length || porId.size !== inicial.partidas.length
-      || inicial.partidas.some(p => !porId.has(p.fixtureIdApiFootball))) {
+    if (porId.size !== oficiais.length || (!automatico && (porId.size !== inicial.partidas.length
+      || inicial.partidas.some(p => !porId.has(p.fixtureIdApiFootball))))
+      || oficiais.some(o => !inicial.partidas.some(p => p.fixtureIdApiFootball === o.fixtureId))) {
       throw new BadGatewayException('Fornecedor nao retornou todas as partidas solicitadas.');
     }
 
@@ -45,7 +52,8 @@ export class AdminDesafioApuracaoService {
         throw new ConflictException('Desafio alterado durante a consulta; tente apurar novamente.');
       }
       for (const p of atual.partidas) {
-        const oficial = porId.get(p.fixtureIdApiFootball)!;
+        const oficial = porId.get(p.fixtureIdApiFootball);
+        if (!oficial) continue;
         if (oficial.leagueId !== p.leagueIdApiFootball || oficial.mandanteId !== p.mandanteIdApiFootball
           || oficial.visitanteId !== p.visitanteIdApiFootball) throw new ConflictException('Identidade oficial da partida diverge do snapshot.');
       }
@@ -53,7 +61,12 @@ export class AdminDesafioApuracaoService {
       let finalizadas = 0;
       let anuladas = 0;
       for (const p of atual.partidas) {
-        const oficial = porId.get(p.fixtureIdApiFootball)!;
+        const oficial = porId.get(p.fixtureIdApiFootball);
+        if (!oficial) {
+          if (p.status === 'FINALIZADA') finalizadas++;
+          if (p.status === 'ANULADA') anuladas++;
+          continue;
+        }
         await tx.desafioPartida.update({ where: { id: p.id }, data: {
           status: oficial.statusApuracao, dataInicio: new Date(oficial.dataHoraInicio),
           resultado: oficial.resultado, golsMandante: oficial.golsMandante, golsVisitante: oficial.golsVisitante,

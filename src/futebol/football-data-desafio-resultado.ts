@@ -23,7 +23,11 @@ export function mapDesafioResultado(input: unknown): DesafioResultadoOficial {
   const fixture = mapDesafioMatch(input);
   const vazio = { ...fixture, resultado: null, golsMandante: null, golsVisitante: null, pendencia: null };
   if (fixture.statusInterno !== 'FINALIZADA') {
-    return { ...vazio, statusApuracao: fixture.statusInterno ?? 'EM_ANDAMENTO',
+    const score = objeto(objeto(input).score);
+    const parcial = fixture.statusInterno === 'EM_ANDAMENTO'
+      ? score.duration === 'REGULAR' ? placar(score.fullTime) : placar(score.regularTime) : null;
+    return { ...vazio, golsMandante: parcial?.home ?? null, golsVisitante: parcial?.away ?? null,
+      statusApuracao: fixture.statusInterno ?? 'EM_ANDAMENTO',
       pendencia: fixture.statusInterno === null ? 'STATUS_NAO_SUPORTADO' : null };
   }
   const score = objeto(objeto(input).score);
