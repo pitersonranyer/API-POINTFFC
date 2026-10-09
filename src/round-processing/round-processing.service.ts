@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, RodadaProcessamento } from '@prisma/client';
 import { randomUUID } from 'crypto';
@@ -11,6 +11,10 @@ import { athleteParticipation, effectiveLineup, matchEnded, matchStart, matchesB
 import { simulateRound } from './round-simulation';
 
 type RoundKey = { temporada: number; rodada: number };
+type AdministrativeEvidence = {
+  scored: CartolaScoredAthletesPayload; matches: CartolaMatchesResponse;
+  individual?: boolean; problemaEnvelope?: string;
+};
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const keyOf = (round: RoundKey): RoundKey => ({ temporada: round.temporada, rodada: round.rodada });
 const LEASE_MS = 120_000;
@@ -263,18 +267,19 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       const round = await this.prisma.rodadaProcessamento.findUniqueOrThrow({ where: { temporada_rodada: key } });
       const matches = await this.preserveMatches(round, market, token, await this.cartola.loadMatchesFresh(rodada));
       const scored = await this.cartola.loadAdministrativeScoredAthletesFresh(rodada);
-      await this.preserveScores(round, market, token, scored);
-      const scores = scoreMap(scored, rodada);
-      if (scores.size === 0 || (scored.temporada !== undefined && scored.temporada !== temporada)) {
-        throw new ConflictException('Fonte oficial sem integridade ou evidencia da temporada solicitada');
-      }
       final = matches.partidas.filter((m) => m.valida === true).length > 0
         && matches.partidas.filter((m) => m.valida === true).every(matchEnded);
-      if (final && scored.total_atletas !== scores.size) throw new ConflictException('Envelope final sem completude comprovada');
-      if (!final && (round.status === 'CONSOLIDADA' || rodada < market.rodada_atual || market.status_mercado !== 2)) {
-        throw new ConflictException('Pendencia: encerramento historico nao comprovado; resultados anteriores preservados');
+      const individual = final || round.status === 'CONSOLIDADA' || rodada < market.rodada_atual || market.status_mercado !== 2;
+      let problemaEnvelope: string | undefined;
+      try { await this.preserveScores(round, market, token, scored); }
+      catch (error) {
+        const message = this.message(error);
+        if (!individual || !((error instanceof BadGatewayException && message === 'Envelope de pontuados incompleto')
+          || (error instanceof ConflictException && (message.startsWith('Envelope incompleto;')
+            || message.startsWith('Participacao oficial incompleta;'))))) throw error;
+        problemaEnvelope = message;
       }
-      result = await this.calculate(round, market, token, final, true, { scored, matches });
+      result = await this.calculate(round, market, token, final, true, { scored, matches, individual, problemaEnvelope });
     } catch (error) {
       await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { erro: this.message(error) } });
       throw error;
@@ -282,7 +287,8 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { lockToken: null, lockAte: null } });
     }
     if (result?.timesProcessados) await this.sincronizarCompeticoes(key);
-    return { ...key, status: final ? 'FINAL' as const : 'PARCIAL' as const, ...result, duracaoMs: Date.now() - started, processadoEm: new Date().toISOString() };
+    return { ...key, status: (result?.rodadaConsolidada ?? final) ? 'FINAL' as const : 'PARCIAL' as const,
+      ...result, duracaoMs: Date.now() - started, processadoEm: new Date().toISOString() };
   }
 
   private async process(key: RoundKey, market: CartolaMarketStatus, final: boolean, force = false): Promise<boolean> {
@@ -342,8 +348,9 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async calculate(round: RodadaProcessamento, market: CartolaMarketStatus, token: string, final: boolean, manual = false,
-    official?: { scored: CartolaScoredAthletesPayload; matches: CartolaMatchesResponse }) {
+    official?: AdministrativeEvidence) {
     const key = keyOf(round);
+    const individual = manual && official?.individual === true;
     const matches = official?.matches ?? await this.preserveMatches(round, market, token, await this.cartola.loadMatchesFresh(key.rodada));
     const scored = official?.scored ?? (final ? await this.cartola.loadFinalScoredAthletesFresh(key.temporada, key.rodada)
       : (await this.cartola.loadScoredAthletesFresh()).value);
@@ -354,16 +361,16 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const teams = all.filter((t) => t._count.escalacao > 0);
     const ids = new Set(teams.map((t) => t.timeId));
     const missing = (round.timesPrevistos as number[]).filter((id) => !ids.has(id));
-    if (manual && (!teams.length || missing.length || all.length !== teams.length)) throw new ConflictException('Snapshot indisponivel ou incompleto');
-    if (final && (missing.length || all.length !== teams.length)) throw new Error(`Snapshot incompleto: ${missing.length || all.length - teams.length} times`);
-    if (!teams.length && (round.timesPrevistos as number[]).length) return;
+    if (!individual && manual && (!teams.length || missing.length || all.length !== teams.length)) throw new ConflictException('Snapshot indisponivel ou incompleto');
+    if (!individual && final && (missing.length || all.length !== teams.length)) throw new Error(`Snapshot incompleto: ${missing.length || all.length - teams.length} times`);
+    if (!individual && !teams.length && (round.timesPrevistos as number[]).length) return;
     // Capture finishes before the first request for scores; one envelope serves every team.
     const oldMatches = round.partidas as unknown as CartolaMatchesResponse | null;
-    const scores = scoreMap(scored, key.rodada);
+    const scores = individual && official?.problemaEnvelope ? new Map() as ReturnType<typeof scoreMap> : scoreMap(scored, key.rodada);
     const clubs = matchesByClub(matches, key.rodada);
     const completeScoredEnvelope = scored.total_atletas === scores.size && scores.size > 0;
     const participation = athleteParticipation(scores, clubs, completeScoredEnvelope);
-    if (final && teams.length) {
+    if (!individual && final && teams.length) {
       try {
         if (![...clubs.values()].every(matchEnded)) throw new Error('Fim das partidas nao comprovado');
         validateFinalData(scores, clubs);
@@ -372,7 +379,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     }
     const previous = round.pontuados as CartolaScoredAthletesPayload | null;
     const oldScores = previous?.atletas ?? {};
-    if (scores.size === 0 && Object.keys(oldScores).length > 0) throw new Error('Envelope vazio apos pontuados validos; preservar ultima parcial');
+    if (!individual && scores.size === 0 && Object.keys(oldScores).length > 0) throw new Error('Envelope vazio apos pontuados validos; preservar ultima parcial');
     const changed = new Set([...Object.keys(oldScores), ...scores.keys()].map(Number).filter((id) =>
       JSON.stringify(oldScores[id]) !== JSON.stringify(scores.get(id))));
     const oldClubs = oldMatches ? matchesByClub(oldMatches, key.rodada) : new Map();
@@ -381,7 +388,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const changedClubs = new Set([...clubs.keys(), ...oldClubs.keys()].filter((id) =>
       signature(oldClubs.get(id)) !== signature(clubs.get(id))));
     const affected = await this.prisma.timeRodada.findMany({
-      where: { ...key, escalacao: { some: { titular: true } }, ...(manual || final || round.erro || !previous ? {} : {
+      where: { ...key, ...(individual ? {} : { escalacao: { some: { titular: true } } }), ...(manual || final || round.erro || !previous ? {} : {
         OR: [{ pontuacao: { is: null } }, { escalacao: { some: { OR: [
           { atletaId: { in: [...changed] } }, { clubeId: { in: [...changedClubs] } },
         ] } } }],
@@ -392,10 +399,22 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     let substitutionCount = 0;
     let substitutionsChanged = 0;
     let errors = 0;
-    for (const team of affected) {
-      if (manual && (totals.length + errors) % BATCH === 0) await this.lease(key, token);
+    let inalterados = 0;
+    let pendentes = 0;
+    const snapshotIds = new Set(all.map(t => t.timeId));
+    const absent = (round.timesPrevistos as number[]).filter(id => !snapshotIds.has(id));
+    let naoVerificaveis = individual ? absent.length : 0;
+    errors += naoVerificaveis;
+    const motivosPendencia: Array<{ timeId: number | null; tipo: 'PENDENTE_DE_DADOS' | 'NAO_VERIFICAVEL' | 'RODADA'; motivo: string }> =
+      individual ? absent.map(timeId => ({ timeId, tipo: 'NAO_VERIFICAVEL', motivo: 'Snapshot ausente; escalação não recapturada' })) : [];
+    for (const [index, team] of affected.entries()) {
+      if (manual && index % BATCH === 0) await this.lease(key, token);
       try {
-      if (final && team.escalacao.some((a) => !a.clubeId || !clubs.has(a.clubeId) || !matchEnded(clubs.get(a.clubeId)!))) {
+      if (individual && !team.escalacao.some(a => a.titular)) throw new UnprocessableEntityException('Snapshot sem titulares');
+      if (individual && (!completeScoredEnvelope || official?.problemaEnvelope)) {
+        throw new ConflictException(official?.problemaEnvelope ?? 'Envelope final sem completude comprovada');
+      }
+      if ((final || individual) && team.escalacao.some((a) => !a.clubeId || !clubs.has(a.clubeId) || !matchEnded(clubs.get(a.clubeId)!))) {
         throw new ConflictException('Clube sem partida final confirmada no snapshot');
       }
       // A score correction can enable, reverse, or change a replacement even
@@ -403,27 +422,39 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       // already limits this work to teams whose inputs changed.
       const resolution = resolveReplacements(team, scores, clubs, false,
         completeScoredEnvelope);
-      if (final) validateFinalTeam(team, resolution, scores, participation);
-      if (!final && resolution.pending.length) {
+      if (individual) {
+        const relevantClubs = new Map([...clubs].filter(([clubId]) => team.escalacao.some(a => a.clubeId === clubId)));
+        validateFinalData(scores, relevantClubs);
+      }
+      if (final || individual) validateFinalTeam(team, resolution, scores, participation);
+      if (!final && !individual && resolution.pending.length) {
         this.logger.warn({ ...key, timeId: team.timeId, etapa: 'PARTICIPACAO_PENDENTE', pendencias: resolution.pending });
         if (team.substituicoes.some(r => resolution.pendingPositions.includes(r.posicaoId))) {
           throw new ConflictException('Substituicao anterior com dados pendentes; preservar resultado');
         }
         errors++;
       }
-      if ((!final && team.pontuacao?.status === 'FINAL') || (final
+      if ((!final && !individual && team.pontuacao?.status === 'FINAL') || ((final || individual)
         && effectiveLineup(team, resolution.replacements).some((a) => participation(a) === undefined))) {
         throw new ConflictException('Participacao ou substituicao pendente; preservar resultado anterior do time');
       }
-      totals.push({ id: team.id, total: totalScore(effectiveLineup(team, resolution.replacements), scores), replacements: resolution.replacements });
-      substitutionCount += resolution.replacements.length;
       const signature = (r: Replacement) => `${r.atletaSaiuId}:${r.atletaEntrouId}:${r.posicaoId}`;
       const before = new Set(team.substituicoes.map(signature));
       const after = new Set(resolution.replacements.map(signature));
+      const total = totalScore(effectiveLineup(team, resolution.replacements), scores);
+      if (individual && team.pontuacao?.status === 'FINAL' && total.equals(team.pontuacao.pontuacao)
+        && before.size === after.size && [...before].every(r => after.has(r))) { inalterados++; continue; }
+      totals.push({ id: team.id, total, replacements: resolution.replacements });
+      substitutionCount += resolution.replacements.length;
       substitutionsChanged += [...before].filter((r) => !after.has(r)).length + [...after].filter((r) => !before.has(r)).length;
       } catch (error) {
-        if (official && final) throw new ConflictException(this.message(error));
-        if (final) throw error;
+        if (!individual && official && final) throw new ConflictException(this.message(error));
+        if (!individual && final) throw error;
+        if (individual) {
+          const invalid = error instanceof UnprocessableEntityException;
+          if (invalid) naoVerificaveis++; else pendentes++;
+          motivosPendencia.push({ timeId: team.timeId, tipo: invalid ? 'NAO_VERIFICAVEL' : 'PENDENTE_DE_DADOS', motivo: this.message(error) });
+        }
         errors++;
         this.logger.error({ ...key, timeId: team.timeId, etapa: 'REPROCESSAMENTO', erro: this.message(error) });
       }
@@ -440,18 +471,31 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     }
     const ended = matches.partidas.filter((m) => m.valida === true);
     const waiting = !market.bola_rolando && ended.length > 0 && ended.every((m) => matchStart(m) <= Date.now());
+    const rodadaConsolidada = individual && final && completeScoredEnvelope && all.length > 0
+      && missing.length === 0 && pendentes === 0 && naoVerificaveis === 0;
+    if (individual && !final) motivosPendencia.push({ timeId: null, tipo: 'RODADA', motivo: 'Encerramento global não comprovado' });
+    if (individual && !rodadaConsolidada && !motivosPendencia.length) {
+      motivosPendencia.push({ timeId: null, tipo: 'RODADA', motivo: 'Nenhum snapshot verificável disponível' });
+    }
     await this.prisma.$transaction(async (tx) => {
       // Fencing plus row lock: another worker cannot publish after lease takeover.
       const fenced = await tx.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token, lockAte: { gt: new Date() } },
         data: { lockAte: new Date(Date.now() + LEASE_MS) } });
       if (fenced.count !== 1) throw new ConflictException('Lock perdido antes da persistencia');
+      if (individual) {
+        const latestRound = await tx.rodadaProcessamento.findUniqueOrThrow({ where: { temporada_rodada: key },
+          select: { timesPrevistos: true, status: true } });
+        if (latestRound.status !== round.status || JSON.stringify(latestRound.timesPrevistos) !== JSON.stringify(round.timesPrevistos)) {
+          throw new ConflictException('Contexto da rodada mudou durante avaliacao; resultados preservados');
+        }
+      }
       for (let index = 0; index < totals.length; index += BATCH) {
         const batch = totals.slice(index, index + BATCH);
         const now = new Date();
-        const status = final ? 'FINAL' : 'PARCIAL';
+        const status = final || individual ? 'FINAL' : 'PARCIAL';
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO PONTUACAO_TIME_RODADA (TIME_RODADA_ID, PONTUACAO, STATUS, CRIADO_EM, ATUALIZADO_EM, CONSOLIDADO_EM)
-          VALUES ${Prisma.join(batch.map((t) => Prisma.sql`(${t.id}, ${t.total}, ${status}, ${now}, ${now}, ${final ? now : null})`))}
+          VALUES ${Prisma.join(batch.map((t) => Prisma.sql`(${t.id}, ${t.total}, ${status}, ${now}, ${now}, ${final || individual ? now : null})`))}
           ON DUPLICATE KEY UPDATE PONTUACAO=VALUES(PONTUACAO), STATUS=VALUES(STATUS), ATUALIZADO_EM=VALUES(ATUALIZADO_EM), CONSOLIDADO_EM=VALUES(CONSOLIDADO_EM)`);
         await tx.substituicaoTimeRodada.updateMany({ where: { timeRodadaId: { in: batch.map((t) => t.id) } }, data: { ativa: false } });
         const replacements = batch.flatMap((t) => t.replacements.map((r) => ({ ...r, timeRodadaId: t.id })));
@@ -461,13 +505,21 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
           ON DUPLICATE KEY UPDATE ATIVA=true, POSICAO_ID=VALUES(POSICAO_ID), ATUALIZADO_EM=VALUES(ATUALIZADO_EM)`);
       }
       await tx.rodadaProcessamento.update({ where: { temporada_rodada: key }, data: {
-        status: final ? 'CONSOLIDADA' : missing.length ? 'AGUARDANDO_ESCALACOES' : waiting ? 'AGUARDANDO_CONSOLIDACAO' : 'EM_ANDAMENTO',
-        pontuados: json(scored), partidas: json(matches), erro: errors ? `${errors} times com erro no reprocessamento` : null, ...(final ? { consolidadoEm: new Date() } : manual ? { consolidadoEm: null } : {}),
+        ...(individual ? rodadaConsolidada ? { status: 'CONSOLIDADA' as const, consolidadoEm: round.consolidadoEm ?? new Date() } : {}
+          : { status: final ? 'CONSOLIDADA' as const : missing.length ? 'AGUARDANDO_ESCALACOES' as const : waiting ? 'AGUARDANDO_CONSOLIDACAO' as const : 'EM_ANDAMENTO' as const,
+            ...(final ? { consolidadoEm: new Date() } : manual ? { consolidadoEm: null } : {}) }),
+        ...(individual ? {} : { pontuados: json(scored), partidas: json(matches) }),
+        erro: individual ? motivosPendencia.length ? this.message(new Error(JSON.stringify(motivosPendencia))) : null
+          : errors ? `${errors} times com erro no reprocessamento` : null,
       } });
     }, { timeout: 120_000, maxWait: 10_000 });
     this.logger.log({ ...key, etapa: final ? 'CONSOLIDACAO' : 'PARCIAL', atletasRecebidos: scores.size,
       atletasAlterados: changed.size, timesAfetados: totals.length, substituicoes: substitutionCount });
-    return { timesProcessados: totals.length, timesComErro: errors, substituicoesAlteradas: substitutionsChanged };
+    return { timesProcessados: totals.length, timesComErro: errors, substituicoesAlteradas: substitutionsChanged,
+      ...(individual ? { totalTimes: all.length + absent.length, atualizados: totals.length, inalterados, pendentes, naoVerificaveis,
+        rodadaConsolidada, statusRodada: rodadaConsolidada ? 'CONSOLIDADA' : round.status, motivosPendencia,
+        resultado: motivosPendencia.length ? 'COM_PENDENCIAS' : totals.length ? 'ATUALIZADO' : 'SEM_ALTERACOES' } : {}),
+    };
   }
   private message(error: unknown): string { return (error instanceof Error ? error.message : String(error)).slice(0, 2000); }
 }

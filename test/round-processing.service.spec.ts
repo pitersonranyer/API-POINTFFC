@@ -273,6 +273,141 @@ describe('Reprocessamento manual', () => {
     jest.clearAllMocks();
     return { f, target, source, matches };
   }
+  function addUnfinishedMatch(matches: CartolaMatchesResponse) {
+    matches.partidas.push({ partida_id: 2, clube_casa_id: 777, clube_visitante_id: 778,
+      valida: true, periodo_tr: '', timestamp: 1767225600 });
+  }
+  it('partida irrelevante nao bloqueia C01 comprovado, mas impede consolidacao global', async () => {
+    const { f, target, matches, source } = await historical();
+    addUnfinishedMatch(matches);
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ status: 'PARCIAL', resultado: 'COM_PENDENCIAS', totalTimes: 1,
+      atualizados: 1, inalterados: 0, pendentes: 0, naoVerificaveis: 0, rodadaConsolidada: false });
+    expect(f.round.status).toBe('EM_ANDAMENTO');
+    expect(target.pontuacao.status).toBe('FINAL');
+    expect(target.pontuacao.consolidadoEm).toBeInstanceOf(Date);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(effectiveLineup(target, target.substituicoes).filter(a => source.atletas[a.atletaId]?.entrou_em_campo)).toHaveLength(12);
+    expect(result.motivosPendencia).toContainEqual({ timeId: null, tipo: 'RODADA', motivo: 'Encerramento global não comprovado' });
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+    f.prisma.$executeRaw.mockClear(); f.sincronizacao.sincronizarRodada.mockClear();
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, inalterados: 1, rodadaConsolidada: false });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('persiste apenas comprovados, preserva FINAL pendente e inclui snapshots ausentes', async () => {
+    const { f, target, matches } = await historical();
+    addUnfinishedMatch(matches);
+    const pending = { ...target, id: 2, timeId: 2, pontuacao: { pontuacao: new Prisma.Decimal(88), status: 'FINAL', consolidadoEm: new Date(0) },
+      escalacao: target.escalacao.map((a: any) => ({ ...a, clubeId: a.reserva ? 778 : 777 })),
+      substituicoes: [{ atletaSaiuId: 10, atletaEntrouId: 124219, posicaoId: 3 }] };
+    f.teams.push(pending);
+    f.round.timesPrevistos = [30157355, 2, 99];
+    const frozen = JSON.stringify(pending);
+    f.sincronizacao.sincronizarRodada.mockImplementation(async () => {
+      expect(f.round.lockToken).toBeNull();
+      expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+      expect(JSON.stringify(pending)).toBe(frozen);
+    });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ totalTimes: 3,
+      atualizados: 1, pendentes: 1, naoVerificaveis: 1, timesComErro: 2, rodadaConsolidada: false });
+    expect(JSON.stringify(pending)).toBe(frozen);
+    const sql = f.prisma.$executeRaw.mock.calls.find(([statement]) => statement.sql.includes('INSERT INTO PONTUACAO'))![0];
+    expect(sql.values).toHaveLength(6);
+    expect(sql.values[0]).toBe(target.id);
+    expect(f.snapshots.criarSnapshot).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+  });
+  it('coincidencia da pontuacao sem prova terminal continua pendente', async () => {
+    const { f, target } = await historical('');
+    target.pontuacao.pontuacao = new Prisma.Decimal(140.27);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ pendentes: 1, inalterados: 0, atualizados: 0 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('marca antiga CONSOLIDADA sem prova atual fica preservada e nao confirma encerramento', async () => {
+    const { f, target } = await historical('', true);
+    const timestamp = new Date(1234);
+    f.round.consolidadoEm = timestamp;
+    const before = JSON.stringify(target);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ status: 'PARCIAL', statusRodada: 'CONSOLIDADA',
+      resultado: 'COM_PENDENCIAS', pendentes: 1, rodadaConsolidada: false });
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.round.consolidadoEm).toEqual(timestamp);
+    expect(JSON.stringify(target)).toBe(before);
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('ausencia omitida exige cobertura do clube mesmo com partidas encerradas', async () => {
+    const { f, source, target } = await historical();
+    Object.values(source.atletas).forEach(a => { a.clube_id = 266; });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ pendentes: 1, atualizados: 0, rodadaConsolidada: false });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(target.substituicoes).toEqual([]);
+  });
+  it('snapshot invalido e snapshot sem titulares sao nao verificaveis', async () => {
+    const { f, target } = await historical();
+    target.capitaoId = 999;
+    f.teams.push({ ...target, id: 2, timeId: 2, escalacao: [] });
+    f.round.timesPrevistos = [30157355, 2];
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ totalTimes: 2, naoVerificaveis: 2, atualizados: 0, rodadaConsolidada: false });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('historico sem nenhum snapshot informa motivos sem recapturar', async () => {
+    const { f } = await historical();
+    f.teams.splice(0);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ totalTimes: 1, naoVerificaveis: 1, atualizados: 0, rodadaConsolidada: false });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.snapshots.criarSnapshot).not.toHaveBeenCalled();
+  });
+  it('todos comprovados consolidam uma vez; repeticao nao escreve nem sincroniza', async () => {
+    const { f, target } = await historical();
+    // Capitao com zero e participacao true nao e tratado como ausente.
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 1, rodadaConsolidada: true, resultado: 'ATUALIZADO' });
+    expect(target.substituicoes.some((r: any) => r.atletaSaiuId === 11)).toBe(false);
+    const date = f.round.consolidadoEm;
+    f.prisma.$executeRaw.mockClear(); f.sincronizacao.sincronizarRodada.mockClear();
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ status: 'FINAL', atualizados: 0,
+      inalterados: 1, rodadaConsolidada: true, resultado: 'SEM_ALTERACOES' });
+    expect(f.round.consolidadoEm).toEqual(date);
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('completa consolidacao global depois sem regravar time ja comprovado', async () => {
+    const { f, matches } = await historical();
+    addUnfinishedMatch(matches);
+    await f.create().reprocessarParciais(29, 2026);
+    matches.partidas[1].periodo_tr = 'F';
+    f.prisma.$executeRaw.mockClear();
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ rodadaConsolidada: true, atualizados: 0, inalterados: 1 });
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('historico reavalia Reserva de Luxo com todas as participacoes comprovadas', async () => {
+    const { f, target, source } = await historical();
+    target.reservaLuxoId = 124219;
+    source.atletas['10'] = { pontuacao: 1, entrou_em_campo: true, clube_id: 1 };
+    source.total_atletas++;
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 1, pendentes: 0, rodadaConsolidada: true });
+    expect(target.substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 124219, posicaoId: 3 }]);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+  });
+  it('lock historico impede duas avaliacaoes simultaneas', async () => {
+    const { f } = await historical('');
+    const results = await Promise.allSettled([f.create().reprocessarParciais(29, 2026), f.create().reprocessarParciais(29, 2026)]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.find(r => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
+    expect(f.round.lockToken).toBeNull();
+  });
+  it('mudanca dos times previstos antes do commit bloqueia consolidacao e gravacao', async () => {
+    const { f } = await historical();
+    f.cartola.loadMarketStatusFresh.mockImplementation(async () => {
+      // A leitura final ocorre depois que os snapshots foram avaliados.
+      if (f.prisma.timeRodada.findMany.mock.calls.length >= 2) f.round.timesPrevistos = [30157355, 999];
+      return { temporada: 2026, rodada_atual: 30, status_mercado: 1, bola_rolando: false };
+    });
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
   it.each([false, true])('reconsolida historica, inclusive consolidada=%s, com prova final e sincroniza apos commit', async (consolidated) => {
     const { f, target, source } = await historical('F', consolidated);
     const frozen = JSON.stringify(target.escalacao);
@@ -293,7 +428,9 @@ describe('Reprocessamento manual', () => {
   it.each(['', 'SEGUNDO_TEMPO'])('preserva historica sem prova final: %s', async (periodo) => {
     const { f, target } = await historical(periodo);
     const previous = JSON.stringify(f.round.pontuados);
-    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({
+      status: 'PARCIAL', resultado: 'COM_PENDENCIAS', atualizados: 0, pendentes: 1, rodadaConsolidada: false,
+    });
     expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
     expect(target.substituicoes).toEqual([]);
     expect(JSON.stringify(f.round.pontuados)).toBe(previous);
@@ -306,14 +443,18 @@ describe('Reprocessamento manual', () => {
     f.round.partidas.partidas[0].periodo_tr = 'POS_JOGO';
     expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ status: 'FINAL' });
   });
-  it.each(['incompleto', 'participacao', 'clube', 'identidade', 'temporada'])('bloqueia fonte %s sem gravar finais', async (condition) => {
+  it.each(['incompleto', 'participacao', 'clube', 'identidade', 'temporada'])('preserva resultado com fonte %s', async (condition) => {
     const { f, source, matches, target } = await historical('F', true);
     if (condition === 'incompleto') source.total_atletas++;
     if (condition === 'participacao') delete source.atletas['124219'].entrou_em_campo;
     if (condition === 'clube') target.escalacao[0].clubeId = 999;
     if (condition === 'identidade') { f.round.partidas.partidas[0].periodo_tr = 'F'; matches.partidas[0].clube_visitante_id = 777; }
     if (condition === 'temporada') matches.partidas[0].timestamp = 1000;
-    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: condition === 'incompleto' ? 502 : 409 });
+    if (condition === 'identidade' || condition === 'temporada') {
+      await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    } else {
+      expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ pendentes: 1, atualizados: 0, rodadaConsolidada: false });
+    }
     expect(target.pontuacao.status).toBe('FINAL');
     expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
     expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
@@ -340,7 +481,7 @@ describe('Reprocessamento manual', () => {
     const { f, source } = await historical();
     const incomplete: CartolaScoredAthletesPayload = { rodada: source.rodada, atletas: source.atletas };
     f.cartola.loadAdministrativeScoredAthletesFresh.mockResolvedValue(incomplete as typeof source);
-    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ pendentes: 1, atualizados: 0, rodadaConsolidada: false });
     expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
   });
   it('mudanca de temporada antes do commit impede gravacao', async () => {
@@ -404,9 +545,8 @@ describe('Reprocessamento manual', () => {
     await expect(f.create().reprocessarParciais(39, 2026)).rejects.toMatchObject({ status: 400 });
     await expect(f.create().reprocessarParciais(25, 0)).rejects.toMatchObject({ status: 400 });
   });
-  it.each(['consolidada', 'lock', 'snapshot'])('409 para %s', async (condition) => {
+  it.each(['lock', 'snapshot'])('409 para %s', async (condition) => {
     const f = setup(); f.closed(); await f.create().tick();
-    if (condition === 'consolidada') f.round.status = 'CONSOLIDADA';
     if (condition === 'lock') { f.round.lockToken = 'outro'; f.round.lockAte = new Date(Date.now() + 120000); }
     if (condition === 'snapshot') f.teams.pop();
     f.prisma.$executeRaw.mockClear();

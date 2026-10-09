@@ -59,6 +59,19 @@ describe('POST admin/rodadas/:rodada/reprocessar-parciais', () => {
     expect(await response.json()).toEqual(summary);
     expect(processing.reprocessarParciais).toHaveBeenCalledWith(25, 2026);
   });
+  it('historico com pendencias responde 200, conserva campos existentes e inclui motivos', async () => {
+    const pendingSummary = { ...summary, rodada: 29, timesProcessados: 0, timesComErro: 1,
+      substituicoesAlteradas: 0, totalTimes: 1, atualizados: 0, inalterados: 0, pendentes: 1, naoVerificaveis: 0,
+      rodadaConsolidada: false, statusRodada: 'EM_ANDAMENTO', resultado: 'COM_PENDENCIAS',
+      motivosPendencia: [{ timeId: 30157355, tipo: 'PENDENTE_DE_DADOS', motivo: 'Clube sem partida final confirmada no snapshot' }] };
+    processing.reprocessarParciais.mockResolvedValueOnce(pendingSummary);
+    const response = await fetch(`${base}/admin/rodadas/29/reprocessar-parciais?temporada=2026`, {
+      method: 'POST', headers: { Authorization: 'Bearer PLATFORM_ADMIN' },
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(pendingSummary);
+    expect(processing.reprocessarParciais).toHaveBeenCalledWith(29, 2026);
+  });
   it('sem JWT retorna 401', async () => {
     expect((await fetch(`${base}/admin/rodadas/25/reprocessar-parciais?temporada=2026`, { method: 'POST' })).status).toBe(401);
   });
