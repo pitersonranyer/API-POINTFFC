@@ -18,6 +18,26 @@ export function matchEnded(match: CartolaMatch): boolean {
   return match.valida === true && (match.periodo_tr === 'F' || match.periodo_tr === 'POS_JOGO');
 }
 
+// Administrative historical policy only. Never persist this as an official period.
+export function historicalMatchState(match: CartolaMatch, now: number): 'FINAL_CONFIRMADO' | 'FINAL_PRESUMIDO' | 'PENDENTE' {
+  if (matchEnded(match)) return 'FINAL_CONFIRMADO';
+  if (match.valida !== true || typeof match.periodo_tr !== 'string' || match.periodo_tr.trim() !== '') return 'PENDENTE';
+  // A nonempty secondary state is ambiguous or explicitly prevents presumption.
+  if (['status_cronometro_tr', 'status_transmissao_tr', 'status_transmissao', 'status_partida', 'status', 'situacao',
+    'adiada', 'adiado', 'cancelada', 'cancelado', 'interrompida', 'interrompido', 'suspensa', 'suspenso']
+    .some(key => match[key] !== undefined && match[key] !== null && match[key] !== false && String(match[key]).trim() !== '')) return 'PENDENTE';
+  const raw = match.partida_data;
+  const parts = typeof raw === 'string' ? /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})(Z|[+-]\d{2}:\d{2})?$/.exec(raw) : null;
+  if (!parts) return 'PENDENTE';
+  const [year, month, day, hour, minute, second] = parts.slice(1, 7).map(Number);
+  const calendar = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (calendar.getUTCFullYear() !== year || calendar.getUTCMonth() !== month - 1 || calendar.getUTCDate() !== day
+    || calendar.getUTCHours() !== hour || calendar.getUTCMinutes() !== minute || calendar.getUTCSeconds() !== second) return 'PENDENTE';
+  // Offset-free Cartola dates are Brasilia time, regardless of the server TZ.
+  const start = Date.parse(`${raw!.replace(' ', 'T')}${parts[7] ? '' : '-03:00'}`);
+  return Number.isFinite(start) && now > start + 150 * 60_000 ? 'FINAL_PRESUMIDO' : 'PENDENTE';
+}
+
 export function matchStart(match: CartolaMatch): number {
   if (typeof match.timestamp === 'number' && Number.isFinite(match.timestamp)) return match.timestamp * 1000;
   const raw = match.partida_data ?? '';
@@ -109,7 +129,8 @@ export function validateFinalTeam(team: FrozenTeam & { timeId: number }, resolut
   }
 }
 
-export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false) {
+export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false,
+  historicalFinished?: (match: CartolaMatch) => boolean) {
   const replacements: Replacement[] = [];
   const pending: string[] = [];
   const pendingPositions: number[] = [];
@@ -122,7 +143,7 @@ export function resolveReplacements(team: FrozenTeam, scores: Map<number, Cartol
   const game = (a: FrozenAthlete) => a.clubeId === null ? undefined : matches.get(a.clubeId);
   const finished = (a: FrozenAthlete) => {
     const m = game(a);
-    return m !== undefined && (matchEnded(m) || (reopened && m.valida === true && matchStart(m) <= Date.now()));
+    return m !== undefined && (matchEnded(m) || historicalFinished?.(m) === true || (reopened && m.valida === true && matchStart(m) <= Date.now()));
   };
   // The complete scored-athlete feed omits players who did not participate.
   // Only infer absence after confirmed full time and with scores for this club.

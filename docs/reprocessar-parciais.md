@@ -42,17 +42,20 @@ Na avaliação individual histórica, a resposta acrescenta:
 | --- | --- |
 | `totalTimes` | União dos snapshots existentes e times previstos sem snapshot |
 | `atualizados` | Resultados seguros efetivamente gravados, incluindo promoção de PARCIAL para FINAL |
-| `inalterados` | Resultados comprovados já FINAL com mesma pontuação e substituições; não regravados |
+| `inalterados` | Resultados já FINAL iguais, ou PARCIAL iguais sob presunção histórica; não regravados. Não comprova término oficial |
 | `pendentes` | Times com dependências oficiais ainda indeterminadas; resultados preservados |
 | `naoVerificaveis` | Snapshots ausentes ou inválidos; resultados preservados |
 | `rodadaConsolidada` | Consolidação global comprovada nesta execução |
 | `statusRodada` | Estado persistido, que pode continuar CONSOLIDADA sem confirmação atual |
 | `resultado` | ATUALIZADO, SEM_ALTERACOES ou COM_PENDENCIAS |
 | `motivosPendencia` | Objetos com timeId, tipo e motivo; timeId nulo identifica pendência global |
+| `estadosPartidas` | Somente histórico: objetos com partidaId e estado FINAL_CONFIRMADO, FINAL_PRESUMIDO ou PENDENTE |
 
 Um time não é comprovado pela coincidência da pontuação. A validação exige envelope
 completo, snapshot válido, término confirmado e horário válido de todas as partidas
 dos clubes do snapshot, participação suficiente e nenhuma substituição indeterminada.
+No histórico administrativo, a política temporal abaixo também permite avaliar
+partidas presumidas, mantendo seus resultados PARCIAL e sem inferir ausência pela presunção.
 Reutiliza as validações e cálculo existentes. Partidas irrelevantes não bloqueiam o
 time; continuam impedindo a consolidação global quando não têm término comprovado.
 Resultados individuais comprovados são FINAL, com consolidadoEm, mesmo que a rodada
@@ -102,6 +105,31 @@ trocas progressivas; uma substituição anterior indeterminada ou pontuação `F
 Automático e administrativo usam a mesma preservação e cálculo com término confirmado,
 sem o atalho de reabertura baseado apenas em horário passado. Agendamento e janela
 automática permanecem iguais; não foi criado retry automático de rodadas históricas.
+
+### Recuperação administrativa com período vazio
+
+Somente rodadas anteriores à rodada oficial atual usam a política de 150 minutos.
+Partida válida com `periodo_tr` explicitamente vazio e `partida_data` válida recebe
+`FINAL_PRESUMIDO` estritamente **após** o início previsto mais 150 minutos; exatamente
+no limite permanece PENDENTE. Datas sem offset usam Brasília (UTC-03:00), sem depender
+do fuso do servidor; datas com offset explícito respeitam esse offset. Período ausente,
+data inválida e estados secundários preenchidos/ambíguos impedem a presunção, incluindo
+andamento, adiamento, cancelamento ou interrupção. `F`/`POS_JOGO` válidos continuam
+FINAL_CONFIRMADO, inclusive confirmações preservadas pelo fluxo existente.
+
+A classificação é calculada na resposta, sem alterar `periodo_tr` persistido.
+O mesmo motor recebe a política apenas para liberar sua verificação de término.
+A participação continua usando as evidências originais: registros com
+`entrou_em_campo: true/false` são explícitos; pontuação zero não indica ausência.
+Omissão com partida presumida permanece desconhecida, mesmo com envelope completo
+e cobertura do clube. A inferência existente requer término **confirmado**.
+
+Resultados recuperados com alguma partida presumida permanecem PARCIAL, sem data
+de consolidação. Se já existe resultado FINAL diferente, ele é preservado como
+pendente até confirmação oficial. Repetição com mesma pontuação e substituições
+não regrava nem sincroniza rankings. Confirmação posterior permite promoção a FINAL.
+A presunção nunca comprova consolidação global e não altera o processamento automático,
+a rodada atual, regras de capitão/Reserva de Luxo ou a rotina de competições.
 
 Após o commit, chama a sincronização existente somente quando resultados seguros
 foram efetivamente gravados. Pendentes conservam a pontuação anterior no banco e no

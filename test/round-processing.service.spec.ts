@@ -277,6 +277,108 @@ describe('Reprocessamento manual', () => {
     matches.partidas.push({ partida_id: 2, clube_casa_id: 777, clube_visitante_id: 778,
       valida: true, periodo_tr: '', timestamp: 1767225600 });
   }
+  async function presumed(explicit = true, consolidated = false) {
+    const f = await historical('', consolidated);
+    Object.assign(f.matches.partidas[0], { partida_data: '2026-01-01 00:00:00' });
+    if (explicit) {
+      f.source.atletas['10'] = { pontuacao: 0, entrou_em_campo: false, clube_id: 1 };
+      f.source.total_atletas++;
+    }
+    return f;
+  }
+  it('recupera C01 sintetico com presuncao e participacao explicita sem registrar final oficial', async () => {
+    const { f, target } = await presumed();
+    const snapshot = JSON.stringify(target.escalacao);
+    const service = f.create();
+    const result = await service.reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 1, pendentes: 0, rodadaConsolidada: false,
+      estadosPartidas: [{ partidaId: 346575, estado: 'FINAL_PRESUMIDO' }] });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(target.pontuacao.status).toBe('PARCIAL');
+    expect(target.pontuacao.consolidadoEm).toBeNull();
+    expect(target.substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 124219, posicaoId: 3 }]);
+    expect(effectiveLineup(target, target.substituicoes)).toHaveLength(12);
+    expect(JSON.stringify(target.escalacao)).toBe(snapshot);
+    expect(f.round.partidas.partidas[0].periodo_tr).toBe('');
+    expect(f.round.status).toBe('EM_ANDAMENTO');
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+    f.prisma.$executeRaw.mockClear(); f.sincronizacao.sincronizarRodada.mockClear();
+    expect(await service.reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, inalterados: 1 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it.each(['omitido', 'campo ausente', 'reserva desconhecido'])('presuncao nao prova participacao: %s', condition => {
+    return (async () => {
+      const { f, target, source } = await presumed(condition !== 'omitido');
+      if (condition === 'campo ausente') delete source.atletas['10'].entrou_em_campo;
+      if (condition === 'reserva desconhecido') delete source.atletas['124219'].entrou_em_campo;
+      // Fresh evidence, without an older explicit participation to trigger source protection.
+      f.round.pontuados = null;
+      const before = JSON.stringify(target);
+      const result = await f.create().reprocessarParciais(29, 2026);
+      expect(result).toMatchObject({ atualizados: 0, pendentes: 1 });
+      expect(result.motivosPendencia![0].motivo).toContain('participacao ou ausencia');
+      expect(JSON.stringify(target)).toBe(before);
+      expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+      expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+    })();
+  });
+  it('presuncao nao regride nem corrige FINAL anterior sem confirmacao', async () => {
+    const { f, target } = await presumed(true, true);
+    const before = JSON.stringify(target);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, pendentes: 1, rodadaConsolidada: false });
+    expect(JSON.stringify(target)).toBe(before);
+    expect(f.round.status).toBe('CONSOLIDADA');
+  });
+  it('titular com zero e participacao true nao e substituido por ausencia presumida', async () => {
+    const { f, target, source } = await presumed();
+    source.atletas['10'].entrou_em_campo = true;
+    await f.create().reprocessarParciais(29, 2026);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(target.substituicoes).toEqual([]);
+  });
+  it('presuncao reutiliza Reserva de Luxo e capitao efetivo do motor', async () => {
+    const { f, target, source } = await presumed();
+    source.atletas['10'] = { pontuacao: 0, entrou_em_campo: true, clube_id: 1 };
+    target.reservaLuxoId = 124219;
+    target.capitaoId = 10;
+    target.escalacao.forEach((a: any) => { a.capitao = a.atletaId === 10; });
+    await f.create().reprocessarParciais(29, 2026);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(143.87);
+    expect(effectiveLineup(target, target.substituicoes).find(a => a.capitao)?.atletaId).toBe(124219);
+  });
+  it('confirmacao posterior promove resultado presumido para FINAL', async () => {
+    const { f, target, matches } = await presumed();
+    await f.create().reprocessarParciais(29, 2026);
+    matches.partidas[0].periodo_tr = 'F';
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 1, rodadaConsolidada: true });
+    expect(target.pontuacao.status).toBe('FINAL');
+  });
+  it('regra temporal nao altera processamento automatico nem administrativo da rodada atual', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].escalacao.push({ atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
+    f.points({ rodada: 25, total_atletas: 3, atletas: {
+      '10': { pontuacao: 0, entrou_em_campo: false }, '11': { pontuacao: 4, entrou_em_campo: true },
+      '20': { pontuacao: 8, entrou_em_campo: true },
+    } });
+    f.matches({ rodada: 25, clubes: {}, partidas: [{ partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2,
+      valida: true, periodo_tr: '', partida_data: '2026-01-01 00:00:00', timestamp: 1767225600 }] });
+    await f.create().tick();
+    expect(f.teams[0].substituicoes).toEqual([]);
+    const result = await f.create().reprocessarParciais(25, 2026);
+    expect(result).not.toHaveProperty('estadosPartidas');
+    expect(f.teams[0].substituicoes).toEqual([]);
+  });
+  it('falha de gravacao preserva resultados durante recuperacao presumida', async () => {
+    const { f, target } = await presumed();
+    const before = JSON.stringify(target);
+    f.failCommit(true);
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toThrow('Database unavailable');
+    expect(JSON.stringify(f.teams[0])).toBe(before);
+    expect(f.round.partidas.partidas[0].periodo_tr).toBe('');
+    expect(f.round.lockToken).toBeNull();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
   it('partida irrelevante nao bloqueia C01 comprovado, mas impede consolidacao global', async () => {
     const { f, target, matches, source } = await historical();
     addUnfinishedMatch(matches);

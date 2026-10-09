@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { CartolaMatch, CartolaScoredAthlete } from '../src/cartola/cartola.types';
-import { effectiveLineup, FrozenAthlete, FrozenTeam, matchEnded, matchStart, resolveReplacements, scoreMap, totalScore } from '../src/round-processing/round-calculator';
+import { effectiveLineup, FrozenAthlete, FrozenTeam, historicalMatchState, matchEnded, matchStart, resolveReplacements, scoreMap, totalScore } from '../src/round-processing/round-calculator';
 
 const athlete = (id: number, extra: Partial<FrozenAthlete> = {}): FrozenAthlete => ({
   atletaId: id, posicaoId: 5, clubeId: id, titular: true, reserva: false,
@@ -19,6 +19,35 @@ const scores = (a: number, b: number, c: number, participation = true) => new Ma
   [1, { pontuacao: a, entrou_em_campo: participation }], [2, { pontuacao: b, entrou_em_campo: true }],
   [3, { pontuacao: c, entrou_em_campo: true }],
 ]);
+
+describe('Politica administrativa historica de 150 minutos', () => {
+  const start = Date.parse('2026-10-07T19:30:00-03:00');
+  const blank = game(1, { periodo_tr: '', partida_data: '2026-10-07 19:30:00' });
+  it.each([[-1, 'PENDENTE'], [0, 'PENDENTE'], [1, 'FINAL_PRESUMIDO']] as const)('limite estrito de 150 minutos: %s ms', (delta, expected) => {
+    expect(historicalMatchState(blank, start + 150 * 60_000 + delta)).toBe(expected);
+    expect(matchEnded(blank)).toBe(false);
+  });
+  it.each(['F', 'POS_JOGO'])('preserva confirmacao oficial %s', periodo_tr => {
+    expect(historicalMatchState({ ...blank, periodo_tr }, start)).toBe('FINAL_CONFIRMADO');
+  });
+  it.each(['2T', 'SEGUNDO_TEMPO', 'ADIADA', 'CANCELADA', 'INTERROMPIDA'])('nao presume periodo explicito %s', periodo_tr => {
+    expect(historicalMatchState({ ...blank, periodo_tr }, start + 86400_000)).toBe('PENDENTE');
+  });
+  it.each(['', 'invalida', '2026-02-30 19:30:00', '2026-10-07 25:30:00'])('exige partida_data valida: %s', partida_data => {
+    expect(historicalMatchState({ ...blank, partida_data }, start + 86400_000)).toBe('PENDENTE');
+  });
+  it.each(['2026-10-07 19:30:00', '2026-10-07T19:30:00-03:00', '2026-10-07T22:30:00Z', '2026-10-07T23:30:00+01:00'])('usa o fuso da partida: %s', partida_data => {
+    expect(historicalMatchState({ ...blank, partida_data }, start + 150 * 60_000)).toBe('PENDENTE');
+    expect(historicalMatchState({ ...blank, partida_data }, start + 150 * 60_000 + 1)).toBe('FINAL_PRESUMIDO');
+  });
+  it.each(['status_cronometro_tr', 'status_transmissao_tr', 'status', 'situacao', 'adiada', 'cancelada', 'interrompida'])('respeita estado secundario %s', key => {
+    expect(historicalMatchState({ ...blank, [key]: 'ADIADA' }, start + 86400_000)).toBe('PENDENTE');
+  });
+  it('nao presume partida invalida ou periodo ausente', () => {
+    expect(historicalMatchState({ ...blank, valida: false }, start + 86400_000)).toBe('PENDENTE');
+    expect(historicalMatchState({ ...blank, periodo_tr: undefined }, start + 86400_000)).toBe('PENDENTE');
+  });
+});
 
 describe('Regras da escalação efetiva', () => {
   it('reconcilia titular omitido do envelope completo somente apos fim confirmado e cobertura do clube', () => {

@@ -7,7 +7,7 @@ import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPaylo
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeSnapshotsService } from '../time-snapshots/time-snapshots.service';
 import { SincronizacaoPontuacoesService } from '../ligas-competicoes/sincronizacao-pontuacoes.service';
-import { athleteParticipation, effectiveLineup, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore, validateFinalData, validateFinalTeam } from './round-calculator';
+import { athleteParticipation, effectiveLineup, historicalMatchState, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore, validateFinalData, validateFinalTeam } from './round-calculator';
 import { simulateRound } from './round-simulation';
 
 type RoundKey = { temporada: number; rodada: number };
@@ -368,6 +368,12 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const oldMatches = round.partidas as unknown as CartolaMatchesResponse | null;
     const scores = individual && official?.problemaEnvelope ? new Map() as ReturnType<typeof scoreMap> : scoreMap(scored, key.rodada);
     const clubs = matchesByClub(matches, key.rodada);
+    const historical = individual && key.rodada < market.rodada_atual;
+    const evaluatedAt = Date.now();
+    const estadosPartidas = historical ? matches.partidas.map(m => ({ partidaId: m.partida_id,
+      estado: historicalMatchState(m, evaluatedAt) })) : [];
+    const historicalFinished = historical ? (m: CartolaMatchesResponse['partidas'][number]) =>
+      historicalMatchState(m, evaluatedAt) !== 'PENDENTE' : undefined;
     const completeScoredEnvelope = scored.total_atletas === scores.size && scores.size > 0;
     const participation = athleteParticipation(scores, clubs, completeScoredEnvelope);
     if (!individual && final && teams.length) {
@@ -395,7 +401,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       }) },
       include: { escalacao: true, pontuacao: true, substituicoes: { where: { ativa: true } } },
     });
-    const totals: Array<{ id: number; total: Prisma.Decimal; replacements: Replacement[] }> = [];
+    const totals: Array<{ id: number; total: Prisma.Decimal; replacements: Replacement[]; confirmed: boolean }> = [];
     let substitutionCount = 0;
     let substitutionsChanged = 0;
     let errors = 0;
@@ -414,14 +420,19 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       if (individual && (!completeScoredEnvelope || official?.problemaEnvelope)) {
         throw new ConflictException(official?.problemaEnvelope ?? 'Envelope final sem completude comprovada');
       }
-      if ((final || individual) && team.escalacao.some((a) => !a.clubeId || !clubs.has(a.clubeId) || !matchEnded(clubs.get(a.clubeId)!))) {
+      if ((final || individual) && team.escalacao.some((a) => !a.clubeId || !clubs.has(a.clubeId)
+        || !(historicalFinished?.(clubs.get(a.clubeId)!) ?? matchEnded(clubs.get(a.clubeId)!)))) {
         throw new ConflictException('Clube sem partida final confirmada no snapshot');
+      }
+      const confirmed = team.escalacao.every(a => a.clubeId !== null && !!clubs.get(a.clubeId) && matchEnded(clubs.get(a.clubeId)!));
+      if (historical && !confirmed && team.escalacao.some(a => participation(a) === undefined)) {
+        throw new ConflictException('FINAL_PRESUMIDO: participacao ou ausencia sem comprovacao suficiente; resultado anterior preservado');
       }
       // A score correction can enable, reverse, or change a replacement even
       // when participation and match status are unchanged. The affected query
       // already limits this work to teams whose inputs changed.
       const resolution = resolveReplacements(team, scores, clubs, false,
-        completeScoredEnvelope);
+        completeScoredEnvelope, historicalFinished);
       if (individual) {
         const relevantClubs = new Map([...clubs].filter(([clubId]) => team.escalacao.some(a => a.clubeId === clubId)));
         validateFinalData(scores, relevantClubs);
@@ -442,9 +453,12 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       const before = new Set(team.substituicoes.map(signature));
       const after = new Set(resolution.replacements.map(signature));
       const total = totalScore(effectiveLineup(team, resolution.replacements), scores);
-      if (individual && team.pontuacao?.status === 'FINAL' && total.equals(team.pontuacao.pontuacao)
+      if (individual && (team.pontuacao?.status === 'FINAL' || (historical && !confirmed && team.pontuacao?.status === 'PARCIAL')) && total.equals(team.pontuacao.pontuacao)
         && before.size === after.size && [...before].every(r => after.has(r))) { inalterados++; continue; }
-      totals.push({ id: team.id, total, replacements: resolution.replacements });
+      if (historical && !confirmed && team.pontuacao?.status === 'FINAL') {
+        throw new ConflictException('FINAL anterior preservado: correcao exige encerramento confirmado');
+      }
+      totals.push({ id: team.id, total, replacements: resolution.replacements, confirmed });
       substitutionCount += resolution.replacements.length;
       substitutionsChanged += [...before].filter((r) => !after.has(r)).length + [...after].filter((r) => !before.has(r)).length;
       } catch (error) {
@@ -492,10 +506,10 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       for (let index = 0; index < totals.length; index += BATCH) {
         const batch = totals.slice(index, index + BATCH);
         const now = new Date();
-        const status = final || individual ? 'FINAL' : 'PARCIAL';
+        const isFinal = (t: typeof totals[number]) => (final || individual) && (!historical || t.confirmed);
         await tx.$executeRaw(Prisma.sql`
           INSERT INTO PONTUACAO_TIME_RODADA (TIME_RODADA_ID, PONTUACAO, STATUS, CRIADO_EM, ATUALIZADO_EM, CONSOLIDADO_EM)
-          VALUES ${Prisma.join(batch.map((t) => Prisma.sql`(${t.id}, ${t.total}, ${status}, ${now}, ${now}, ${final || individual ? now : null})`))}
+          VALUES ${Prisma.join(batch.map((t) => Prisma.sql`(${t.id}, ${t.total}, ${isFinal(t) ? 'FINAL' : 'PARCIAL'}, ${now}, ${now}, ${isFinal(t) ? now : null})`))}
           ON DUPLICATE KEY UPDATE PONTUACAO=VALUES(PONTUACAO), STATUS=VALUES(STATUS), ATUALIZADO_EM=VALUES(ATUALIZADO_EM), CONSOLIDADO_EM=VALUES(CONSOLIDADO_EM)`);
         await tx.substituicaoTimeRodada.updateMany({ where: { timeRodadaId: { in: batch.map((t) => t.id) } }, data: { ativa: false } });
         const replacements = batch.flatMap((t) => t.replacements.map((r) => ({ ...r, timeRodadaId: t.id })));
@@ -519,6 +533,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       ...(individual ? { totalTimes: all.length + absent.length, atualizados: totals.length, inalterados, pendentes, naoVerificaveis,
         rodadaConsolidada, statusRodada: rodadaConsolidada ? 'CONSOLIDADA' : round.status, motivosPendencia,
         resultado: motivosPendencia.length ? 'COM_PENDENCIAS' : totals.length ? 'ATUALIZADO' : 'SEM_ALTERACOES' } : {}),
+      ...(historical ? { estadosPartidas } : {}),
     };
   }
   private message(error: unknown): string { return (error instanceof Error ? error.message : String(error)).slice(0, 2000); }
