@@ -84,6 +84,16 @@ export function totalScore(athletes: FrozenAthlete[], scores: Map<number, Cartol
   }, new Prisma.Decimal(0)).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 }
 
+export function athleteParticipation(scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, completeScoredEnvelope: boolean) {
+  const scoredClubs = new Set([...scores.values()].map((a) => a.clube_id));
+  return (a: FrozenAthlete): boolean | undefined => {
+    if (scores.has(a.atletaId)) return scores.get(a.atletaId)?.entrou_em_campo;
+    const match = a.clubeId === null ? undefined : matches.get(a.clubeId);
+    if (completeScoredEnvelope && match && matchEnded(match) && a.clubeId !== null && scoredClubs.has(a.clubeId)) return false;
+    return undefined;
+  };
+}
+
 export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false) {
   const replacements: Replacement[] = [];
   const pending: string[] = [];
@@ -101,12 +111,7 @@ export function resolveReplacements(team: FrozenTeam, scores: Map<number, Cartol
   // The complete scored-athlete feed omits players who did not participate.
   // Only infer absence after confirmed full time and with scores for this club.
   // Missing participation on an existing entry remains unknown.
-  const scoredClubs = new Set([...scores.values()].map((a) => a.clube_id));
-  const played = (a: FrozenAthlete) => {
-    if (scores.has(a.atletaId)) return scores.get(a.atletaId)?.entrou_em_campo;
-    if (completeScoredEnvelope && finished(a) && a.clubeId !== null && scoredClubs.has(a.clubeId)) return false;
-    return undefined;
-  };
+  const played = athleteParticipation(scores, matches, completeScoredEnvelope);
   const points = (a: FrozenAthlete) => scores.get(a.atletaId)?.pontuacao ?? 0;
   const kickoff = (a: FrozenAthlete) => {
     const m = game(a);

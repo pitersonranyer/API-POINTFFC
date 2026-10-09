@@ -7,7 +7,7 @@ import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPaylo
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeSnapshotsService } from '../time-snapshots/time-snapshots.service';
 import { SincronizacaoPontuacoesService } from '../ligas-competicoes/sincronizacao-pontuacoes.service';
-import { effectiveLineup, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore } from './round-calculator';
+import { athleteParticipation, effectiveLineup, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore } from './round-calculator';
 
 type RoundKey = { temporada: number; rodada: number };
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -256,6 +256,8 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
         ? { ...m, periodo_tr: priorMatches.get(m.partida_id)!.periodo_tr } : m) };
     const scores = scoreMap(scored, key.rodada);
     const clubs = matchesByClub(matches, key.rodada);
+    const completeScoredEnvelope = scored.total_atletas === scores.size && scores.size > 0;
+    const participation = athleteParticipation(scores, clubs, completeScoredEnvelope);
     if (final && teams.length && (clubs.size === 0 || [...clubs.values()].some((m) => !(matchStart(m) <= Date.now())))) {
       throw new Error('Partidas finais ausentes, futuras ou com horario desconhecido');
     }
@@ -289,9 +291,9 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       // when participation and match status are unchanged. The affected query
       // already limits this work to teams whose inputs changed.
       const resolution = resolveReplacements(team, scores, clubs, final,
-        scored.total_atletas === scores.size && scores.size > 0);
+        completeScoredEnvelope);
       if (final && resolution.pending.length) throw new Error(`Time ${team.timeId}: ${resolution.pending.join('; ')}`);
-      if (final && team.escalacao.some((a) => a.titular && !scores.has(a.atletaId))) {
+      if (final && team.escalacao.some((a) => a.titular && !scores.has(a.atletaId) && participation(a) !== false)) {
         throw new Error(`Time ${team.timeId}: atleta titular sem dados finais oficiais`);
       }
       totals.push({ id: team.id, total: totalScore(effectiveLineup(team, resolution.replacements), scores), replacements: resolution.replacements });

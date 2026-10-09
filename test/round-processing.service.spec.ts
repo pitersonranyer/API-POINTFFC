@@ -7,6 +7,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { RoundProcessingService } from '../src/round-processing/round-processing.service';
 import { TimeSnapshotsService } from '../src/time-snapshots/time-snapshots.service';
 import { SincronizacaoPontuacoesService } from '../src/ligas-competicoes/sincronizacao-pontuacoes.service';
+import { effectiveLineup } from '../src/round-processing/round-calculator';
 
 function setup() {
   let round: any = null;
@@ -105,6 +106,139 @@ function setup() {
     failCommit: (value: boolean) => { failCommit = value; },
   };
 }
+
+describe('Consolidacao de titulares omitidos', () => {
+  beforeAll(() => Logger.overrideLogger([]));
+  async function fixture(capitao = false, reservePoints = 7.2, complete = true) {
+    const f = setup(); f.closed(); await f.create().tick();
+    const target = f.teams[0];
+    target.capitaoId = capitao ? 10 : 11;
+    target.escalacao = [
+      { atletaId: 10, nome: 'Britez (simulado)', posicaoId: 5, clubeId: 1, titular: true, reserva: false, capitao },
+      ...Array.from({ length: 11 }, (_, i) => ({ atletaId: 11 + i, posicaoId: i === 10 ? 6 : 4,
+        clubeId: 1, titular: true, reserva: false, capitao: !capitao && i === 0 })),
+      { atletaId: 30, nome: 'Millan (simulado)', posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false },
+    ];
+    // Fixture sintetica: os 11 participantes somam 133,07 antes da troca.
+    const atletas: CartolaScoredAthletesPayload['atletas'] = {
+      '11': { pontuacao: capitao ? 123.07 : 82.04666666666667, entrou_em_campo: true, clube_id: 1 },
+      '30': { pontuacao: reservePoints, entrou_em_campo: true, clube_id: 2 },
+    };
+    for (let id = 12; id <= 21; id++) atletas[id] = { pontuacao: 1, entrou_em_campo: true, clube_id: 1 };
+    const envelope = { rodada: 25, total_atletas: Object.keys(atletas).length, atletas };
+    f.points(complete ? envelope : { rodada: envelope.rodada, atletas }); f.end(); await f.create().tick();
+    return { f, envelope };
+  }
+
+  it('reavalia sem diff, persiste Britez/Millan simulado, soma 7,20 e repete sem duplicar', async () => {
+    const { f } = await fixture();
+    const frozen = JSON.stringify(f.teams.map((t) => t.escalacao));
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(140.27);
+    // Simula a ultima parcial ainda sem troca, embora o envelope ja esteja persistido.
+    f.teams[0].substituicoes = [];
+    f.teams[0].pontuacao.pontuacao = new Prisma.Decimal(133.07);
+    f.prisma.timeRodada.findMany.mockClear(); f.prisma.$executeRaw.mockClear();
+    f.open(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.teams.every((t) => t.pontuacao.status === 'FINAL')).toBe(true);
+    const target = f.teams[0];
+    expect(target.pontuacao.pontuacao.minus(133.07).toNumber()).toBe(7.2);
+    expect(target.substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 30, posicaoId: 5 }]);
+    const lineup = effectiveLineup(target, target.substituicoes);
+    expect(lineup).toHaveLength(12);
+    expect(lineup.filter((a) => f.round.pontuados.atletas[a.atletaId]?.entrou_em_campo)).toHaveLength(12);
+    expect(f.prisma.timeRodada.findMany.mock.calls.every(([args]) => !args.where.OR)).toBe(true);
+    expect(f.prisma.$executeRaw.mock.calls.some(([sql]) => sql.sql.includes('INSERT INTO SUBSTITUICAO'))).toBe(true);
+    const totals = f.teams.map((t) => t.pontuacao.pontuacao.toString());
+    await f.create().reconsolidarRodada(25, 2026);
+    await f.create().reconsolidarRodada(25, 2026);
+    expect(f.teams.map((t) => t.pontuacao.pontuacao.toString())).toEqual(totals);
+    expect(target.substituicoes).toHaveLength(1);
+    expect(JSON.stringify(f.teams.map((t) => t.escalacao))).toBe(frozen);
+    expect(f.snapshots.criarSnapshot).toHaveBeenCalledTimes(3);
+    expect(f.cartola.getTeamById).not.toHaveBeenCalled();
+  });
+
+  it.each(['sem-total', 'total-inconsistente', 'em-jogo', 'status-desconhecido', 'sem-cobertura', 'sem-reserva'])('preserva parcial e permite retry com %s', async (condition) => {
+    const { f, envelope } = await fixture();
+    const before = f.teams.map((t) => t.pontuacao.pontuacao.toString());
+    const substitutions = JSON.stringify(f.teams.map((t) => t.substituicoes));
+    const invalid = JSON.parse(JSON.stringify(envelope)) as CartolaScoredAthletesPayload;
+    if (condition === 'sem-total') delete invalid.total_atletas;
+    if (condition === 'total-inconsistente') invalid.total_atletas!++;
+    if (condition === 'sem-cobertura') Object.values(invalid.atletas!).forEach((a) => { a.clube_id = 2; });
+    if (condition === 'sem-reserva') { f.teams[0].escalacao.pop(); delete invalid.total_atletas; }
+    if (condition === 'em-jogo' || condition === 'status-desconhecido') {
+      const partidas = [{ partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2, valida: true,
+        periodo_tr: condition === 'em-jogo' ? '2T' : '', timestamp: 1000 }];
+      // Retira tambem a confirmacao anterior para testar status realmente desconhecido.
+      f.round.partidas = { rodada: 25, clubes: {}, partidas };
+      f.matches({ rodada: 25, clubes: {}, partidas });
+    }
+    f.points(invalid); f.open(); f.prisma.$executeRaw.mockClear();
+    await f.create().tick();
+    expect(f.round.status).not.toBe('CONSOLIDADA');
+    expect(f.round.erro).toBeTruthy();
+    expect(f.round.lockToken).toBeNull();
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.teams.map((t) => t.pontuacao.pontuacao.toString())).toEqual(before);
+    expect(JSON.stringify(f.teams.map((t) => t.substituicoes))).toBe(substitutions);
+    // Sem reserva, a ausencia ainda precisa de prova; com prova aceita zero.
+    f.points(envelope); f.end(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+  });
+
+  it.each([0, -2])('nao usa reserva normal com %s mesmo com ausencia comprovada', async (points) => {
+    const { f } = await fixture(false, points);
+    f.open(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.teams[0].substituicoes).toEqual([]);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(133.07);
+  });
+
+  it('transfere capitao omitido e multiplica reserva por 1,5', async () => {
+    const { f } = await fixture(true);
+    f.open(); await f.create().tick();
+    const target = f.teams[0];
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(143.87);
+    expect(effectiveLineup(target, target.substituicoes).find((a) => a.capitao)?.atletaId).toBe(30);
+  });
+
+  it('reavalia participacao pendente quando apenas a completude do envelope muda', async () => {
+    const { f, envelope } = await fixture(false, 7.2, false);
+    expect(f.teams[0].substituicoes).toEqual([]);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(133.07);
+    f.points(envelope); f.open(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(f.teams[0].substituicoes).toHaveLength(1);
+  });
+
+  it.each([false, true])('luxo com titular ausente segue regra normal, positivo=%s', async (positive) => {
+    const { f } = await fixture(false, positive ? 7.2 : -1);
+    f.teams[0].reservaLuxoId = 30;
+    f.open(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(f.teams[0].substituicoes).toHaveLength(positive ? 1 : 0);
+  });
+
+  it('consolida luxo negativo superior e transfere capitao sem reutilizar reserva', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    const target = f.teams[0]; target.reservaLuxoId = 30;
+    target.escalacao.push({ atletaId: 30, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
+    f.points({ rodada: 25, atletas: {
+      '10': { pontuacao: -2, entrou_em_campo: true },
+      '11': { pontuacao: 4, entrou_em_campo: true },
+      '30': { pontuacao: -1, entrou_em_campo: true },
+    } });
+    f.end(); f.open(); await f.create().tick();
+    expect(f.round.status).toBe('CONSOLIDADA');
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(-1.5);
+    await f.create().reconsolidarRodada(25, 2026);
+    expect(target.substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 30, posicaoId: 5 }]);
+  });
+});
 
 describe('Reprocessamento manual', () => {
   beforeAll(() => Logger.overrideLogger([]));
