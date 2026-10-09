@@ -94,6 +94,21 @@ export function athleteParticipation(scores: Map<number, CartolaScoredAthlete>, 
   };
 }
 
+export function validateFinalData(scores: Map<number, CartolaScoredAthlete>, clubs: Map<number, CartolaMatch>): void {
+  if (clubs.size === 0 || [...clubs.values()].some((m) => !(matchStart(m) <= Date.now()))) {
+    throw new Error('Partidas finais ausentes, futuras ou com horario desconhecido');
+  }
+  if (scores.size === 0) throw new Error('Pontuados finais vazios');
+}
+
+export function validateFinalTeam(team: FrozenTeam & { timeId: number }, resolution: { pending: string[] },
+  scores: Map<number, CartolaScoredAthlete>, participation: (a: FrozenAthlete) => boolean | undefined): void {
+  if (resolution.pending.length) throw new Error(`Time ${team.timeId}: ${resolution.pending.join('; ')}`);
+  if (team.escalacao.some((a) => a.titular && !scores.has(a.atletaId) && participation(a) !== false)) {
+    throw new Error(`Time ${team.timeId}: atleta titular sem dados finais oficiais`);
+  }
+}
+
 export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false) {
   const replacements: Replacement[] = [];
   const pending: string[] = [];

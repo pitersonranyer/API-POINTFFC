@@ -11,7 +11,9 @@ describe('POST admin/rodadas/:rodada/reprocessar-parciais', () => {
   let app: INestApplication;
   let base: string;
   const summary = { temporada: 2026, rodada: 25, status: 'PARCIAL', timesProcessados: 3, timesComErro: 0, substituicoesAlteradas: 1, duracaoMs: 10, processadoEm: '2026-09-07T00:00:00.000Z' };
-  const processing = { reprocessarParciais: jest.fn().mockResolvedValue(summary) };
+  const simulation = { temporada: 2026, rodada: 29, statusRodada: 'CONSOLIDADA', totalTimes: 0,
+    consistentes: 0, divergentes: 0, pendentesDeDados: 0, naoVerificaveis: 0, times: [] };
+  const processing = { reprocessarParciais: jest.fn().mockResolvedValue(summary), simularReconsolidacao: jest.fn().mockResolvedValue(simulation) };
   beforeAll(async () => {
     const module = await Test.createTestingModule({ controllers: [AdminRoundsController], providers: [
       JwtAuthGuard, AdminGuard,
@@ -24,7 +26,28 @@ describe('POST admin/rodadas/:rodada/reprocessar-parciais', () => {
     base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
   });
   afterAll(async () => { await app?.close(); });
-  beforeEach(() => processing.reprocessarParciais.mockClear());
+  beforeEach(() => { processing.reprocessarParciais.mockClear(); processing.simularReconsolidacao.mockClear(); });
+  it.each(['PLAYER', 'ORGANIZER'])('simulacao retorna 403 para %s', async (role) => {
+    const response = await fetch(`${base}/admin/rodadas/29/simular-reconsolidacao?temporada=2026`, { headers: { Authorization: `Bearer ${role}` } });
+    expect(response.status).toBe(403);
+    expect(processing.simularReconsolidacao).not.toHaveBeenCalled();
+  });
+  it('GET ADMIN simula historico sem acionar reprocessamento', async () => {
+    const response = await fetch(`${base}/admin/rodadas/29/simular-reconsolidacao?temporada=2026`, { headers: { Authorization: 'Bearer PLATFORM_ADMIN' } });
+    expect(response.status).toBe(200); expect(await response.json()).toEqual(simulation);
+    expect(processing.simularReconsolidacao).toHaveBeenCalledWith(29, 2026);
+    expect(processing.reprocessarParciais).not.toHaveBeenCalled();
+  });
+  it('GET sem JWT retorna 401', async () => {
+    expect((await fetch(`${base}/admin/rodadas/29/simular-reconsolidacao?temporada=2026`)).status).toBe(401);
+    expect(processing.simularReconsolidacao).not.toHaveBeenCalled();
+  });
+  it.each(['29', '39?temporada=2026', '29?temporada=abc', '29?temporada=0'])('GET valida parametros %s', async (input) => {
+    const [round, query = ''] = input.split('?');
+    const response = await fetch(`${base}/admin/rodadas/${round}/simular-reconsolidacao?${query}`, { headers: { Authorization: 'Bearer PLATFORM_ADMIN' } });
+    expect(response.status).toBe(400);
+    expect(processing.simularReconsolidacao).not.toHaveBeenCalled();
+  });
   it.each(['PLAYER', 'ORGANIZER'])('retorna 403 para %s', async (role) => {
     const response = await fetch(`${base}/admin/rodadas/25/reprocessar-parciais?temporada=2026`, { method: 'POST', headers: { Authorization: `Bearer ${role}` } });
     expect(response.status).toBe(403);

@@ -7,7 +7,8 @@ import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPaylo
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeSnapshotsService } from '../time-snapshots/time-snapshots.service';
 import { SincronizacaoPontuacoesService } from '../ligas-competicoes/sincronizacao-pontuacoes.service';
-import { athleteParticipation, effectiveLineup, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore } from './round-calculator';
+import { athleteParticipation, effectiveLineup, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore, validateFinalData, validateFinalTeam } from './round-calculator';
+import { simulateRound } from './round-simulation';
 
 type RoundKey = { temporada: number; rodada: number };
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
@@ -30,6 +31,20 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     if (this.config.get<string>('NODE_ENV') !== 'test' && this.config.get<boolean>('ROUND_PROCESSING_ENABLED', true)) this.schedule(0);
   }
   onModuleDestroy(): void { this.stopped = true; if (this.timer) clearTimeout(this.timer); }
+
+  async simularReconsolidacao(rodada: number, temporada: number) {
+    if (!Number.isInteger(temporada) || temporada < 1 || temporada > 65535
+      || !Number.isInteger(rodada) || rodada < 1 || rodada > 38) throw new BadRequestException('Temporada/rodada invalidas');
+    const key = { temporada, rodada };
+    return this.prisma.$transaction(async (tx) => {
+      const round = await tx.rodadaProcessamento.findUnique({ where: { temporada_rodada: key } });
+      if (!round) throw new NotFoundException('Rodada nao encontrada');
+      const teams = await tx.timeRodada.findMany({ where: key, orderBy: { timeId: 'asc' },
+        include: { time: { select: { nomeTime: true } }, escalacao: true, pontuacao: true,
+          substituicoes: { where: { ativa: true } } } });
+      return simulateRound(round, teams);
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  }
   private schedule(delay: number): void {
     if (this.stopped) return;
     this.timer = setTimeout(() => { void this.tick().then((next) => this.schedule(next)); }, delay);
@@ -258,10 +273,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const clubs = matchesByClub(matches, key.rodada);
     const completeScoredEnvelope = scored.total_atletas === scores.size && scores.size > 0;
     const participation = athleteParticipation(scores, clubs, completeScoredEnvelope);
-    if (final && teams.length && (clubs.size === 0 || [...clubs.values()].some((m) => !(matchStart(m) <= Date.now())))) {
-      throw new Error('Partidas finais ausentes, futuras ou com horario desconhecido');
-    }
-    if (final && scores.size === 0 && teams.length) throw new Error('Pontuados finais vazios');
+    if (final && teams.length) validateFinalData(scores, clubs);
     const previous = round.pontuados as CartolaScoredAthletesPayload | null;
     const oldScores = previous?.atletas ?? {};
     if (scores.size === 0 && Object.keys(oldScores).length > 0) throw new Error('Envelope vazio apos pontuados validos; preservar ultima parcial');
@@ -292,10 +304,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       // already limits this work to teams whose inputs changed.
       const resolution = resolveReplacements(team, scores, clubs, final,
         completeScoredEnvelope);
-      if (final && resolution.pending.length) throw new Error(`Time ${team.timeId}: ${resolution.pending.join('; ')}`);
-      if (final && team.escalacao.some((a) => a.titular && !scores.has(a.atletaId) && participation(a) !== false)) {
-        throw new Error(`Time ${team.timeId}: atleta titular sem dados finais oficiais`);
-      }
+      if (final) validateFinalTeam(team, resolution, scores, participation);
       totals.push({ id: team.id, total: totalScore(effectiveLineup(team, resolution.replacements), scores), replacements: resolution.replacements });
       substitutionCount += resolution.replacements.length;
       const signature = (r: Replacement) => `${r.atletaSaiuId}:${r.atletaEntrouId}:${r.posicaoId}`;

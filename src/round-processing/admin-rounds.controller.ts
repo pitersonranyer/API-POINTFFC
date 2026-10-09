@@ -1,4 +1,4 @@
-import { Controller, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsInt, Max, Min } from 'class-validator';
@@ -21,6 +21,13 @@ export class ReprocessarParciaisQueryDto {
 @Controller('admin/rodadas')
 export class AdminRoundsController {
   constructor(private readonly processing: RoundProcessingService) {}
+
+  @Get(':rodada/simular-reconsolidacao')
+  @ApiOperation({ summary: 'Simula reconsolidacao historica com dados persistidos, sem gravacao' })
+  @ApiQuery({ name: 'temporada', required: true, type: Number })
+  simular(@Param() params: RoundParamsDto, @Query() query: ReprocessarParciaisQueryDto) {
+    return this.processing.simularReconsolidacao(params.rodada, query.temporada);
+  }
 
   @Post(':rodada/reprocessar-parciais')
   @HttpCode(200)
