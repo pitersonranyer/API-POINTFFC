@@ -104,9 +104,15 @@ export function totalScore(athletes: FrozenAthlete[], scores: Map<number, Cartol
   }, new Prisma.Decimal(0)).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
 }
 
-export function athleteParticipation(scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, completeScoredEnvelope: boolean) {
+export function athleteParticipation(scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, completeScoredEnvelope: boolean,
+  complementary?: ReadonlyMap<number, boolean>) {
   const scoredClubs = new Set([...scores.values()].map((a) => a.clube_id));
   return (a: FrozenAthlete): boolean | undefined => {
+    if (complementary?.has(a.atletaId)) {
+      const official = scores.get(a.atletaId)?.entrou_em_campo;
+      const historical = complementary.get(a.atletaId)!;
+      return typeof official === 'boolean' && official !== historical ? undefined : historical;
+    }
     if (scores.has(a.atletaId)) return scores.get(a.atletaId)?.entrou_em_campo;
     const match = a.clubeId === null ? undefined : matches.get(a.clubeId);
     if (completeScoredEnvelope && match && matchEnded(match) && a.clubeId !== null && scoredClubs.has(a.clubeId)) return false;
@@ -130,7 +136,7 @@ export function validateFinalTeam(team: FrozenTeam & { timeId: number }, resolut
 }
 
 export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false,
-  historicalFinished?: (match: CartolaMatch) => boolean) {
+  historicalFinished?: (match: CartolaMatch) => boolean, participation?: ReturnType<typeof athleteParticipation>) {
   const replacements: Replacement[] = [];
   const pending: string[] = [];
   const pendingPositions: number[] = [];
@@ -148,7 +154,7 @@ export function resolveReplacements(team: FrozenTeam, scores: Map<number, Cartol
   // The complete scored-athlete feed omits players who did not participate.
   // Only infer absence after confirmed full time and with scores for this club.
   // Missing participation on an existing entry remains unknown.
-  const played = athleteParticipation(scores, matches, completeScoredEnvelope);
+  const played = participation ?? athleteParticipation(scores, matches, completeScoredEnvelope);
   const points = (a: FrozenAthlete) => scores.get(a.atletaId)?.pontuacao ?? 0;
   const kickoff = (a: FrozenAthlete) => {
     const m = game(a);

@@ -3,11 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, RodadaProcessamento } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { CartolaService } from '../cartola/cartola.service';
-import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPayload } from '../cartola/cartola.types';
+import { CartolaMarketStatus, CartolaMatchesResponse, CartolaScoredAthletesPayload, CartolaTimeSnapshotPayload } from '../cartola/cartola.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { TimeSnapshotsService } from '../time-snapshots/time-snapshots.service';
 import { SincronizacaoPontuacoesService } from '../ligas-competicoes/sincronizacao-pontuacoes.service';
-import { athleteParticipation, effectiveLineup, historicalMatchState, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore, validateFinalData, validateFinalTeam } from './round-calculator';
+import { athleteParticipation, effectiveLineup, FrozenTeam, historicalMatchState, matchEnded, matchStart, matchesByClub, Replacement, resolveReplacements, scoreMap, totalScore, validateFinalData, validateFinalTeam } from './round-calculator';
 import { simulateRound } from './round-simulation';
 
 type RoundKey = { temporada: number; rodada: number };
@@ -347,6 +347,69 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       falhasSnapshot: failures.length, duracaoMs: Date.now() - started, resultado: failures.length ? 'PENDENTE' : 'OK' });
   }
 
+  private async historicalParticipation(team: FrozenTeam & RoundKey & { timeId: number }, key: RoundKey,
+    market: CartolaMarketStatus, token: string, scores: ReturnType<typeof scoreMap>, clubs: ReturnType<typeof matchesByClub>,
+    participation: ReturnType<typeof athleteParticipation>): Promise<Map<number, boolean>> {
+    // The team endpoint has no independent season marker. Bind it to the current
+    // official season, dated matches and the frozen season/round, then recheck market.
+    if (market.temporada !== key.temporada || key.rodada >= market.rodada_atual
+      || team.temporada !== key.temporada || team.rodada !== key.rodada
+      || team.escalacao.some(a => a.clubeId === null || !clubs.has(a.clubeId)
+        || new Date(matchStart(clubs.get(a.clubeId)!)).getUTCFullYear() !== key.temporada)) {
+      throw new ConflictException('Participacao historica sem contexto confiavel de temporada/rodada');
+    }
+    await this.lease(key, token);
+    let source: CartolaTimeSnapshotPayload;
+    try { source = (await this.cartola.getTeamById(team.timeId, { round: key.rodada, forceRefresh: true })).value; }
+    catch { throw new ConflictException('Consulta historica de participacao indisponivel; resultado anterior preservado'); }
+    await this.lease(key, token);
+    const latest = await this.cartola.loadMarketStatusFresh();
+    this.validateMarket(latest);
+    if (latest.temporada !== market.temporada || latest.rodada_atual !== market.rodada_atual
+      || latest.status_mercado !== market.status_mercado) throw new ConflictException('Contexto oficial mudou durante consulta historica');
+    if (!source || source.time?.time_id !== team.timeId
+      || (source.time_id !== undefined && source.time_id !== team.timeId)) throw new ConflictException('Identidade do time historico incompatível');
+    if (source.rodada_atual !== key.rodada || source.time.rodada_time_id !== key.rodada
+      || (source.rodada_time_id !== undefined && source.rodada_time_id !== key.rodada)
+      || (source.temporada !== undefined && source.temporada !== key.temporada)
+      || (source.time.temporada !== undefined && source.time.temporada !== key.temporada)) {
+      throw new ConflictException('Temporada/rodada da consulta historica incompatível');
+    }
+    if (!Array.isArray(source.atletas) || !Array.isArray(source.reservas)) {
+      throw new ConflictException('Listas de atletas da consulta historica ausentes');
+    }
+    const complementary = new Map<number, boolean>();
+    for (const frozen of team.escalacao) {
+      const entries = [
+        ...source.atletas.filter(a => a?.atleta_id === frozen.atletaId).map(a => ({ a, titular: true, reserva: false })),
+        ...source.reservas.filter(a => a?.atleta_id === frozen.atletaId).map(a => ({ a, titular: false, reserva: true })),
+      ];
+      if (!entries.length) continue; // Missing is unknown, never false.
+      if (entries.length !== 1) throw new ConflictException(`Atleta ${frozen.atletaId}: identidade historica duplicada`);
+      const { a, titular, reserva } = entries[0];
+      if (a.clube_id !== frozen.clubeId || a.posicao_id !== frozen.posicaoId
+        || titular !== frozen.titular || reserva !== frozen.reserva || a.rodada_id !== key.rodada) {
+        throw new ConflictException(`Atleta ${frozen.atletaId}: clube, posicao, papel ou rodada historica incompatível com snapshot`);
+      }
+      if (typeof a.entrou_em_campo !== 'boolean') continue;
+      const official = scores.get(frozen.atletaId);
+      if (official && ((official.clube_id !== undefined && official.clube_id !== frozen.clubeId)
+        || (official.posicao_id !== undefined && official.posicao_id !== frozen.posicaoId))) {
+        throw new ConflictException(`Atleta ${frozen.atletaId}: identidade dos pontuados incompatível com snapshot`);
+      }
+      if (participation(frozen) !== undefined && participation(frozen) !== a.entrou_em_campo) {
+        throw new ConflictException(`Atleta ${frozen.atletaId}: conflito de participacao entre fontes oficiais`);
+      }
+      if (a.entrou_em_campo && !scores.has(frozen.atletaId)) {
+        throw new ConflictException(`Atleta ${frozen.atletaId}: participacao true sem pontuacao oficial no envelope`);
+      }
+      complementary.set(frozen.atletaId, a.entrou_em_campo);
+    }
+    const unresolved = team.escalacao.filter(a => participation(a) === undefined && !complementary.has(a.atletaId));
+    if (unresolved.length) throw new ConflictException(`Participacao historica sem booleano explicito para atletas ${unresolved.map(a => a.atletaId).join(', ')}; resultado anterior preservado`);
+    return complementary;
+  }
+
   private async calculate(round: RodadaProcessamento, market: CartolaMarketStatus, token: string, final: boolean, manual = false,
     official?: AdministrativeEvidence) {
     const key = keyOf(round);
@@ -425,19 +488,26 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
         throw new ConflictException('Clube sem partida final confirmada no snapshot');
       }
       const confirmed = team.escalacao.every(a => a.clubeId !== null && !!clubs.get(a.clubeId) && matchEnded(clubs.get(a.clubeId)!));
-      if (historical && !confirmed && team.escalacao.some(a => participation(a) === undefined)) {
-        throw new ConflictException('FINAL_PRESUMIDO: participacao ou ausencia sem comprovacao suficiente; resultado anterior preservado');
+      let teamParticipation = participation;
+      if (historical && team.escalacao.some(a => participation(a) === undefined)) {
+        try {
+          const complementary = await this.historicalParticipation(team, key, market, token, scores, clubs, participation);
+          teamParticipation = athleteParticipation(scores, clubs, completeScoredEnvelope, complementary);
+        } catch (error) {
+          if (confirmed) throw error;
+          throw new ConflictException(`FINAL_PRESUMIDO: participacao ou ausencia sem comprovacao suficiente; ${this.message(error)}`);
+        }
       }
       // A score correction can enable, reverse, or change a replacement even
       // when participation and match status are unchanged. The affected query
       // already limits this work to teams whose inputs changed.
       const resolution = resolveReplacements(team, scores, clubs, false,
-        completeScoredEnvelope, historicalFinished);
+        completeScoredEnvelope, historicalFinished, historical ? teamParticipation : undefined);
       if (individual) {
         const relevantClubs = new Map([...clubs].filter(([clubId]) => team.escalacao.some(a => a.clubeId === clubId)));
         validateFinalData(scores, relevantClubs);
       }
-      if (final || individual) validateFinalTeam(team, resolution, scores, participation);
+      if (final || individual) validateFinalTeam(team, resolution, scores, teamParticipation);
       if (!final && !individual && resolution.pending.length) {
         this.logger.warn({ ...key, timeId: team.timeId, etapa: 'PARTICIPACAO_PENDENTE', pendencias: resolution.pending });
         if (team.substituicoes.some(r => resolution.pendingPositions.includes(r.posicaoId))) {
@@ -446,7 +516,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
         errors++;
       }
       if ((!final && !individual && team.pontuacao?.status === 'FINAL') || ((final || individual)
-        && effectiveLineup(team, resolution.replacements).some((a) => participation(a) === undefined))) {
+        && effectiveLineup(team, resolution.replacements).some((a) => teamParticipation(a) === undefined))) {
         throw new ConflictException('Participacao ou substituicao pendente; preservar resultado anterior do time');
       }
       const signature = (r: Replacement) => `${r.atletaSaiuId}:${r.atletaEntrouId}:${r.posicaoId}`;

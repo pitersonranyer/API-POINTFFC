@@ -286,6 +286,201 @@ describe('Reprocessamento manual', () => {
     }
     return f;
   }
+  function historicalTeamSource(target: any, source: CartolaScoredAthletesPayload, flags: Record<number, unknown> = {}) {
+    const athlete = (a: any) => ({ atleta_id: a.atletaId, clube_id: a.clubeId, posicao_id: a.posicaoId,
+      rodada_id: 29, entrou_em_campo: Object.prototype.hasOwnProperty.call(flags, a.atletaId)
+        ? flags[a.atletaId] : source.atletas?.[a.atletaId]?.entrou_em_campo,
+      pontos_num: 9999, // Historical points must never replace the scoring envelope.
+    });
+    return { rodada_atual: 29, time: { time_id: target.timeId, rodada_time_id: 29 },
+      atletas: target.escalacao.filter((a: any) => a.titular).map(athlete),
+      reservas: target.escalacao.filter((a: any) => a.reserva).map(athlete),
+      capitao_id: 9999, reserva_luxo_id: 9999,
+    };
+  }
+  async function complementaryFixture(consolidated = false) {
+    const f = await presumed(false, consolidated);
+    const publicTeam = historicalTeamSource(f.target, f.source, { 10: false });
+    f.f.cartola.getTeamById.mockResolvedValue({ value: publicTeam, cache: 'miss', stale: false });
+    return { ...f, publicTeam };
+  }
+  it('complementa ausencia explicita em memoria, preserva snapshot/envelope e repete sem gravar', async () => {
+    const { f, target, source } = await complementaryFixture();
+    const frozen = JSON.stringify(target.escalacao);
+    const envelope = JSON.stringify(source);
+    const service = f.create();
+    const result = await service.reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 1, pendentes: 0, rodadaConsolidada: false });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(target.pontuacao.status).toBe('PARCIAL');
+    expect(JSON.stringify(target.escalacao)).toBe(frozen);
+    expect(JSON.stringify(f.round.pontuados)).toBe(envelope);
+    expect(source.atletas!['10']).toBeUndefined();
+    expect(f.cartola.getTeamById).toHaveBeenCalledWith(30157355, { round: 29, forceRefresh: true });
+    expect(target.capitaoId).toBe(11);
+    expect(target.reservaLuxoId).toBeNull();
+    f.prisma.$executeRaw.mockClear(); f.sincronizacao.sincronizarRodada.mockClear();
+    expect(await service.reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, inalterados: 1 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('participacao true complementar utiliza somente pontos presentes no envelope', async () => {
+    const { f, target, source } = await presumed();
+    delete source.atletas['124219'].entrou_em_campo;
+    f.round.pontuados = null;
+    f.cartola.getTeamById.mockResolvedValue({ value: historicalTeamSource(target, source, { 124219: true }) });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 1, pendentes: 0 });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(source.atletas['124219'].pontuacao).toBe(7.2);
+  });
+  it('participacao true de titular omitido nao inventa pontuacao', async () => {
+    const { f, target, publicTeam } = await complementaryFixture();
+    publicTeam.atletas.find((a: any) => a.atleta_id === 10).entrou_em_campo = true;
+    const before = JSON.stringify(target);
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(result.motivosPendencia![0].motivo).toContain('Atleta 10: participacao true sem pontuacao');
+    expect(JSON.stringify(target)).toBe(before);
+  });
+  it.each([undefined, null, 0, 'false'])('nao converte participacao %s em false', async value => {
+    const { f, target, publicTeam } = await complementaryFixture();
+    publicTeam.atletas.find((a: any) => a.atleta_id === 10).entrou_em_campo = value;
+    const before = JSON.stringify(target);
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(result.motivosPendencia![0].motivo).toContain('booleano explicito para atletas 10');
+    expect(JSON.stringify(target)).toBe(before);
+  });
+  it.each(['id', 'clube', 'posicao', 'papel', 'rodada atleta', 'duplicado'])('rejeita atleta historico incompatível: %s', async condition => {
+    const { f, target, publicTeam } = await complementaryFixture();
+    const a = publicTeam.atletas.find((entry: any) => entry.atleta_id === 10);
+    if (condition === 'id') a.atleta_id = 999;
+    if (condition === 'clube') a.clube_id = 999;
+    if (condition === 'posicao') a.posicao_id = 2;
+    if (condition === 'rodada atleta') a.rodada_id = 30;
+    if (condition === 'papel') { publicTeam.atletas = publicTeam.atletas.filter((entry: any) => entry !== a); publicTeam.reservas.push(a); }
+    if (condition === 'duplicado') publicTeam.atletas.push({ ...a });
+    const before = JSON.stringify(target);
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(result.motivosPendencia![0].motivo).toContain('10');
+    expect(JSON.stringify(target)).toBe(before);
+  });
+  it.each(['time', 'rodada_atual', 'rodada_time_id', 'temporada'])('rejeita contexto historico incompatível: %s', async condition => {
+    const { f, target, publicTeam } = await complementaryFixture();
+    if (condition === 'time') publicTeam.time.time_id = 999;
+    if (condition === 'rodada_atual') publicTeam.rodada_atual = 30;
+    if (condition === 'rodada_time_id') publicTeam.time.rodada_time_id = 30;
+    if (condition === 'temporada') Object.assign(publicTeam, { temporada: 2025 });
+    const before = JSON.stringify(target);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(JSON.stringify(target)).toBe(before);
+  });
+  it('snapshot sem contexto confiavel de temporada nao consulta fonte complementar', async () => {
+    const { f, target } = await complementaryFixture();
+    target.temporada = 2025;
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(result.motivosPendencia![0].motivo).toContain('contexto confiavel');
+    expect(f.cartola.getTeamById).not.toHaveBeenCalled();
+  });
+  it('mudanca da temporada oficial durante consulta impede qualquer gravacao de resultados', async () => {
+    const { f, target, publicTeam } = await complementaryFixture();
+    const before = JSON.stringify(target);
+    f.cartola.getTeamById.mockImplementation(async () => {
+      f.cartola.loadMarketStatusFresh.mockResolvedValue({ temporada: 2025, rodada_atual: 30, status_mercado: 1, bola_rolando: false });
+      return { value: publicTeam };
+    });
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toThrow('Mercado mudou durante reprocessamento');
+    expect(JSON.stringify(target)).toBe(before);
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+    expect(f.round.lockToken).toBeNull();
+  });
+  it('conflito entre fontes identifica atleta e preserva todo o resultado', async () => {
+    const { f, target, publicTeam } = await complementaryFixture();
+    publicTeam.atletas.find((a: any) => a.atleta_id === 11).entrou_em_campo = false;
+    const before = JSON.stringify(target);
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(result.motivosPendencia![0].motivo).toContain('Atleta 11: conflito de participacao');
+    expect(JSON.stringify(target)).toBe(before);
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it.each([30157304, 30157311, 30157320, 30157325])('Giay e Piquerez ausentes nao forcam troca no time %s (sintetico)', async timeId => {
+    const { f, target, source } = await presumed(false);
+    target.timeId = timeId; f.round.timesPrevistos = [timeId];
+    Object.assign(target.escalacao[0], { atletaId: 124526, posicaoId: 2 });
+    Object.assign(target.escalacao.find((a: any) => a.reserva), { atletaId: 102130, posicaoId: 2 });
+    delete source.atletas['124219']; source.total_atletas--;
+    f.cartola.getTeamById.mockResolvedValue({ value: historicalTeamSource(target, source, { 124526: false, 102130: false }) });
+    const frozen = JSON.stringify(target.escalacao);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, inalterados: 1, pendentes: 0 });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(target.substituicoes).toEqual([]);
+    expect(JSON.stringify(target.escalacao)).toBe(frozen);
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('Soteldo e Monzon ausentes nao forcam troca ou Reserva de Luxo no D04 sintetico', async () => {
+    const { f, target, source } = await presumed();
+    target.timeId = 44566184; f.round.timesPrevistos = [44566184];
+    source.atletas['10'].entrou_em_campo = true;
+    Object.assign(target.escalacao.find((a: any) => a.reserva), { atletaId: 124483 });
+    delete source.atletas['124219']; source.total_atletas--;
+    target.escalacao.find((a: any) => a.atletaId === 13).posicaoId = 5;
+    target.escalacao.push({ atletaId: 87258, posicaoId: 5, clubeId: 266, titular: false, reserva: true, capitao: false });
+    target.reservaLuxoId = 87258;
+    f.cartola.getTeamById.mockResolvedValue({ value: historicalTeamSource(target, source, { 124483: false, 87258: false }) });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, inalterados: 1, pendentes: 0 });
+    expect(target.substituicoes).toEqual([]);
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+  });
+  it('capitao efetivo e Reserva de Luxo continuam no mesmo motor', async () => {
+    const { f, target, source } = await presumed();
+    target.capitaoId = 10; target.reservaLuxoId = 124219;
+    target.escalacao.forEach((a: any) => { a.capitao = a.atletaId === 10; });
+    delete source.atletas['10'].entrou_em_campo; f.round.pontuados = null;
+    f.cartola.getTeamById.mockResolvedValue({ value: historicalTeamSource(target, source, { 10: true }) });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 1, pendentes: 0 });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(143.87);
+    expect(effectiveLineup(target, target.substituicoes).find(a => a.capitao)?.atletaId).toBe(124219);
+  });
+  it('complemento nao altera FINAL divergente sob presuncao', async () => {
+    const { f, target } = await complementaryFixture(true);
+    const before = JSON.stringify(target);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, pendentes: 1 });
+    expect(JSON.stringify(target)).toBe(before);
+  });
+  it('C01 ja corrigido permanece estavel sem consulta complementar ou sincronizacao', async () => {
+    const { f, target, source } = await presumed();
+    target.escalacao[0].atletaId = 101995;
+    source.atletas['101995'] = source.atletas['10']; delete source.atletas['10'];
+    target.pontuacao = { pontuacao: new Prisma.Decimal(140.27), status: 'FINAL' };
+    target.substituicoes = [{ atletaSaiuId: 101995, atletaEntrouId: 124219, posicaoId: 3 }];
+    const before = JSON.stringify(target);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ atualizados: 0, inalterados: 1, pendentes: 0 });
+    expect(JSON.stringify(target)).toBe(before);
+    expect(f.cartola.getTeamById).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('falha na fonte de um time nao impede outro time com participacao comprovada', async () => {
+    const { f, target, source } = await complementaryFixture();
+    const other = { ...target, id: 2, timeId: 30157304, escalacao: target.escalacao.map((a: any) => ({ ...a })),
+      pontuacao: { ...target.pontuacao }, substituicoes: [] };
+    f.teams.push(other); f.round.timesPrevistos.push(other.timeId);
+    f.cartola.getTeamById.mockImplementation(async (timeId: number) => {
+      if (timeId === target.timeId) throw new Error('private transport diagnostic');
+      return { value: historicalTeamSource(other, source, { 10: false }) };
+    });
+    const before = JSON.stringify(target);
+    const result = await f.create().reprocessarParciais(29, 2026);
+    expect(result).toMatchObject({ atualizados: 1, pendentes: 1 });
+    expect(result.motivosPendencia![0].motivo).not.toContain('private');
+    expect(JSON.stringify(target)).toBe(before);
+    expect(other.pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
+  });
   it('recupera C01 sintetico com presuncao e participacao explicita sem registrar final oficial', async () => {
     const { f, target } = await presumed();
     const snapshot = JSON.stringify(target.escalacao);
@@ -368,6 +563,7 @@ describe('Reprocessamento manual', () => {
     const result = await f.create().reprocessarParciais(25, 2026);
     expect(result).not.toHaveProperty('estadosPartidas');
     expect(f.teams[0].substituicoes).toEqual([]);
+    expect(f.cartola.getTeamById).not.toHaveBeenCalled();
   });
   it('falha de gravacao preserva resultados durante recuperacao presumida', async () => {
     const { f, target } = await presumed();

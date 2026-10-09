@@ -77,6 +77,7 @@ export interface CartolaTimePayload {
 
 export interface CartolaTimeIdentity {
   time_id?: number;
+  rodada_time_id?: number;
   nome?: string;
   nome_cartola?: string;
   cartoleiro_nome?: string;
@@ -92,6 +93,8 @@ export interface CartolaSnapshotAthlete {
   atleta_id?: number;
   posicao_id?: number;
   clube_id?: number;
+  rodada_id?: number;
+  entrou_em_campo?: boolean | null;
   [key: string]: unknown;
 }
 
@@ -113,6 +116,7 @@ export type CartolaTeamSubstitutionsPayload = CartolaTeamSubstitution[];
 
 export interface CartolaTimeSnapshotPayload extends CartolaTimePayload {
   time?: CartolaTimeIdentity;
+  rodada_atual?: number;
   atletas?: CartolaSnapshotAthlete[];
   reservas?: CartolaSnapshotAthlete[];
   capitao_id?: number;

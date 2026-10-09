@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { CartolaMatch, CartolaScoredAthlete } from '../src/cartola/cartola.types';
-import { effectiveLineup, FrozenAthlete, FrozenTeam, historicalMatchState, matchEnded, matchStart, resolveReplacements, scoreMap, totalScore } from '../src/round-processing/round-calculator';
+import { athleteParticipation, effectiveLineup, FrozenAthlete, FrozenTeam, historicalMatchState, matchEnded, matchStart, resolveReplacements, scoreMap, totalScore } from '../src/round-processing/round-calculator';
 
 const athlete = (id: number, extra: Partial<FrozenAthlete> = {}): FrozenAthlete => ({
   atletaId: id, posicaoId: 5, clubeId: id, titular: true, reserva: false,
@@ -50,6 +50,27 @@ describe('Politica administrativa historica de 150 minutos', () => {
 });
 
 describe('Regras da escalação efetiva', () => {
+  it('compoe participacao sem alterar pontos e rejeita divergencia explicita', () => {
+    const official = scores(9, 0, 8);
+    const complementary = new Map([[1, false], [2, true]]);
+    const played = athleteParticipation(official, matches, true, complementary);
+    expect(played(athlete(1))).toBeUndefined();
+    expect(played(athlete(2))).toBe(true);
+    delete official.get(1)!.entrou_em_campo;
+    expect(played(athlete(1))).toBe(false);
+    expect(official.get(1)!.pontuacao).toBe(9);
+    expect(totalScore([athlete(1)], official).toNumber()).toBe(9);
+  });
+  it('o motor usa participacao complementar sem fabricar atleta pontuado', () => {
+    const official = scores(0, 0, 8); official.delete(1);
+    const presumed = new Map([...matches].map(([club, match]) => [club, { ...match, periodo_tr: '' }]));
+    const played = athleteParticipation(official, presumed, true, new Map([[1, false]]));
+    const frozen = team([athlete(1), reserve]);
+    expect(resolveReplacements(frozen, official, presumed, false, true, () => true, played).replacements)
+      .toEqual([{ atletaSaiuId: 1, atletaEntrouId: 3, posicaoId: 5 }]);
+    expect(official.has(1)).toBe(false);
+    expect(resolveReplacements(frozen, official, presumed, false, true).replacements).toEqual([]);
+  });
   it('reconcilia titular omitido do envelope completo somente apos fim confirmado e cobertura do clube', () => {
     const frozen = team([athlete(98617, { clubeId: 1 }), athlete(105047, { clubeId: 3, titular: false, reserva: true })]);
     const points = new Map<number, CartolaScoredAthlete>([

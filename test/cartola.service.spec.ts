@@ -30,6 +30,16 @@ describe('CartolaService', () => {
     await service.loadAdministrativeScoredAthletesFresh(29);
     expect(get.mock.calls).toEqual([['/atletas/pontuados/29'], ['/atletas/pontuados/29']]);
   });
+  it('consulta time historico por rodada com forceRefresh mesmo havendo cache', async () => {
+    get.mockResolvedValueOnce({ rodada_atual: 29, atletas: [{ atleta_id: 124526, entrou_em_campo: true }] });
+    await service.getTeamById(30157304, { round: 29 });
+    get.mockResolvedValueOnce({ rodada_atual: 29, atletas: [{ atleta_id: 124526, entrou_em_campo: false }] });
+    const fresh = await service.getTeamById(30157304, { round: 29, forceRefresh: true });
+    expect(fresh).toMatchObject({ cache: 'miss', stale: false,
+      value: { atletas: [{ atleta_id: 124526, entrou_em_campo: false }] } });
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenLastCalledWith('/time/id/30157304/29', expect.any(Object));
+  });
 
   it('preserva status original e considera aberto somente status_mercado 1', async () => {
     get.mockResolvedValueOnce({ ...status(1, false), campo_extra: 'preservado' });

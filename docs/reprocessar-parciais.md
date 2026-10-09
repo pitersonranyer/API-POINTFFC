@@ -131,6 +131,40 @@ não regrava nem sincroniza rankings. Confirmação posterior permite promoção
 A presunção nunca comprova consolidação global e não altera o processamento automático,
 a rodada atual, regras de capitão/Reserva de Luxo ou a rotina de competições.
 
+### Participação histórica complementar
+
+No administrativo histórico, somente times com participação ainda indeterminada
+consultam `getTeamById(timeId, { round: rodada, forceRefresh: true })`, na rota oficial
+`/time/id/:timeId/:rodada`. A resposta serve exclusivamente para participação em memória:
+não substitui o snapshot, não importa trocas prontas e não fornece pontos para o cálculo.
+Não utiliza `/time/substituicoes/:timeId`, cujo vínculo histórico não foi comprovado.
+
+O contexto exige temporada oficial atual, rodada anterior disponível, snapshot da
+mesma temporada/rodada e partidas dos clubes datadas nessa temporada. O mercado é
+revalidado depois da consulta e antes de persistir. A resposta deve identificar o time
+e declarar `rodada_atual` e `time.rodada_time_id` iguais à rodada solicitada. Uma temporada
+declarada divergente também é rejeitada. Esses campos de rodada sozinhos não comprovam
+temporada: a vinculação depende do contexto conjunto da fonte oficial atual, snapshot
+e partidas. O endpoint não possui marcador de temporada independente; este fluxo não
+autoriza consultas de temporadas anteriores nem promete uma garantia que a resposta
+isolada não oferece.
+
+Cada evidência aceita exige ID, clube, posição, papel titular/reserva e `rodada_id`
+compatíveis com o snapshot, sem duplicação. Apenas `entrou_em_campo` booleano é aceito.
+Atleta omitido, campo ausente, null ou zero não se tornam false. Conflito entre fontes
+mantém o time pendente com ID e motivo, sem substituir o envelope persistido.
+Participação true sem registro de pontuação no envelope também mantém pendência;
+`pontos_num`, capitão e Reserva de Luxo retornados pela consulta histórica são ignorados.
+Participação false não cria registro pontuado nem modifica pontos existentes.
+
+O mesmo resolvedor recebe a participação composta. Falha de consulta ou validação
+preserva o time e permite avaliar os demais; lock e contexto global ainda são verificados.
+Quando a API histórica já apresenta papéis alterados por substituições, a divergência
+com o snapshot bloqueia o aproveitamento: não se reconstrói a escalação original.
+Resultados sob presunção continuam PARCIAL; FINAL divergente permanece protegido.
+Uma repetição ainda pode precisar consultar participação novamente, pois o complemento
+não é persistido, mas não regrava pontuação/substituições iguais nem sincroniza rankings.
+
 Após o commit, chama a sincronização existente somente quando resultados seguros
 foram efetivamente gravados. Pendentes conservam a pontuação anterior no banco e no
 ranking; não há apuração definitiva, mudança do status das competições nem pagamento.
