@@ -45,6 +45,60 @@ function fixture() {
 }
 
 describe('Simulacao historica sem gravacao', () => {
+  it.each(['2T', 'periodo-ausente', 'sem-partida', 'invalida', 'sem-clube'])('detalha evidencias por atleta: %s', async (condition) => {
+    const f = fixture();
+    if (condition === '2T') f.round.partidas.partidas[0].periodo_tr = '2T';
+    if (condition === 'periodo-ausente') delete (f.round.partidas.partidas[0] as Partial<typeof f.round.partidas.partidas[0]>).periodo_tr;
+    if (condition === 'sem-partida') f.team.escalacao[0].clubeId = 999;
+    if (condition === 'invalida') f.round.partidas.partidas[0].valida = false;
+    if (condition === 'sem-clube') (f.team.escalacao[0] as { clubeId: number | null }).clubeId = null;
+    const before = JSON.stringify({ round: f.round, team: f.team });
+    const result = (await f.run()).times[0];
+    expect(result.classificacao).toBe('PENDENTE_DE_DADOS');
+    expect(result.pontuacaoRecalculada).toBeNull();
+    const reasons: Record<string, string> = { '2T': 'PARTIDA_NAO_FINALIZADA', 'periodo-ausente': 'METADADOS_PARTIDA_AUSENTES',
+      'sem-partida': 'CLUBE_SEM_PARTIDA_PERSISTIDA', invalida: 'PARTIDA_NAO_VALIDA', 'sem-clube': 'CLUBE_NAO_IDENTIFICADO' };
+    expect(result.pendencias[0]).toEqual({ atletaId: 10, nomeAtleta: 'Britez',
+      clubeId: condition === 'sem-clube' ? null : condition === 'sem-partida' ? 999 : 1,
+      posicaoId: 3, tipo: 'TITULAR', partidaId: condition === 'sem-clube' || condition === 'sem-partida' ? null : 1,
+      periodo: condition === '2T' ? '2T' : condition === 'periodo-ausente' || condition === 'sem-clube' || condition === 'sem-partida' ? null : 'F',
+      valida: condition === 'sem-clube' || condition === 'sem-partida' ? null : condition !== 'invalida', motivo: reasons[condition] });
+    if (condition !== 'invalida') expect(result.motivo).toBe('Time 123: Partidas pendentes na posicao 3');
+    expect(JSON.stringify({ round: f.round, team: f.team })).toBe(before);
+    expect(f.forbidden).not.toHaveBeenCalled();
+  });
+
+  it('lista todos os titulares e reservas bloqueados na mesma posicao', async () => {
+    const f = fixture(); f.round.partidas.partidas[0].periodo_tr = '2T';
+    f.team.escalacao.push({ atletaId: 30, nome: 'Outro zagueiro', clubeId: 1, posicaoId: 3, titular: true, reserva: false, capitao: false });
+    const result = (await f.run()).times[0];
+    expect(result.motivo).toBe('Time 123: Partidas pendentes na posicao 3');
+    expect(result.pendencias.map((p) => [p.atletaId, p.tipo, p.motivo])).toEqual([
+      [10, 'TITULAR', 'PARTIDA_NAO_FINALIZADA'], [20, 'RESERVA', 'PARTIDA_NAO_FINALIZADA'], [30, 'TITULAR', 'PARTIDA_NAO_FINALIZADA'],
+    ]);
+    expect(f.forbidden).not.toHaveBeenCalled();
+  });
+
+  it('nao inventa nome ou metadados ausentes', async () => {
+    const f = fixture(); f.round.partidas.partidas[0].periodo_tr = '2T';
+    delete (f.team.escalacao[0] as Partial<typeof f.team.escalacao[0]>).nome;
+    delete (f.round.partidas.partidas[0] as Partial<typeof f.round.partidas.partidas[0]>).valida;
+    expect((await f.run()).times[0].pendencias[0]).toMatchObject({ nomeAtleta: null, valida: null, motivo: 'METADADOS_PARTIDA_AUSENTES' });
+  });
+
+  it('participacao desconhecida reutiliza o criterio existente e nao usa pontos como prova', async () => {
+    const f = fixture(); delete f.round.pontuados.atletas['20'].entrou_em_campo;
+    expect((await f.run()).times[0]).toMatchObject({ motivo: 'Time 123: Participacao desconhecida na posicao 3',
+      pendencias: [{ atletaId: 20, tipo: 'RESERVA', partidaId: 1, periodo: 'F', valida: true, motivo: 'PARTICIPACAO_DESCONHECIDA' }] });
+  });
+
+  it('nao lista atletas cujas evidencias estao completas', async () => {
+    const f = fixture(); f.team.escalacao[0].clubeId = 999;
+    expect((await f.run()).times[0].pendencias.map((p) => p.atletaId)).toEqual([10]);
+    f.team.escalacao[0].clubeId = 1;
+    expect((await f.run()).times[0]).toMatchObject({ classificacao: 'DIVERGENTE', pontuacaoRecalculada: 7.2, pendencias: [] });
+  });
+
   it('fora da janela usa Britez/Millan sintetico, identifica delta 7,20 e repete sem efeitos colaterais', async () => {
     const f = fixture(); const before = JSON.stringify({ round: f.round, team: f.team });
     const result = await f.run();
