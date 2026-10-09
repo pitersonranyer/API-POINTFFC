@@ -352,11 +352,13 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     participation: ReturnType<typeof athleteParticipation>): Promise<Map<number, boolean>> {
     // The team endpoint has no independent season marker. Bind it to the current
     // official season, dated matches and the frozen season/round, then recheck market.
-    if (market.temporada !== key.temporada || key.rodada >= market.rodada_atual
-      || team.temporada !== key.temporada || team.rodada !== key.rodada
+    if (key.rodada >= market.rodada_atual || team.rodada !== key.rodada) {
+      throw new ConflictException('RODADA_DIVERGENTE: snapshot ou rodada historica indisponivel');
+    }
+    if (market.temporada !== key.temporada || team.temporada !== key.temporada
       || team.escalacao.some(a => a.clubeId === null || !clubs.has(a.clubeId)
         || new Date(matchStart(clubs.get(a.clubeId)!)).getUTCFullYear() !== key.temporada)) {
-      throw new ConflictException('Participacao historica sem contexto confiavel de temporada/rodada');
+      throw new ConflictException('TEMPORADA_NAO_COMPROVADA: participacao historica sem contexto confiavel de temporada');
     }
     await this.lease(key, token);
     let source: CartolaTimeSnapshotPayload;
@@ -368,45 +370,52 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     if (latest.temporada !== market.temporada || latest.rodada_atual !== market.rodada_atual
       || latest.status_mercado !== market.status_mercado) throw new ConflictException('Contexto oficial mudou durante consulta historica');
     if (!source || source.time?.time_id !== team.timeId
-      || (source.time_id !== undefined && source.time_id !== team.timeId)) throw new ConflictException('Identidade do time historico incompatível');
-    if (source.rodada_atual !== key.rodada || source.time.rodada_time_id !== key.rodada
-      || (source.rodada_time_id !== undefined && source.rodada_time_id !== key.rodada)
-      || (source.temporada !== undefined && source.temporada !== key.temporada)
+      || (source.time_id !== undefined && source.time_id !== team.timeId)) throw new ConflictException('TIME_DIVERGENTE: identidade do time historico incompatível');
+    if ((source.temporada !== undefined && source.temporada !== key.temporada)
       || (source.time.temporada !== undefined && source.time.temporada !== key.temporada)) {
-      throw new ConflictException('Temporada/rodada da consulta historica incompatível');
+      throw new ConflictException('TEMPORADA_NAO_COMPROVADA: temporada declarada pela consulta historica incompatível');
+    }
+    if (source.rodada_atual !== key.rodada || source.time.rodada_time_id !== key.rodada
+      || (source.rodada_time_id !== undefined && source.rodada_time_id !== key.rodada)) {
+      throw new ConflictException('RODADA_DIVERGENTE: rodada da consulta historica incompatível');
     }
     if (!Array.isArray(source.atletas) || !Array.isArray(source.reservas)) {
-      throw new ConflictException('Listas de atletas da consulta historica ausentes');
+      throw new ConflictException('PARTICIPACAO_AUSENTE: listas de atletas da consulta historica ausentes');
+    }
+    const needed = new Set(team.escalacao.filter(a => participation(a) === undefined).map(a => a.atletaId));
+    const entries = new Map<number, NonNullable<CartolaTimeSnapshotPayload['atletas']>[number]>();
+    // Public lists may already reflect fantasy replacements. Only identity and
+    // participation are relevant here; fantasy roles always come from the snapshot.
+    for (const a of [...source.atletas, ...source.reservas]) {
+      if (!a || !Number.isInteger(a.atleta_id) || a.atleta_id! < 1) {
+        throw new ConflictException('PARTICIPACAO_AUSENTE: resposta historica estruturalmente invalida; atleta sem identidade');
+      }
+      if (entries.has(a.atleta_id!)) throw new ConflictException(`ATLETA_DUPLICADO: atleta ${a.atleta_id} na resposta historica`);
+      entries.set(a.atleta_id!, a);
     }
     const complementary = new Map<number, boolean>();
     for (const frozen of team.escalacao) {
-      const entries = [
-        ...source.atletas.filter(a => a?.atleta_id === frozen.atletaId).map(a => ({ a, titular: true, reserva: false })),
-        ...source.reservas.filter(a => a?.atleta_id === frozen.atletaId).map(a => ({ a, titular: false, reserva: true })),
-      ];
-      if (!entries.length) continue; // Missing is unknown, never false.
-      if (entries.length !== 1) throw new ConflictException(`Atleta ${frozen.atletaId}: identidade historica duplicada`);
-      const { a, titular, reserva } = entries[0];
-      if (a.clube_id !== frozen.clubeId || a.posicao_id !== frozen.posicaoId
-        || titular !== frozen.titular || reserva !== frozen.reserva || a.rodada_id !== key.rodada) {
-        throw new ConflictException(`Atleta ${frozen.atletaId}: clube, posicao, papel ou rodada historica incompatível com snapshot`);
-      }
+      const a = entries.get(frozen.atletaId);
+      if (!a) continue; // Missing is unknown, never false.
+      if (a.clube_id !== frozen.clubeId) throw new ConflictException(`CLUBE_DIVERGENTE: atleta ${frozen.atletaId} na consulta historica`);
+      if (a.posicao_id !== frozen.posicaoId) throw new ConflictException(`POSICAO_DIVERGENTE: atleta ${frozen.atletaId} na consulta historica`);
+      if (a.rodada_id !== key.rodada) throw new ConflictException(`RODADA_DIVERGENTE: atleta ${frozen.atletaId} na consulta historica`);
       if (typeof a.entrou_em_campo !== 'boolean') continue;
       const official = scores.get(frozen.atletaId);
-      if (official && ((official.clube_id !== undefined && official.clube_id !== frozen.clubeId)
-        || (official.posicao_id !== undefined && official.posicao_id !== frozen.posicaoId))) {
-        throw new ConflictException(`Atleta ${frozen.atletaId}: identidade dos pontuados incompatível com snapshot`);
-      }
+      if (official?.clube_id !== undefined && official.clube_id !== frozen.clubeId) throw new ConflictException(`CLUBE_DIVERGENTE: atleta ${frozen.atletaId} no envelope de pontuados`);
+      if (official?.posicao_id !== undefined && official.posicao_id !== frozen.posicaoId) throw new ConflictException(`POSICAO_DIVERGENTE: atleta ${frozen.atletaId} no envelope de pontuados`);
       if (participation(frozen) !== undefined && participation(frozen) !== a.entrou_em_campo) {
-        throw new ConflictException(`Atleta ${frozen.atletaId}: conflito de participacao entre fontes oficiais`);
+        throw new ConflictException(`Atleta ${frozen.atletaId}: conflito de participacao entre fontes oficiais (PARTICIPACAO_CONFLITANTE)`);
       }
+      // Known athletes are checked for real conflicts but never complemented.
+      if (!needed.has(frozen.atletaId)) continue;
       if (a.entrou_em_campo && !scores.has(frozen.atletaId)) {
-        throw new ConflictException(`Atleta ${frozen.atletaId}: participacao true sem pontuacao oficial no envelope`);
+        throw new ConflictException(`Atleta ${frozen.atletaId}: participacao true sem pontuacao oficial no envelope (PONTUACAO_AUSENTE)`);
       }
       complementary.set(frozen.atletaId, a.entrou_em_campo);
     }
     const unresolved = team.escalacao.filter(a => participation(a) === undefined && !complementary.has(a.atletaId));
-    if (unresolved.length) throw new ConflictException(`Participacao historica sem booleano explicito para atletas ${unresolved.map(a => a.atletaId).join(', ')}; resultado anterior preservado`);
+    if (unresolved.length) throw new ConflictException(`PARTICIPACAO_AUSENTE: participacao historica sem booleano explicito para atletas ${unresolved.map(a => a.atletaId).join(', ')}; resultado anterior preservado`);
     return complementary;
   }
 

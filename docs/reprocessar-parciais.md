@@ -149,8 +149,12 @@ e partidas. O endpoint não possui marcador de temporada independente; este flux
 autoriza consultas de temporadas anteriores nem promete uma garantia que a resposta
 isolada não oferece.
 
-Cada evidência aceita exige ID, clube, posição, papel titular/reserva e `rodada_id`
-compatíveis com o snapshot, sem duplicação. Apenas `entrou_em_campo` booleano é aceito.
+Cada evidência aceita exige ID, clube, posição e `rodada_id` compatíveis com o snapshot,
+sem duplicação. A lista pública de titulares ou reservas não determina participação:
+o papel fantasy continua vindo exclusivamente do snapshot. Apenas `entrou_em_campo`
+booleano é aceito. O complemento em memória inclui somente atletas cuja participação
+ainda era indeterminada. Atletas já comprovados são verificados para conflitos reais
+de identidade/participação, sem serem complementados ou bloqueados por mudança de lista.
 Atleta omitido, campo ausente, null ou zero não se tornam false. Conflito entre fontes
 mantém o time pendente com ID e motivo, sem substituir o envelope persistido.
 Participação true sem registro de pontuação no envelope também mantém pendência;
@@ -159,11 +163,18 @@ Participação false não cria registro pontuado nem modifica pontos existentes.
 
 O mesmo resolvedor recebe a participação composta. Falha de consulta ou validação
 preserva o time e permite avaliar os demais; lock e contexto global ainda são verificados.
-Quando a API histórica já apresenta papéis alterados por substituições, a divergência
-com o snapshot bloqueia o aproveitamento: não se reconstrói a escalação original.
+Quando a API histórica apresenta papéis alterados por substituições, isso não redefine
+titulares, reservas, capitão, Reserva de Luxo ou elegibilidade no motor. Duplicidades
+entre as listas, IDs inválidos ou listas ausentes comprometem a resposta e preservam
+a pendência; não se reconstrói a escalação original.
 Resultados sob presunção continuam PARCIAL; FINAL divergente permanece protegido.
 Uma repetição ainda pode precisar consultar participação novamente, pois o complemento
 não é persistido, mas não regrava pontuação/substituições iguais nem sincroniza rankings.
+
+As mensagens textuais de pendência preservam o contrato e identificam a causa:
+`CLUBE_DIVERGENTE`, `POSICAO_DIVERGENTE`, `RODADA_DIVERGENTE`, `TIME_DIVERGENTE`,
+`TEMPORADA_NAO_COMPROVADA`, `PARTICIPACAO_CONFLITANTE`, `ATLETA_DUPLICADO`,
+`PARTICIPACAO_AUSENTE` ou `PONTUACAO_AUSENTE`, com ID do atleta quando aplicável.
 
 Após o commit, chama a sincronização existente somente quando resultados seguros
 foram efetivamente gravados. Pendentes conservam a pontuação anterior no banco e no
