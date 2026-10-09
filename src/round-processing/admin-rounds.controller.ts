@@ -31,7 +31,7 @@ export class AdminRoundsController {
 
   @Post(':rodada/reprocessar-parciais')
   @HttpCode(200)
-  @ApiOperation({ summary: 'Recalcula todos os snapshots com o envelope persistido, sem consolidar' })
+  @ApiOperation({ summary: 'Recalcula snapshots com dados oficiais da temporada atual e consolida com termino comprovado' })
   @ApiQuery({ name: 'temporada', required: true, type: Number })
   reprocessar(@Param() params: RoundParamsDto, @Query() query: ReprocessarParciaisQueryDto) {
     return this.processing.reprocessarParciais(params.rodada, query.temporada);

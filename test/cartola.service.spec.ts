@@ -24,6 +24,13 @@ describe('CartolaService', () => {
 
   afterEach(() => jest.useRealTimers());
 
+  it('carrega fonte administrativa historica fresh sem cache nem janela automatica', async () => {
+    get.mockResolvedValue({ rodada: 29, total_atletas: 1, atletas: { '10': { pontuacao: 7.2, entrou_em_campo: true } } });
+    await service.loadAdministrativeScoredAthletesFresh(29);
+    await service.loadAdministrativeScoredAthletesFresh(29);
+    expect(get.mock.calls).toEqual([['/atletas/pontuados/29'], ['/atletas/pontuados/29']]);
+  });
+
   it('preserva status original e considera aberto somente status_mercado 1', async () => {
     get.mockResolvedValueOnce({ ...status(1, false), campo_extra: 'preservado' });
     expect((await service.getMarketStatus()).value).toMatchObject({ status_mercado: 1, campo_extra: 'preservado' });

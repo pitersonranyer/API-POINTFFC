@@ -160,6 +160,83 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     if (updated.count !== 1) throw new ConflictException('Lock da rodada expirou');
   }
 
+  private async preserveMatches(round: RodadaProcessamento, market: CartolaMarketStatus, token: string,
+    received: CartolaMatchesResponse): Promise<CartolaMatchesResponse> {
+    const key = keyOf(round);
+    matchesByClub(received, key.rodada);
+    if (market.temporada !== key.temporada || !received.partidas.length
+      || new Set(received.partidas.map(m => m.partida_id)).size !== received.partidas.length
+      || (received.temporada !== undefined && received.temporada !== key.temporada)
+      || received.partidas.some(m => !Number.isInteger(m.partida_id)
+        || m.partida_id < 1 || !Number.isInteger(m.clube_casa_id) || m.clube_casa_id < 1
+        || !Number.isInteger(m.clube_visitante_id) || m.clube_visitante_id < 1
+        || new Date(matchStart(m)).getUTCFullYear() !== key.temporada
+        || (matchEnded(m) && matchStart(m) > Date.now()))) {
+      throw new ConflictException('Partidas sem identidade, temporada ou horario oficial valido');
+    }
+    const previous = round.partidas as unknown as CartolaMatchesResponse | null;
+    if (previous) matchesByClub(previous, key.rodada);
+    const identity = (a: CartolaMatchesResponse['partidas'][number], b: CartolaMatchesResponse['partidas'][number]) =>
+      a.partida_id === b.partida_id && a.clube_casa_id === b.clube_casa_id
+      && a.clube_visitante_id === b.clube_visitante_id && matchStart(a) === matchStart(b);
+    if (previous?.partidas.some(p => !received.partidas.some(m => m.partida_id === p.partida_id)
+      || (matchEnded(p) && !received.partidas.some(m => identity(p, m) && m.valida === true)))) {
+      throw new ConflictException('Correcao oficial conflitante ou partidas incompletas; evidencias anteriores preservadas');
+    }
+    const matches = { ...received, partidas: received.partidas.map(m => {
+      const prior = previous?.partidas.find(p => identity(p, m));
+      if (prior && matchEnded(prior) && !matchEnded(m)) {
+        this.logger.warn({ ...key, etapa: 'REGRESSAO_PARTIDA', partidaId: m.partida_id,
+          periodoRecebido: m.periodo_tr, periodoPreservado: prior.periodo_tr });
+        return { ...m, periodo_tr: prior.periodo_tr };
+      }
+      return m;
+    }) };
+    const latest = await this.cartola.loadMarketStatusFresh();
+    this.validateMarket(latest);
+    if (latest.temporada !== market.temporada || latest.rodada_atual !== market.rodada_atual
+      || latest.status_mercado !== market.status_mercado) throw new ConflictException('Mercado mudou durante coleta das evidencias');
+    await this.prisma.$transaction(async tx => {
+      const fenced = await tx.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token, lockAte: { gt: new Date() } },
+        data: { lockAte: new Date(Date.now() + LEASE_MS) } });
+      if (fenced.count !== 1) throw new ConflictException('Lock perdido antes da preservacao das evidencias');
+      await tx.rodadaProcessamento.update({ where: { temporada_rodada: key }, data: {
+        partidas: json(matches), ...(JSON.stringify(previous) !== JSON.stringify(matches)
+          ? { erro: 'Evidencias atualizadas; calculo pendente' } : {}),
+      } });
+    });
+    return matches;
+  }
+
+  private async preserveScores(round: RodadaProcessamento, market: CartolaMarketStatus, token: string, scored: CartolaScoredAthletesPayload): Promise<void> {
+    const key = keyOf(round);
+    const scores = scoreMap(scored, key.rodada);
+    if (scored.temporada !== undefined && scored.temporada !== key.temporada) throw new ConflictException('Pontuados de outra temporada');
+    const previous = round.pontuados as CartolaScoredAthletesPayload | null;
+    const complete = scored.total_atletas === scores.size && scores.size > 0;
+    if (previous?.total_atletas !== undefined && previous.total_atletas > 0 && !complete) {
+      throw new ConflictException('Envelope incompleto; preservar evidencias completas anteriores');
+    }
+    if (Object.entries(previous?.atletas ?? {}).some(([id, a]) => typeof a.entrou_em_campo === 'boolean'
+      && scores.has(Number(id)) && scores.get(Number(id))?.entrou_em_campo === undefined)) {
+      throw new ConflictException('Participacao oficial incompleta; preservar evidencias anteriores');
+    }
+    if (!complete) return;
+    const latest = await this.cartola.loadMarketStatusFresh();
+    this.validateMarket(latest);
+    if (latest.temporada !== market.temporada || latest.rodada_atual !== market.rodada_atual
+      || latest.status_mercado !== market.status_mercado) throw new ConflictException('Mercado mudou durante coleta dos pontuados');
+    await this.prisma.$transaction(async tx => {
+      const fenced = await tx.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token, lockAte: { gt: new Date() } },
+        data: { lockAte: new Date(Date.now() + LEASE_MS) } });
+      if (fenced.count !== 1) throw new ConflictException('Lock perdido antes da preservacao dos pontuados');
+      await tx.rodadaProcessamento.update({ where: { temporada_rodada: key }, data: {
+        pontuados: json(scored), ...(JSON.stringify(previous) !== JSON.stringify(scored)
+          ? { erro: 'Evidencias atualizadas; calculo pendente' } : {}),
+      } });
+    });
+  }
+
   async reprocessarParciais(rodada: number, temporada: number) {
     if (!Number.isInteger(temporada) || temporada < 1 || temporada > 65535
       || !Number.isInteger(rodada) || rodada < 1 || rodada > 38) {
@@ -169,27 +246,43 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const started = Date.now();
     const existing = await this.prisma.rodadaProcessamento.findUnique({ where: { temporada_rodada: key } });
     if (!existing) throw new NotFoundException('Rodada nao encontrada');
-    if (existing.status === 'CONSOLIDADA') throw new ConflictException('Rodada consolidada');
+    const market = await this.cartola.loadMarketStatusFresh();
+    this.validateMarket(market);
+    if (market.temporada !== temporada || rodada > market.rodada_atual) {
+      throw new BadRequestException('Reprocessamento exige rodada disponivel da temporada oficial atual');
+    }
     const token = randomUUID();
     const acquired = await this.prisma.rodadaProcessamento.updateMany({
-      where: { ...key, status: { not: 'CONSOLIDADA' }, OR: [{ lockAte: null }, { lockAte: { lt: new Date() } }] },
+      where: { ...key, OR: [{ lockAte: null }, { lockAte: { lt: new Date() } }] },
       data: { lockToken: token, lockAte: new Date(Date.now() + LEASE_MS) },
     });
-    if (!acquired.count) throw new ConflictException('Rodada consolidada ou processamento ja em andamento');
+    if (!acquired.count) throw new ConflictException('Rodada ja em processamento');
     let result: Awaited<ReturnType<RoundProcessingService['calculate']>>;
+    let final = false;
     try {
       const round = await this.prisma.rodadaProcessamento.findUniqueOrThrow({ where: { temporada_rodada: key } });
-      try {
-        if (!round.pontuados || !round.partidas) throw new Error('Envelope ausente');
-        scoreMap(round.pontuados as CartolaScoredAthletesPayload, rodada);
-        matchesByClub(round.partidas as unknown as CartolaMatchesResponse, rodada);
-      } catch { throw new ConflictException('Envelope persistido indisponivel ou invalido'); }
-      result = await this.calculate(round, { temporada, rodada_atual: rodada, status_mercado: 2, bola_rolando: true }, token, false, true);
+      const matches = await this.preserveMatches(round, market, token, await this.cartola.loadMatchesFresh(rodada));
+      const scored = await this.cartola.loadAdministrativeScoredAthletesFresh(rodada);
+      await this.preserveScores(round, market, token, scored);
+      const scores = scoreMap(scored, rodada);
+      if (scores.size === 0 || (scored.temporada !== undefined && scored.temporada !== temporada)) {
+        throw new ConflictException('Fonte oficial sem integridade ou evidencia da temporada solicitada');
+      }
+      final = matches.partidas.filter((m) => m.valida === true).length > 0
+        && matches.partidas.filter((m) => m.valida === true).every(matchEnded);
+      if (final && scored.total_atletas !== scores.size) throw new ConflictException('Envelope final sem completude comprovada');
+      if (!final && (round.status === 'CONSOLIDADA' || rodada < market.rodada_atual || market.status_mercado !== 2)) {
+        throw new ConflictException('Pendencia: encerramento historico nao comprovado; resultados anteriores preservados');
+      }
+      result = await this.calculate(round, market, token, final, true, { scored, matches });
+    } catch (error) {
+      await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { erro: this.message(error) } });
+      throw error;
     } finally {
       await this.prisma.rodadaProcessamento.updateMany({ where: { ...key, lockToken: token }, data: { lockToken: null, lockAte: null } });
     }
     if (result?.timesProcessados) await this.sincronizarCompeticoes(key);
-    return { ...key, status: 'PARCIAL' as const, ...result, duracaoMs: Date.now() - started, processadoEm: new Date().toISOString() };
+    return { ...key, status: final ? 'FINAL' as const : 'PARCIAL' as const, ...result, duracaoMs: Date.now() - started, processadoEm: new Date().toISOString() };
   }
 
   private async process(key: RoundKey, market: CartolaMarketStatus, final: boolean, force = false): Promise<boolean> {
@@ -248,8 +341,13 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       falhasSnapshot: failures.length, duracaoMs: Date.now() - started, resultado: failures.length ? 'PENDENTE' : 'OK' });
   }
 
-  private async calculate(round: RodadaProcessamento, market: CartolaMarketStatus, token: string, final: boolean, manual = false) {
+  private async calculate(round: RodadaProcessamento, market: CartolaMarketStatus, token: string, final: boolean, manual = false,
+    official?: { scored: CartolaScoredAthletesPayload; matches: CartolaMatchesResponse }) {
     const key = keyOf(round);
+    const matches = official?.matches ?? await this.preserveMatches(round, market, token, await this.cartola.loadMatchesFresh(key.rodada));
+    const scored = official?.scored ?? (final ? await this.cartola.loadFinalScoredAthletesFresh(key.temporada, key.rodada)
+      : (await this.cartola.loadScoredAthletesFresh()).value);
+    if (!official) await this.preserveScores(round, market, token, scored);
     const all = await this.prisma.timeRodada.findMany({ where: key, select: { id: true, timeId: true,
       _count: { select: { escalacao: { where: { titular: true } } } },
     } });
@@ -260,20 +358,18 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     if (final && (missing.length || all.length !== teams.length)) throw new Error(`Snapshot incompleto: ${missing.length || all.length - teams.length} times`);
     if (!teams.length && (round.timesPrevistos as number[]).length) return;
     // Capture finishes before the first request for scores; one envelope serves every team.
-    const scored = manual ? round.pontuados as CartolaScoredAthletesPayload : final ? await this.cartola.loadFinalScoredAthletesFresh(key.temporada, key.rodada)
-      : (await this.cartola.loadScoredAthletesFresh()).value;
-    const receivedMatches = manual ? round.partidas as unknown as CartolaMatchesResponse : await this.cartola.loadMatchesFresh(key.rodada);
     const oldMatches = round.partidas as unknown as CartolaMatchesResponse | null;
-    const priorMatches = new Map(oldMatches?.partidas.map((m) => [m.partida_id, m]) ?? []);
-    // Retain a confirmed full-time signal if the provider clears live metadata.
-    const matches = { ...receivedMatches, partidas: receivedMatches.partidas.map((m) =>
-      !m.periodo_tr && priorMatches.has(m.partida_id) && matchEnded(priorMatches.get(m.partida_id)!)
-        ? { ...m, periodo_tr: priorMatches.get(m.partida_id)!.periodo_tr } : m) };
     const scores = scoreMap(scored, key.rodada);
     const clubs = matchesByClub(matches, key.rodada);
     const completeScoredEnvelope = scored.total_atletas === scores.size && scores.size > 0;
     const participation = athleteParticipation(scores, clubs, completeScoredEnvelope);
-    if (final && teams.length) validateFinalData(scores, clubs);
+    if (final && teams.length) {
+      try {
+        if (![...clubs.values()].every(matchEnded)) throw new Error('Fim das partidas nao comprovado');
+        validateFinalData(scores, clubs);
+      }
+      catch (error) { if (official) throw new ConflictException(this.message(error)); throw error; }
+    }
     const previous = round.pontuados as CartolaScoredAthletesPayload | null;
     const oldScores = previous?.atletas ?? {};
     if (scores.size === 0 && Object.keys(oldScores).length > 0) throw new Error('Envelope vazio apos pontuados validos; preservar ultima parcial');
@@ -285,7 +381,7 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     const changedClubs = new Set([...clubs.keys(), ...oldClubs.keys()].filter((id) =>
       signature(oldClubs.get(id)) !== signature(clubs.get(id))));
     const affected = await this.prisma.timeRodada.findMany({
-      where: { ...key, escalacao: { some: { titular: true } }, ...(manual || final || !previous ? {} : {
+      where: { ...key, escalacao: { some: { titular: true } }, ...(manual || final || round.erro || !previous ? {} : {
         OR: [{ pontuacao: { is: null } }, { escalacao: { some: { OR: [
           { atletaId: { in: [...changed] } }, { clubeId: { in: [...changedClubs] } },
         ] } } }],
@@ -299,12 +395,26 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
     for (const team of affected) {
       if (manual && (totals.length + errors) % BATCH === 0) await this.lease(key, token);
       try {
+      if (final && team.escalacao.some((a) => !a.clubeId || !clubs.has(a.clubeId) || !matchEnded(clubs.get(a.clubeId)!))) {
+        throw new ConflictException('Clube sem partida final confirmada no snapshot');
+      }
       // A score correction can enable, reverse, or change a replacement even
       // when participation and match status are unchanged. The affected query
       // already limits this work to teams whose inputs changed.
-      const resolution = resolveReplacements(team, scores, clubs, final,
+      const resolution = resolveReplacements(team, scores, clubs, false,
         completeScoredEnvelope);
       if (final) validateFinalTeam(team, resolution, scores, participation);
+      if (!final && resolution.pending.length) {
+        this.logger.warn({ ...key, timeId: team.timeId, etapa: 'PARTICIPACAO_PENDENTE', pendencias: resolution.pending });
+        if (team.substituicoes.some(r => resolution.pendingPositions.includes(r.posicaoId))) {
+          throw new ConflictException('Substituicao anterior com dados pendentes; preservar resultado');
+        }
+        errors++;
+      }
+      if ((!final && team.pontuacao?.status === 'FINAL') || (final
+        && effectiveLineup(team, resolution.replacements).some((a) => participation(a) === undefined))) {
+        throw new ConflictException('Participacao ou substituicao pendente; preservar resultado anterior do time');
+      }
       totals.push({ id: team.id, total: totalScore(effectiveLineup(team, resolution.replacements), scores), replacements: resolution.replacements });
       substitutionCount += resolution.replacements.length;
       const signature = (r: Replacement) => `${r.atletaSaiuId}:${r.atletaEntrouId}:${r.posicaoId}`;
@@ -312,17 +422,21 @@ export class RoundProcessingService implements OnModuleInit, OnModuleDestroy {
       const after = new Set(resolution.replacements.map(signature));
       substitutionsChanged += [...before].filter((r) => !after.has(r)).length + [...after].filter((r) => !before.has(r)).length;
       } catch (error) {
-        if (!manual) throw error;
+        if (official && final) throw new ConflictException(this.message(error));
+        if (final) throw error;
         errors++;
         this.logger.error({ ...key, timeId: team.timeId, etapa: 'REPROCESSAMENTO', erro: this.message(error) });
       }
     }
     await this.lease(key, token);
-    if (!manual) {
+    if (!manual || official) {
     const latest = await this.cartola.loadMarketStatusFresh();
     this.validateMarket(latest);
     if (latest.temporada !== market.temporada || latest.rodada_atual !== market.rodada_atual
-      || latest.status_mercado !== market.status_mercado) throw new Error('Mercado mudou durante processamento; tentar novamente');
+      || latest.status_mercado !== market.status_mercado) {
+      if (official) throw new ConflictException('Mercado mudou durante reprocessamento; resultados preservados');
+      throw new Error('Mercado mudou durante processamento; tentar novamente');
+    }
     }
     const ended = matches.partidas.filter((m) => m.valida === true);
     const waiting = !market.bola_rolando && ended.length > 0 && ended.every((m) => matchStart(m) <= Date.now());

@@ -38,6 +38,11 @@ export class CartolaService {
     return this.http.get<CartolaMatchesResponse>(`/partidas/${round}`);
   }
 
+  // Administrative reads bypass the automatic window and the persisted-score cache.
+  loadAdministrativeScoredAthletesFresh(round: number): Promise<CartolaScoredAthletesPayload> {
+    return this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados/${round}`);
+  }
+
   async loadFinalScoredAthletesFresh(temporada: number, round: number): Promise<CartolaScoredAthletesPayload> {
     const market = await this.loadMarketStatusFresh();
     if (market.status_mercado !== 1 || market.temporada !== temporada

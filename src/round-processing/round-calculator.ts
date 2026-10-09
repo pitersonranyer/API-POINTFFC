@@ -112,6 +112,7 @@ export function validateFinalTeam(team: FrozenTeam & { timeId: number }, resolut
 export function resolveReplacements(team: FrozenTeam, scores: Map<number, CartolaScoredAthlete>, matches: Map<number, CartolaMatch>, reopened = false, completeScoredEnvelope = false) {
   const replacements: Replacement[] = [];
   const pending: string[] = [];
+  const pendingPositions: number[] = [];
   const starters = team.escalacao.filter((a) => a.titular);
   if (!starters.length || new Set(team.escalacao.map((a) => a.atletaId)).size !== team.escalacao.length
     || starters.filter((a) => a.capitao).length !== (team.capitaoId === null ? 0 : 1)
@@ -150,11 +151,11 @@ export function resolveReplacements(team: FrozenTeam, scores: Map<number, Cartol
     const position = starters.filter((a) => a.posicaoId === reserve.posicaoId);
     if (!position.length) throw new UnprocessableEntityException('Reserva sem titular da posicao');
     if (!finished(reserve) || position.some((a) => !finished(a))) {
-      pending.push(`Partidas pendentes na posicao ${reserve.posicaoId}`); continue;
+      pending.push(`Partidas pendentes na posicao ${reserve.posicaoId}`); pendingPositions.push(reserve.posicaoId); continue;
     }
     if (played(reserve) === false) continue;
     if (played(reserve) === undefined || position.some((a) => played(a) === undefined)) {
-      pending.push(`Participacao desconhecida na posicao ${reserve.posicaoId}`); continue;
+      pending.push(`Participacao desconhecida na posicao ${reserve.posicaoId}`); pendingPositions.push(reserve.posicaoId); continue;
     }
     try {
       const absent = position.filter((a) => played(a) === false);
@@ -170,7 +171,9 @@ export function resolveReplacements(team: FrozenTeam, scores: Map<number, Cartol
         outgoing = candidates.sort((a, b) => points(a) - points(b) || tieBreak(a, b))[0];
       }
       if (outgoing) replacements.push({ atletaSaiuId: outgoing.atletaId, atletaEntrouId: reserve.atletaId, posicaoId: reserve.posicaoId });
-    } catch (error) { pending.push(error instanceof Error ? error.message : 'Desempate desconhecido'); }
+    } catch (error) {
+      pending.push(error instanceof Error ? error.message : 'Desempate desconhecido'); pendingPositions.push(reserve.posicaoId);
+    }
   }
-  return { replacements, pending };
+  return { replacements, pending, pendingPositions };
 }

@@ -16,7 +16,7 @@ function setup() {
   let market: CartolaMarketStatus = { temporada: 2026, rodada_atual: 25, status_mercado: 1, bola_rolando: false };
   let points: CartolaScoredAthletesPayload = { rodada: 25, atletas: { '10': { pontuacao: 10, entrou_em_campo: true }, '11': { pontuacao: 4, entrou_em_campo: true } } };
   let matches: CartolaMatchesResponse = { rodada: 25, clubes: {}, partidas: [
-    { partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2, valida: true, periodo_tr: '2T', timestamp: 1000 },
+    { partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2, valida: true, periodo_tr: '2T', timestamp: 1767225600 },
   ] };
   const events: string[] = [];
   const failures = new Set<number>();
@@ -64,7 +64,7 @@ function setup() {
         }
       }
       if (sql.sql.includes('INSERT INTO SUBSTITUICAO')) {
-        for (let i = 0; i < sql.values.length; i += 7) {
+        for (let i = 0; i < sql.values.length; i += 6) {
           teams.find((t) => t.id === sql.values[i]).substituicoes.push({
             atletaSaiuId: sql.values[i + 1], atletaEntrouId: sql.values[i + 2], posicaoId: sql.values[i + 3],
           });
@@ -90,6 +90,7 @@ function setup() {
     loadMarketStatusFresh: jest.fn(async () => ({ ...market })),
     loadScoredAthletesFresh: jest.fn(async () => { events.push('pontuados'); return { value: points, ttlMs: 1000 }; }),
     loadFinalScoredAthletesFresh: jest.fn(async () => { events.push('finais'); return points; }),
+    loadAdministrativeScoredAthletesFresh: jest.fn(async () => ({ ...points, total_atletas: points.total_atletas ?? Object.keys(points.atletas!).length })),
     loadMatchesFresh: jest.fn(async () => matches),
   };
   const sincronizacao = { sincronizarRodada: jest.fn(async () => { events.push('sincronizacao'); }) };
@@ -170,7 +171,7 @@ describe('Consolidacao de titulares omitidos', () => {
     if (condition === 'sem-reserva') { f.teams[0].escalacao.pop(); delete invalid.total_atletas; }
     if (condition === 'em-jogo' || condition === 'status-desconhecido') {
       const partidas = [{ partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2, valida: true,
-        periodo_tr: condition === 'em-jogo' ? '2T' : '', timestamp: 1000 }];
+        periodo_tr: condition === 'em-jogo' ? '2T' : '', timestamp: 1767225600 }];
       // Retira tambem a confirmacao anterior para testar status realmente desconhecido.
       f.round.partidas = { rodada: 25, clubes: {}, partidas };
       f.matches({ rodada: 25, clubes: {}, partidas });
@@ -242,6 +243,127 @@ describe('Consolidacao de titulares omitidos', () => {
 
 describe('Reprocessamento manual', () => {
   beforeAll(() => Logger.overrideLogger([]));
+  async function historical(periodo = 'F', consolidated = false) {
+    const f = setup(); f.closed(); await f.create().tick();
+    const target = f.teams[0];
+    f.teams.splice(1);
+    Object.assign(f.round, { rodada: 29, timesPrevistos: [30157355], status: consolidated ? 'CONSOLIDADA' : 'EM_ANDAMENTO' });
+    Object.assign(target, { timeId: 30157355, rodada: 29, capitaoId: 11 });
+    target.escalacao = [
+      { atletaId: 10, nome: 'Britez (sintetico)', posicaoId: 3, clubeId: 1, titular: true, reserva: false, capitao: false },
+      ...Array.from({ length: 11 }, (_, i) => ({ atletaId: 11 + i, posicaoId: 4, clubeId: 1,
+        titular: true, reserva: false, capitao: i === 0 })),
+      { atletaId: 124219, nome: 'Millan (sintetico)', posicaoId: 3, clubeId: 266, titular: false, reserva: true, capitao: false },
+    ];
+    target.pontuacao = { pontuacao: new Prisma.Decimal(133.07), status: consolidated ? 'FINAL' : 'PARCIAL' };
+    const atletas: CartolaScoredAthletesPayload['atletas'] = {
+      '11': { pontuacao: 0, entrou_em_campo: true, clube_id: 1 },
+      '12': { pontuacao: 124.07, entrou_em_campo: true, clube_id: 1 },
+      '124219': { pontuacao: 7.2, entrou_em_campo: true, clube_id: 266 },
+    };
+    for (let id = 13; id <= 21; id++) atletas[id] = { pontuacao: 1, entrou_em_campo: true, clube_id: 1 };
+    const source = { rodada: 29, total_atletas: 12, atletas };
+    const matches = { rodada: 29, clubes: {}, partidas: [{ partida_id: 346575, clube_casa_id: 1,
+      clube_visitante_id: 266, valida: true, periodo_tr: periodo, timestamp: 1767225600 }] };
+    f.round.partidas = { ...matches, partidas: matches.partidas.map(m => ({ ...m, periodo_tr: 'SEGUNDO_TEMPO' })) };
+    f.round.pontuados = { ...source };
+    f.cartola.loadMarketStatusFresh.mockResolvedValue({ temporada: 2026, rodada_atual: 30, status_mercado: 1, bola_rolando: false });
+    f.cartola.loadAdministrativeScoredAthletesFresh.mockResolvedValue(source);
+    f.cartola.loadMatchesFresh.mockResolvedValue(matches);
+    jest.clearAllMocks();
+    return { f, target, source, matches };
+  }
+  it.each([false, true])('reconsolida historica, inclusive consolidada=%s, com prova final e sincroniza apos commit', async (consolidated) => {
+    const { f, target, source } = await historical('F', consolidated);
+    const frozen = JSON.stringify(target.escalacao);
+    f.sincronizacao.sincronizarRodada.mockImplementation(async () => {
+      expect(target.pontuacao.status).toBe('FINAL');
+      expect(f.round.lockToken).toBeNull();
+    });
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ status: 'FINAL', timesProcessados: 1 });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(140.27);
+    expect(target.substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 124219, posicaoId: 3 }]);
+    expect(effectiveLineup(target, target.substituicoes).filter(a => source.atletas[a.atletaId]?.entrou_em_campo)).toHaveLength(12);
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ substituicoesAlteradas: 0 });
+    expect(target.substituicoes).toHaveLength(1);
+    expect(JSON.stringify(target.escalacao)).toBe(frozen);
+    expect(f.snapshots.criarSnapshot).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledWith(2026, 29);
+  });
+  it.each(['', 'SEGUNDO_TEMPO'])('preserva historica sem prova final: %s', async (periodo) => {
+    const { f, target } = await historical(periodo);
+    const previous = JSON.stringify(f.round.pontuados);
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(target.substituicoes).toEqual([]);
+    expect(JSON.stringify(f.round.pontuados)).toBe(previous);
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+    expect(f.round.lockToken).toBeNull();
+  });
+  it.each(['', 'SEGUNDO_TEMPO'])('preserva confirmacao final anterior quando periodo oficial retorna %s', async (periodo) => {
+    const { f } = await historical(periodo);
+    f.round.partidas.partidas[0].periodo_tr = 'POS_JOGO';
+    expect(await f.create().reprocessarParciais(29, 2026)).toMatchObject({ status: 'FINAL' });
+  });
+  it.each(['incompleto', 'participacao', 'clube', 'identidade', 'temporada'])('bloqueia fonte %s sem gravar finais', async (condition) => {
+    const { f, source, matches, target } = await historical('F', true);
+    if (condition === 'incompleto') source.total_atletas++;
+    if (condition === 'participacao') delete source.atletas['124219'].entrou_em_campo;
+    if (condition === 'clube') target.escalacao[0].clubeId = 999;
+    if (condition === 'identidade') { f.round.partidas.partidas[0].periodo_tr = 'F'; matches.partidas[0].clube_visitante_id = 777; }
+    if (condition === 'temporada') matches.partidas[0].timestamp = 1000;
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: condition === 'incompleto' ? 502 : 409 });
+    expect(target.pontuacao.status).toBe('FINAL');
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('falha da API libera lease e preserva resultados', async () => {
+    const { f, target } = await historical();
+    f.cartola.loadAdministrativeScoredAthletesFresh.mockRejectedValue(new Error('API indisponivel'));
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toThrow('API indisponivel');
+    expect(f.round.lockToken).toBeNull();
+    expect(target.pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('falha transacional da reconsolidacao preserva evidencias novas sem publicar resultados', async () => {
+    const { f } = await historical();
+    f.failCommit(true);
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toThrow('Database unavailable');
+    expect(f.round.partidas.partidas[0].periodo_tr).toBe('F');
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(133.07);
+    expect(f.round.status).toBe('EM_ANDAMENTO');
+    expect(f.round.lockToken).toBeNull();
+    expect(f.sincronizacao.sincronizarRodada).not.toHaveBeenCalled();
+  });
+  it('sem total declarado nao presume completude para consolidar', async () => {
+    const { f, source } = await historical();
+    const incomplete: CartolaScoredAthletesPayload = { rodada: source.rodada, atletas: source.atletas };
+    f.cartola.loadAdministrativeScoredAthletesFresh.mockResolvedValue(incomplete as typeof source);
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('mudanca de temporada antes do commit impede gravacao', async () => {
+    const { f } = await historical();
+    f.cartola.loadMarketStatusFresh.mockResolvedValueOnce({ temporada: 2026, rodada_atual: 30, status_mercado: 1, bola_rolando: false })
+      .mockResolvedValueOnce({ temporada: 2027, rodada_atual: 1, status_mercado: 1, bola_rolando: false });
+    await expect(f.create().reprocessarParciais(29, 2026)).rejects.toMatchObject({ status: 409 });
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it('nao rebaixa pontuacao final individual durante parcial atual', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].pontuacao.status = 'FINAL';
+    f.teams[0].pontuacao.pontuacao = new Prisma.Decimal(999);
+    expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ status: 'PARCIAL', timesProcessados: 2, timesComErro: 1 });
+    expect(f.teams[0].pontuacao.status).toBe('FINAL');
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(999);
+  });
+  it('rejeita outra temporada e rodada futura antes de consultar pontuados', async () => {
+    const { f } = await historical();
+    await expect(f.create().reprocessarParciais(29, 2025)).rejects.toMatchObject({ status: 400 });
+    await expect(f.create().reprocessarParciais(31, 2026)).rejects.toMatchObject({ status: 400 });
+    expect(f.cartola.loadAdministrativeScoredAthletesFresh).not.toHaveBeenCalled();
+  });
   it('recalcula todos sem diff, corrige substituicoes e repete sem duplicar nem alterar snapshots', async () => {
     const f = setup(); f.closed(); await f.create().tick();
     const frozen = JSON.stringify(f.teams.map((t) => t.escalacao));
@@ -258,15 +380,18 @@ describe('Reprocessamento manual', () => {
     expect(f.teams.every((t) => t.pontuacao.status === 'PARCIAL' && t.pontuacao.consolidadoEm === null)).toBe(true);
     expect(f.round).toMatchObject({ status: 'EM_ANDAMENTO', consolidadoEm: null, lockToken: null, lockAte: null });
     expect(f.snapshots.criarSnapshot).not.toHaveBeenCalled();
-    for (const method of Object.values(f.cartola)) expect(method).not.toHaveBeenCalled();
+    expect(f.cartola.loadAdministrativeScoredAthletesFresh).toHaveBeenCalledTimes(2);
+    expect(f.cartola.loadMatchesFresh).toHaveBeenCalledTimes(2);
+    expect(f.cartola.getTeamById).not.toHaveBeenCalled();
+    expect(f.cartola.loadFinalScoredAthletesFresh).not.toHaveBeenCalled();
     expect(f.prisma.timeRodada.findMany.mock.calls.every(([args]) => !args.where.OR)).toBe(true);
   });
   it('reavalia reserva de luxo e aplica capitao 1,5, mantendo uma unica substituicao', async () => {
     const f = setup(); f.closed(); await f.create().tick();
     f.teams[0].reservaLuxoId = 12;
     f.teams[0].escalacao.push({ atletaId: 12, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
-    f.round.pontuados.atletas['12'] = { pontuacao: 20, entrou_em_campo: true };
-    f.round.partidas.partidas[0].periodo_tr = 'F';
+    f.points({ rodada: 25, atletas: { ...f.round.pontuados.atletas, '12': { pontuacao: 20, entrou_em_campo: true } } });
+    f.end();
     expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ substituicoesAlteradas: 1 });
     expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(30);
     expect(await f.create().reprocessarParciais(25, 2026)).toMatchObject({ substituicoesAlteradas: 0 });
@@ -279,12 +404,10 @@ describe('Reprocessamento manual', () => {
     await expect(f.create().reprocessarParciais(39, 2026)).rejects.toMatchObject({ status: 400 });
     await expect(f.create().reprocessarParciais(25, 0)).rejects.toMatchObject({ status: 400 });
   });
-  it.each(['consolidada', 'lock', 'envelope', 'snapshot', 'envelope-invalido'])('409 para %s', async (condition) => {
+  it.each(['consolidada', 'lock', 'snapshot'])('409 para %s', async (condition) => {
     const f = setup(); f.closed(); await f.create().tick();
     if (condition === 'consolidada') f.round.status = 'CONSOLIDADA';
     if (condition === 'lock') { f.round.lockToken = 'outro'; f.round.lockAte = new Date(Date.now() + 120000); }
-    if (condition === 'envelope') f.round.pontuados = null;
-    if (condition === 'envelope-invalido') f.round.partidas.rodada = 24;
     if (condition === 'snapshot') f.teams.pop();
     f.prisma.$executeRaw.mockClear();
     await expect(f.create().reprocessarParciais(25, 2026)).rejects.toMatchObject({ status: 409 });
@@ -339,7 +462,7 @@ describe('Ciclo persistido de rodadas', () => {
       expect(f.teams.every(team => team.pontuacao?.status === 'FINAL')).toBe(true);
       expect(f.round.lockToken).toBeNull();
     });
-    f.open(); await f.create().tick();
+    f.end(); f.open(); await f.create().tick();
     expect(f.round.status).toBe('CONSOLIDADA');
     expect(f.sincronizacao.sincronizarRodada).toHaveBeenCalledTimes(1);
   });
@@ -424,7 +547,7 @@ describe('Ciclo persistido de rodadas', () => {
     await f.create().tick(); expect(f.cartola.loadFinalScoredAthletesFresh).toHaveBeenCalledTimes(1);
   });
   it('falha atomica da conciliacao preserva pontuados, parciais e permite retry', async () => {
-    const f = setup(); f.closed(); await f.create().tick(); f.open(); f.failCommit(true);
+    const f = setup(); f.closed(); await f.create().tick(); f.end(); f.open(); f.failCommit(true);
     const before = f.round.pontuados;
     f.points({ rodada: 25, atletas: { '10': { pontuacao: 99, entrou_em_campo: true }, '11': { pontuacao: 4, entrou_em_campo: true } } });
     await f.create().tick();
@@ -437,7 +560,7 @@ describe('Ciclo persistido de rodadas', () => {
     const f = setup(); f.closed(); f.failures.add(2); await f.create().tick(); f.open();
     await f.create().tick(); expect(f.round.status).not.toBe('CONSOLIDADA');
     expect(f.snapshots.criarSnapshot).toHaveBeenCalledTimes(3);
-    expect(f.cartola.loadFinalScoredAthletesFresh).not.toHaveBeenCalled();
+    expect(f.round.partidas.partidas[0].periodo_tr).toBe('2T');
   });
   it('lock persistido impede dois workers e recupera lease expirada', async () => {
     const f = setup(); f.closed(); await f.create().tick();
@@ -454,7 +577,7 @@ describe('Ciclo persistido de rodadas', () => {
     await f.create().tick(); expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
   });
   it('reconsolidacao explicita reutiliza snapshot e e idempotente', async () => {
-    const f = setup(); f.closed(); await f.create().tick(); f.open(); await f.create().tick();
+    const f = setup(); f.closed(); await f.create().tick(); f.end(); f.open(); await f.create().tick();
     const before = f.teams.map((t) => t.pontuacao.pontuacao.toString());
     await f.create().reconsolidarRodada(25, 2026); await f.create().reconsolidarRodada(25, 2026);
     expect(f.teams.map((t) => t.pontuacao.pontuacao.toString())).toEqual(before);
@@ -464,7 +587,7 @@ describe('Ciclo persistido de rodadas', () => {
   it('ajustes de placar e relogio nao reavaliam times sem scouts alterados', async () => {
     const f = setup(); f.closed(); await f.create().tick(); f.prisma.$executeRaw.mockClear();
     f.matches({ rodada: 25, clubes: {}, partidas: [{ partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2,
-      valida: true, periodo_tr: '2T', timestamp: 1000, placar_oficial_mandante: 2, inicio_cronometro_tr: '15:00' }] });
+      valida: true, periodo_tr: '2T', timestamp: 1767225600, placar_oficial_mandante: 2, inicio_cronometro_tr: '15:00' }] });
     await f.create().tick(); expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
   });
   it('conciliacao reavalia luxo sobre snapshot, persiste troca e recalcula todos', async () => {
@@ -473,7 +596,7 @@ describe('Ciclo persistido de rodadas', () => {
     original.reservaLuxoId = 20;
     original.escalacao.push({ atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
     f.points({ rodada: 25, atletas: { '10': { pontuacao: 1, entrou_em_campo: true }, '11': { pontuacao: 4, entrou_em_campo: true }, '20': { pontuacao: 8, entrou_em_campo: true } } });
-    f.open(); f.prisma.$executeRaw.mockClear(); await f.create().tick();
+    f.end(); f.open(); f.prisma.$executeRaw.mockClear(); await f.create().tick();
     expect(f.round.status).toBe('CONSOLIDADA');
     expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(12);
     expect(f.prisma.$executeRaw.mock.calls.some(([sql]) => sql.sql.includes('INSERT INTO SUBSTITUICAO'))).toBe(true);
@@ -483,7 +606,7 @@ describe('Ciclo persistido de rodadas', () => {
   it('participacao ausente impede consolidacao sem apagar ultima parcial', async () => {
     const f = setup(); f.closed(); await f.create().tick();
     f.teams[0].escalacao.push({ atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
-    f.open(); await f.create().tick();
+    f.end(); f.open(); await f.create().tick();
     expect(f.round.status).not.toBe('CONSOLIDADA');
     expect(f.round.erro).toContain('Participacao desconhecida');
     expect(f.teams[0].pontuacao.status).toBe('PARCIAL');
@@ -497,4 +620,124 @@ describe('Ciclo persistido de rodadas', () => {
     expect(f.prisma.$executeRaw).toHaveBeenCalledTimes(50);
     expect(f.prisma.timeRodada.findMany).toHaveBeenCalledTimes(4);
   }, 15000);
+
+  it.each(['', 'SEGUNDO_TEMPO'])('automatico preserva termino e substituicao com regressao %s', async (periodo) => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].escalacao.push({ atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
+    f.points({ rodada: 25, total_atletas: 3, atletas: {
+      '10': { pontuacao: 0, entrou_em_campo: false, clube_id: 1 },
+      '11': { pontuacao: 4, entrou_em_campo: true, clube_id: 1 },
+      '20': { pontuacao: 8, entrou_em_campo: true, clube_id: 2 },
+    } });
+    f.end(); await f.create().tick();
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(12);
+    f.matches({ rodada: 25, clubes: {}, partidas: [{ partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2,
+      valida: true, periodo_tr: periodo, timestamp: 1767225600 }] });
+    await f.create().tick();
+    expect(f.round.partidas.partidas[0].periodo_tr).toBe('F');
+    expect(f.teams[0].substituicoes).toHaveLength(1);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(12);
+  });
+  it('guarda partidas e envelope completos apos erro de calculo; retenta sem diff', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].capitaoId = 999;
+    f.points({ rodada: 25, total_atletas: 2, atletas: {
+      '10': { pontuacao: 20, entrou_em_campo: true }, '11': { pontuacao: 4, entrou_em_campo: true },
+    } });
+    f.end(); await f.create().tick();
+    expect(f.round.partidas.partidas[0].periodo_tr).toBe('F');
+    expect(f.round.pontuados.atletas['10'].pontuacao).toBe(20);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(15);
+    expect(f.round.erro).toBeTruthy();
+    f.teams[0].capitaoId = 10;
+    await f.create().tick();
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(30);
+    expect(f.round.erro).toBeNull();
+  });
+  it('nao sobrescreve evidencia completa nem resultados com pontuados incompletos', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.points({ rodada: 25, total_atletas: 2, atletas: {
+      '10': { pontuacao: 20, entrou_em_campo: true }, '11': { pontuacao: 4, entrou_em_campo: true },
+    } });
+    await f.create().tick();
+    f.points({ rodada: 25, atletas: { '10': { pontuacao: 0, entrou_em_campo: false } } });
+    await f.create().tick();
+    expect(f.round.pontuados.total_atletas).toBe(2);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(30);
+    expect(f.round.erro).toContain('Envelope incompleto');
+  });
+  it('campo de participacao omitido nao apaga participacao explicita anterior', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.points({ rodada: 25, total_atletas: 2, atletas: {
+      '10': { pontuacao: 0 }, '11': { pontuacao: 4, entrou_em_campo: true },
+    } });
+    await f.create().tick();
+    expect(f.round.pontuados.atletas['10'].entrou_em_campo).toBe(true);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(15);
+    expect(f.round.erro).toContain('Participacao oficial incompleta');
+  });
+  it.each(['identidade', 'validade', 'ausente', 'temporada', 'rodada'])('automatico bloqueia correcao conflitante %s', async (condition) => {
+    const f = setup(); f.closed(); await f.create().tick(); f.end(); await f.create().tick();
+    const before = JSON.stringify(f.round.partidas);
+    const incoming = JSON.parse(before) as CartolaMatchesResponse;
+    if (condition === 'identidade') incoming.partidas[0].clube_casa_id = 777;
+    if (condition === 'validade') incoming.partidas[0].valida = false;
+    if (condition === 'ausente') incoming.partidas = [];
+    if (condition === 'temporada') incoming.temporada = 2025;
+    if (condition === 'rodada') incoming.rodada = 24;
+    f.matches(incoming); f.prisma.$executeRaw.mockClear();
+    await f.create().tick();
+    expect(JSON.stringify(f.round.partidas)).toBe(before);
+    expect(f.round.erro).toBeTruthy();
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+  it.each(['antes', 'andamento'])('nao antecipa substituicao com participacao false e jogo %s', async (condition) => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].escalacao.push({ atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false });
+    f.points({ rodada: 25, total_atletas: 3, atletas: {
+      '10': { pontuacao: 0, entrou_em_campo: false }, '11': { pontuacao: 4, entrou_em_campo: true },
+      '20': { pontuacao: 8, entrou_em_campo: true },
+    } });
+    f.matches({ rodada: 25, clubes: {}, partidas: [{ partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2,
+      valida: true, periodo_tr: condition === 'antes' ? '' : '2T',
+      timestamp: condition === 'antes' ? Date.now() / 1000 + 3600 : 1767225600 }] });
+    await f.create().tick();
+    expect(f.teams[0].substituicoes).toEqual([]);
+    expect(f.round.erro).toBeTruthy();
+  });
+  it('aplica troca progressiva antes do fim de partida de outra posicao', async () => {
+    const f = setup(); f.closed(); await f.create().tick();
+    f.teams[0].escalacao.push(
+      { atletaId: 20, posicaoId: 5, clubeId: 2, titular: false, reserva: true, capitao: false },
+      { atletaId: 21, posicaoId: 4, clubeId: 3, titular: true, reserva: false, capitao: false },
+    );
+    f.points({ rodada: 25, total_atletas: 4, atletas: {
+      '10': { pontuacao: 0, entrou_em_campo: false }, '11': { pontuacao: 4, entrou_em_campo: true },
+      '20': { pontuacao: 8, entrou_em_campo: true }, '21': { pontuacao: 2, entrou_em_campo: true },
+    } });
+    f.matches({ rodada: 25, clubes: {}, partidas: [
+      { partida_id: 1, clube_casa_id: 1, clube_visitante_id: 2, valida: true, periodo_tr: 'F', timestamp: 1767225600 },
+      { partida_id: 2, clube_casa_id: 3, clube_visitante_id: 4, valida: true, periodo_tr: '2T', timestamp: 1767225600 },
+    ] });
+    await f.create().tick();
+    expect(f.teams[0].substituicoes).toEqual([{ atletaSaiuId: 10, atletaEntrouId: 20, posicaoId: 5 }]);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(14);
+    expect(f.teams[0].pontuacao.status).toBe('PARCIAL');
+    expect(f.round.status).not.toBe('CONSOLIDADA');
+    expect(effectiveLineup(f.teams[0], f.teams[0].substituicoes).find(a => a.capitao)?.atletaId).toBe(20);
+    f.teams[0].escalacao.push({ atletaId: 22, posicaoId: 4, clubeId: 4, titular: false, reserva: true, capitao: false });
+    f.teams[0].reservaLuxoId = 22;
+    f.points({ ...f.round.pontuados, total_atletas: 5, atletas: {
+      ...f.round.pontuados.atletas, '22': { pontuacao: 3, entrou_em_campo: true },
+    } });
+    await f.create().tick();
+    expect(f.teams[0].substituicoes).toHaveLength(1);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(14);
+    expect(f.round.erro).toBeTruthy();
+    f.matches({ ...f.round.partidas, partidas: f.round.partidas.partidas.map((m: any) => ({ ...m, periodo_tr: 'F' })) });
+    await f.create().tick();
+    expect(f.round.erro).toBeNull();
+    expect(f.teams[0].substituicoes).toHaveLength(2);
+    expect(f.teams[0].pontuacao.pontuacao.toNumber()).toBe(15);
+  });
 });
