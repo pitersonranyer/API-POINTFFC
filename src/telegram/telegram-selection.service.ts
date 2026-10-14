@@ -11,6 +11,7 @@ const SESSION_TTL_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = 1000;
 const PAGE_SIZE = 8;
 const CANCEL_BUTTON = '❌ Cancelar';
+const PREVIOUS_BUTTON = '⬅️ Anterior';
 const MORE_BUTTON = '➡️ Mais opções';
 const BACK_TO_COMPETITIONS_BUTTON = '🏆 Voltar às competições';
 const BACK_TO_TIMES_BUTTON = '🔄 Escolher outro time';
@@ -117,6 +118,11 @@ export class TelegramSelectionService {
   }
 
   private async handleCompetitionStep(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
+    if (input === PREVIOUS_BUTTON && session.page > 0) {
+      session.page -= 1;
+      this.refresh(session);
+      return this.competitionsPage(session);
+    }
     if (input === MORE_BUTTON && (session.page + 1) * PAGE_SIZE < session.competitions.length) {
       session.page += 1;
       this.refresh(session);
@@ -173,6 +179,11 @@ export class TelegramSelectionService {
 
   private async handleTeamStep(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
     if (input === BACK_TO_COMPETITIONS_BUTTON) return this.start(session.telegramUserId);
+    if (input === PREVIOUS_BUTTON && session.page > 0) {
+      session.page -= 1;
+      this.refresh(session);
+      return this.teamsPage(session);
+    }
     if (input === MORE_BUTTON && (session.page + 1) * PAGE_SIZE < session.allTeams.length) {
       session.page += 1;
       this.refresh(session);
@@ -292,6 +303,7 @@ export class TelegramSelectionService {
   }
 
   private competitionsPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
+    session.page = this.validPage(session.page, session.competitions.length);
     const start = session.page * PAGE_SIZE;
     const pageItems = session.competitions.slice(start, start + PAGE_SIZE);
     session.competitionOptions = pageItems.map((competition, index) => ({
@@ -300,6 +312,7 @@ export class TelegramSelectionService {
     }));
     const lines = pageItems.map((competition, index) => `${index + 1}. ${this.formatCompetition(competition)}`);
     const buttons = this.rows(session.competitionOptions.map(option => option.button));
+    if (start > 0) buttons.push([PREVIOUS_BUTTON]);
     if (start + PAGE_SIZE < session.competitions.length) buttons.push([MORE_BUTTON]);
     buttons.push([CANCEL_BUTTON]);
     return {
@@ -309,6 +322,7 @@ export class TelegramSelectionService {
   }
 
   private teamsPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
+    session.page = this.validPage(session.page, session.allTeams.length);
     const start = session.page * PAGE_SIZE;
     const teamOptions = session.allTeams.slice(start, start + PAGE_SIZE).map((team, index) => {
       const ordinal = start + index + 1;
@@ -317,6 +331,7 @@ export class TelegramSelectionService {
     session.teamOptions = teamOptions;
     const competition = session.competitions.find(item => item.id === session.competitionId);
     const buttons = this.rows(teamOptions.map(option => option.button));
+    if (start > 0) buttons.push([PREVIOUS_BUTTON]);
     if (start + PAGE_SIZE < session.allTeams.length) buttons.push([MORE_BUTTON]);
     buttons.push([BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON]);
     return {
@@ -366,10 +381,15 @@ export class TelegramSelectionService {
   }
 
   private isSelectionInput(text: string): boolean {
-    return text === CANCEL_BUTTON || text === MORE_BUTTON
+    return text === CANCEL_BUTTON || text === PREVIOUS_BUTTON || text === MORE_BUTTON
       || text === BACK_TO_COMPETITIONS_BUTTON || text === BACK_TO_TIMES_BUTTON
       || /^\d+\. .+\(R[^,]+, #\d+\)$/.test(text)
       || /^\d+\. .+\(#\d+\)$/.test(text);
+  }
+
+  private validPage(page: number, totalItems: number): number {
+    const lastPage = Math.max(0, Math.ceil(totalItems / PAGE_SIZE) - 1);
+    return Math.max(0, Math.min(page, lastPage));
   }
 
   private refresh(session: SelectionSession): void {

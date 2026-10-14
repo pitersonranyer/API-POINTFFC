@@ -52,6 +52,77 @@ describe('TelegramSelectionService', () => {
     expect(result.buttons.flat().some(button => button.includes('POINT FFC - Rodada 42'))).toBe(true);
   });
 
+  it('shows competition pagination controls only when those pages exist and returns to the previous page', async () => {
+    const items = Array.from({ length: 17 }, (_, index) => competition(100 + index));
+    competitions.listarGratuitasElegiveis.mockResolvedValue(items);
+    competitions.buscarGratuitaElegivel.mockImplementation(async id => items.find(item => item.id === id) ?? null);
+
+    const first = await service.start('54321');
+    expect(first.buttons.flat()).not.toContain('⬅️ Anterior');
+    expect(first.buttons.flat()).toContain('➡️ Mais opções');
+
+    const second = await service.handle('54321', '➡️ Mais opções');
+    expect(second?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(second?.buttons.flat()).toContain('➡️ Mais opções');
+
+    const last = await service.handle('54321', '➡️ Mais opções');
+    expect(last?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(last?.buttons.flat()).not.toContain('➡️ Mais opções');
+
+    const back = await service.handle('54321', '⬅️ Anterior');
+    expect(back?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(back?.buttons.flat()).toContain('➡️ Mais opções');
+    expect(back?.buttons.flat().some(button => button.includes('#108'))).toBe(true);
+    expect(back?.buttons.flat().some(button => button.includes('#116'))).toBe(false);
+  });
+
+  it('keeps the selected competition while paging teams in both directions', async () => {
+    const userTeams = Array.from({ length: 17 }, (_, index) => team(2000 + index, `Time ${index + 1}`));
+    teams.listarTimesDoUsuario.mockResolvedValue(userTeams);
+    const competitionButton = '1. POINT FFC - Rodada 42 (R42, #42)';
+    await service.start('54321');
+    const first = await service.handle('54321', competitionButton);
+    expect(first?.buttons.flat()).not.toContain('⬅️ Anterior');
+    expect(first?.buttons.flat()).toContain('➡️ Mais opções');
+
+    const second = await service.handle('54321', '➡️ Mais opções');
+    expect(second?.text).toContain('POINT FFC - Rodada 42');
+    expect(second?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(second?.buttons.flat()).toContain('➡️ Mais opções');
+
+    const last = await service.handle('54321', '➡️ Mais opções');
+    expect(last?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(last?.buttons.flat()).not.toContain('➡️ Mais opções');
+
+    const back = await service.handle('54321', '⬅️ Anterior');
+    expect(back?.text).toContain('POINT FFC - Rodada 42');
+    expect(back?.buttons.flat()).toContain('9. Time 9 (#2008)');
+    expect(back?.buttons.flat()).toContain('🏆 Voltar às competições');
+    expect(back?.buttons.flat()).toContain('❌ Cancelar');
+    const summary = await service.handle('54321', '9. Time 9 (#2008)');
+    expect(summary?.text).toContain('Time: Time 9 (#2008)');
+  });
+
+  it('keeps each Telegram user on their own competition page and rejects out-of-range navigation', async () => {
+    competitions.listarGratuitasElegiveis.mockResolvedValue(
+      Array.from({ length: 9 }, (_, index) => competition(100 + index)),
+    );
+    await service.start('111');
+    await service.start('222');
+    const userOneNext = await service.handle('111', '➡️ Mais opções');
+    expect(userOneNext?.buttons.flat()).toContain('⬅️ Anterior');
+
+    const userTwoPrevious = await service.handle('222', '⬅️ Anterior');
+    expect(userTwoPrevious?.buttons.flat()).not.toContain('⬅️ Anterior');
+    expect(userTwoPrevious?.buttons.flat()).toContain('➡️ Mais opções');
+    const last = await service.handle('222', '➡️ Mais opções');
+    expect(last?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(last?.buttons.flat()).not.toContain('➡️ Mais opções');
+    const beyondLast = await service.handle('222', '➡️ Mais opções');
+    expect(beyondLast?.buttons.flat()).toContain('⬅️ Anterior');
+    expect(beyondLast?.buttons.flat()).not.toContain('➡️ Mais opções');
+  });
+
   it('revalidates the selected competition and identifies the user from the active Telegram link', async () => {
     await service.start('54321');
     const selected = await service.handle('54321', '1. POINT FFC - Rodada 42 (R42, #42)');
@@ -149,10 +220,14 @@ describe('TelegramSelectionService', () => {
   it('expires sessions and supports cancellation and returning to competitions', async () => {
     jest.useFakeTimers();
     try {
+      competitions.listarGratuitasElegiveis.mockResolvedValue(
+        Array.from({ length: 9 }, (_, index) => competition(100 + index)),
+      );
       const first = await service.start('54321');
       expect(first.buttons.length).toBeGreaterThan(0);
+      await service.handle('54321', '➡️ Mais opções');
       jest.advanceTimersByTime(10 * 60 * 1000 + 1);
-      const expired = await service.handle('54321', '1. POINT FFC - Rodada 42 (R42, #42)');
+      const expired = await service.handle('54321', '⬅️ Anterior');
       expect(expired?.text).toContain('Sua seleção expirou');
 
       await service.start('54321');
