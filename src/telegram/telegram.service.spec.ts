@@ -5,18 +5,23 @@ import { TelegramService } from './telegram.service';
 describe('TelegramService', () => {
   const webhookSecret = 'test-webhook-secret';
   const botToken = '123456:test-bot-token';
-  const competitions = [{ id: 42, nome: 'POINT FFC - Rodada 27', slug: 'rodada-27', tipoAcesso: 'FREE',
-    valorInscricao: 0, rodadaInicio: 27, rodadaFim: 27, fimInscricao: '2026-10-14T23:59:00.000Z' }];
+  const competitions = [
+    { id: 42, nome: 'POINT FFC - Rodada 27', slug: 'rodada-27', tipoAcesso: 'FREE',
+      valorInscricao: 0, rodadaInicio: 27, rodadaFim: 27, fimInscricao: '2026-10-14T23:59:00.000Z' },
+    { id: 43, nome: 'POINT FFC - Liga Premium', slug: 'liga-premium', tipoAcesso: 'PAGO',
+      valorInscricao: 5, rodadaInicio: 27, rodadaFim: 27, fimInscricao: '2026-10-14T23:59:00.000Z' },
+  ];
   let fetchSpy: jest.SpyInstance;
   let competitionsService: { listarDivulgaveis: jest.Mock };
   let telegramLinks: { createRequest: jest.Mock };
+  let selectionService: { start: jest.Mock; handle: jest.Mock; clear: jest.Mock };
 
   const createService = (values: Record<string, string | undefined> = {}) => {
     const configService = {
       get: jest.fn((key: string) => values[key]),
     } as unknown as ConfigService;
 
-    return new TelegramService(configService, competitionsService as never, telegramLinks as never);
+    return new TelegramService(configService, competitionsService as never, telegramLinks as never, selectionService as never);
   };
 
   const privateMessage = (text: string, chatId: number | string = 12345) => ({
@@ -29,6 +34,11 @@ describe('TelegramService', () => {
   beforeEach(() => {
     competitionsService = { listarDivulgaveis: jest.fn().mockResolvedValue(competitions) };
     telegramLinks = { createRequest: jest.fn().mockResolvedValue({ code: 'a'.repeat(48), expiresAt: new Date('2026-10-14T12:00:00Z') }) };
+    selectionService = {
+      start: jest.fn().mockResolvedValue({ text: 'Selecione uma competição gratuita.', buttons: [['1. Rodada 27']] }),
+      handle: jest.fn().mockResolvedValue(null),
+      clear: jest.fn(),
+    };
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       json: jest.fn().mockResolvedValue({ ok: true }),
@@ -98,6 +108,7 @@ describe('TelegramService', () => {
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { reply_markup: { keyboard: { text: string }[][] } };
     expect(requestBody.reply_markup.keyboard[0][0].text).toBe('🏆 Ver competições');
     expect(requestBody.reply_markup.keyboard[1][0].text).toBe('🔗 Conectar minha conta');
+    expect(requestBody.reply_markup.keyboard[2][0].text).toBe('⚽ Participar grátis');
   });
 
   it('sends all three link messages in order and isolates the code without logging it', async () => {
@@ -124,7 +135,7 @@ describe('TelegramService', () => {
     };
     expect(orientation.text).toBe('Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.');
     expect(orientation.reply_markup.keyboard.flat().map(button => button.text)).toEqual([
-      '🏆 Ver competições', '🔗 Conectar minha conta',
+      '🏆 Ver competições', '🔗 Conectar minha conta', '⚽ Participar grátis',
     ]);
     expect(orientation.reply_markup.is_persistent).toBe(true);
     expect(codeMessage.text).toMatch(/^[a-f0-9]{48}$/);
@@ -277,15 +288,44 @@ describe('TelegramService', () => {
 
     await service.handleWebhook(webhookSecret, {
       update_id: 81,
-      ...privateMessage('🏆 Ver competições'),
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🏆 Ver competições' },
     });
 
     expect(competitionsService.listarDivulgaveis).toHaveBeenCalledWith();
+    expect(selectionService.clear).toHaveBeenCalledWith('54321');
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { text: string };
     expect(requestBody.text).toContain('POINT FFC - Rodada 27');
     expect(requestBody.text).toContain('Rodada: 27');
     expect(requestBody.text).toContain('Valor: Grátis');
+    expect(requestBody.text).toContain('POINT FFC - Liga Premium');
+    expect(requestBody.text).toContain('R$ 5,00');
     expect(requestBody.text).toContain('https://pointffc.com.br/competicoes?id=42');
+  });
+
+  it('starts the separate free participation journey without changing public competition disclosure', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 89,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '⚽ Participar grátis' },
+    });
+
+    expect(selectionService.start).toHaveBeenCalledWith('54321');
+    expect(selectionService.clear).not.toHaveBeenCalled();
+    expect(competitionsService.listarDivulgaveis).not.toHaveBeenCalled();
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(body.text).toContain('Selecione uma competição gratuita.');
+    expect(body.reply_markup.keyboard).toEqual([[{ text: '1. Rodada 27' }]]);
+  });
+
+  it('routes in-session text to the selection flow after preserving the existing menu actions', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    selectionService.handle.mockResolvedValueOnce({ text: 'Resumo da seleção', buttons: [['❌ Cancelar']] });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 90,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '1. Rodada 27' },
+    });
+    expect(selectionService.handle).toHaveBeenCalledWith('54321', '1. Rodada 27');
+    expect(JSON.parse(fetchSpy.mock.calls[0][1]?.body as string).text).toBe('Resumo da seleção');
   });
 
   it('shows the empty state and catches public competition lookup errors', async () => {
