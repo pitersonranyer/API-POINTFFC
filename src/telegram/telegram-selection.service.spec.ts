@@ -79,6 +79,13 @@ describe('TelegramSelectionService', () => {
 
   it('marks and unmarks an individual team and rejects an outdated callback nonce', async () => {
     const initial = await startTeams();
+    const initialQueries = [
+      links.resolveActiveUserId.mock.calls.length,
+      competitions.buscarGratuitaElegivel.mock.calls.length,
+      teams.listarTimesDoUsuario.mock.calls.length,
+      inscriptions.minhas.mock.calls.length,
+      competitions.contarParticipantesAtivos.mock.calls.length,
+    ];
     const oldData = button(initial, '⬜ Time 1001 (#1001)');
     const selected = await press('54321', oldData);
     expect(selected?.text).toContain('Times selecionados: 1');
@@ -89,6 +96,13 @@ describe('TelegramSelectionService', () => {
     const unselected = await press('54321', button(selected!, '✅ Time 1001 (#1001)'));
     expect(unselected?.text).toContain('Times selecionados: 0');
     expect(unselected?.inlineKeyboard?.flat().some(item => item.text.startsWith('✅ Continuar'))).toBe(false);
+    expect([
+      links.resolveActiveUserId.mock.calls.length,
+      competitions.buscarGratuitaElegivel.mock.calls.length,
+      teams.listarTimesDoUsuario.mock.calls.length,
+      inscriptions.minhas.mock.calls.length,
+      competitions.contarParticipantesAtivos.mock.calls.length,
+    ]).toEqual(initialQueries);
   });
 
   it('selects all eligible teams across pages, changes the button label, and clears all selections', async () => {
@@ -183,21 +197,23 @@ describe('TelegramSelectionService', () => {
     expect(allText).toContain('Os times foram selecionados, mas nenhuma inscrição foi realizada.');
   });
 
-  it('clears selections when ownership or registration eligibility changes during the journey', async () => {
+  it('rejects the summary and clears selection when ownership or registration eligibility changes', async () => {
     teams.listarTimesDoUsuario.mockResolvedValue([team(100), team(101)]);
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 100 (#100)'));
     teams.listarTimesDoUsuario.mockResolvedValue([team(101)]);
-    const refreshed = await press('54321', button(selected!, '⬜ Time 101 (#101)'));
-    expect(refreshed?.text).toContain('Alguns times foram removidos da seleção porque sua elegibilidade mudou.');
-    expect(refreshed?.text).toContain('Times selecionados: 1');
+    const refreshed = await press('54321', button(selected!, '✅ Continuar (1)'));
+    expect(refreshed?.text).toContain('A elegibilidade mudou desde o carregamento');
+    expect(refreshed?.text).toContain('Times selecionados: 0');
+    expect(refreshed?.text).not.toContain('Resumo da seleção');
     expect(refreshed?.inlineKeyboard?.flat().some(item => item.text.includes('#100'))).toBe(false);
   });
 
   it('revalidates linked active account and removes the selection if the user is unlinked', async () => {
     const initial = await startTeams();
     links.resolveActiveUserId.mockResolvedValueOnce(null);
-    const response = await press('54321', button(initial, '☑️ Selecionar todos'));
+    const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
+    const response = await press('54321', button(selected!, '✅ Continuar (1)'));
     expect(response?.editMessage).toBe(true);
     expect(response?.text).toContain('vínculo ativo');
     expect(response?.inlineKeyboard).toEqual([]);
@@ -206,7 +222,8 @@ describe('TelegramSelectionService', () => {
   it('stops the journey when the competition is no longer free and eligible', async () => {
     const initial = await startTeams();
     competitions.buscarGratuitaElegivel.mockResolvedValueOnce(null);
-    const response = await press('54321', button(initial, '☑️ Selecionar todos'));
+    const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
+    const response = await press('54321', button(selected!, '✅ Continuar (1)'));
     expect(response?.text).toContain('deixou de estar disponível');
     expect(response?.inlineKeyboard).toEqual([]);
   });
@@ -258,12 +275,31 @@ describe('TelegramSelectionService', () => {
     expect(teams.listarTimesDoUsuario).toHaveBeenCalledWith(7);
   });
 
-  it('revalidates competition, link, owned teams, and active participant capacity before every callback', async () => {
+  it('uses the loaded snapshot for visual callbacks and revalidates everything only on Continue', async () => {
+    teams.listarTimesDoUsuario.mockResolvedValue(Array.from({ length: 10 }, (_, index) => team(index + 100)));
     const initial = await startTeams();
-    await press('54321', button(initial, '☑️ Selecionar todos'));
-    expect(links.resolveActiveUserId).toHaveBeenCalledTimes(2);
-    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledTimes(3);
-    expect(teams.listarTimesDoUsuario).toHaveBeenCalledTimes(2);
-    expect(competitions.contarParticipantesAtivos).toHaveBeenCalledWith(42);
+    const baseline = {
+      link: links.resolveActiveUserId.mock.calls.length,
+      competition: competitions.buscarGratuitaElegivel.mock.calls.length,
+      teams: teams.listarTimesDoUsuario.mock.calls.length,
+      registrations: inscriptions.minhas.mock.calls.length,
+      participants: competitions.contarParticipantesAtivos.mock.calls.length,
+    };
+    const selectedAll = await press('54321', button(initial, '☑️ Selecionar todos'));
+    const nextPage = await press('54321', button(selectedAll!, '➡️ Próxima'));
+    const cleared = await press('54321', button(nextPage!, '🗑️ Limpar seleção'));
+    expect(links.resolveActiveUserId).toHaveBeenCalledTimes(baseline.link);
+    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledTimes(baseline.competition);
+    expect(teams.listarTimesDoUsuario).toHaveBeenCalledTimes(baseline.teams);
+    expect(inscriptions.minhas).toHaveBeenCalledTimes(baseline.registrations);
+    expect(competitions.contarParticipantesAtivos).toHaveBeenCalledTimes(baseline.participants);
+
+    const selected = await press('54321', button(cleared!, '☑️ Selecionar todos'));
+    await press('54321', button(selected!, '✅ Continuar (10)'));
+    expect(links.resolveActiveUserId).toHaveBeenCalledTimes(baseline.link + 1);
+    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledTimes(baseline.competition + 1);
+    expect(teams.listarTimesDoUsuario).toHaveBeenCalledTimes(baseline.teams + 1);
+    expect(inscriptions.minhas).toHaveBeenCalledTimes(baseline.registrations + 1);
+    expect(competitions.contarParticipantesAtivos).toHaveBeenCalledTimes(baseline.participants + 1);
   });
 });
