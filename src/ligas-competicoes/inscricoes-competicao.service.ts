@@ -20,6 +20,14 @@ export function mapMinha(row: MinhaRow): MinhaInscricaoDto {
   };
 }
 
+export interface MinhaInscricaoTelegramDto {
+  id: number;
+  timeIdCartola: number;
+  nomeTime: string;
+  dataInscricao: Date;
+  competicao: { nome: string; rodadaInicio: number | null; rodadaFim: number | null; dataInicio: Date | null; dataFim: Date | null; status: string };
+}
+
 export type MotivoBloqueio = 'COMPETICAO_NAO_FREE' | 'INSCRICOES_FECHADAS' | 'FORA_JANELA_INSCRICAO'
   | 'COMPETICAO_INDISPONIVEL' | 'LIMITE_PARTICIPANTES_ATINGIDO' | 'LIMITE_TIMES_USUARIO_ATINGIDO';
 
@@ -161,6 +169,21 @@ export class InscricoesCompeticaoService {
       orderBy: [{ dataInscricao: 'asc' }, { id: 'asc' }],
     });
     return rows.map(mapMinha);
+  }
+
+  async minhasDoUsuario(usuarioId: number): Promise<MinhaInscricaoTelegramDto[]> {
+    const rows = await this.prisma.inscricaoTimeCompeticao.findMany({
+      where: { usuarioId },
+      select: {
+        id: true, timeIdCartola: true, nomeTime: true, dataInscricao: true,
+        competicaoLiga: { select: { nome: true, rodadaInicio: true, rodadaFim: true, dataInicio: true, dataFim: true, status: true } },
+      },
+      orderBy: [{ dataInscricao: 'desc' }, { id: 'desc' }],
+    });
+    return rows.map(row => ({
+      id: row.id, timeIdCartola: row.timeIdCartola, nomeTime: row.nomeTime,
+      dataInscricao: row.dataInscricao, competicao: row.competicaoLiga,
+    }));
   }
 
   async participantes(competicaoId: number): Promise<ParticipanteCompeticaoDto[]> {

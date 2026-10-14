@@ -195,6 +195,21 @@ describe('InscricoesCompeticaoService', () => {
     expect(prisma.inscricaoTimeCompeticao.findMany.mock.calls[0][0].where.usuarioId).toBe(99);
   });
 
+  it('lista inscricoes do Telegram por usuario e inclui apenas dados da competicao para exibição', async () => {
+    const row = { id: 9, timeIdCartola: 456, nomeTime: 'Meu time', dataInscricao: now,
+      competicaoLiga: { nome: 'Liga', rodadaInicio: 8, rodadaFim: 9, dataFim: new Date('2026-10-01T00:00:00Z') } };
+    prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([row]);
+    await expect(service.minhasDoUsuario(77)).resolves.toEqual([{
+      id: 9, timeIdCartola: 456, nomeTime: 'Meu time', dataInscricao: now, competicao: row.competicaoLiga,
+    }]);
+    expect(prisma.inscricaoTimeCompeticao.findMany).toHaveBeenCalledWith({
+      where: { usuarioId: 77 },
+      select: { id: true, timeIdCartola: true, nomeTime: true, dataInscricao: true,
+      competicaoLiga: { select: { nome: true, rodadaInicio: true, rodadaFim: true, dataInicio: true, dataFim: true, status: true } } },
+      orderBy: [{ dataInscricao: 'desc' }, { id: 'desc' }],
+    });
+  });
+
   it('participantes publicos usam apenas snapshot de inscricoes ativas', async () => {
     prisma.inscricaoTimeCompeticao.findMany.mockResolvedValue([{ id: 8, nomeTime: 'Snapshot', nomeCartoleiro: null,
       escudoUrl: null, pontuacao: new Prisma.Decimal('12.50'), posicao: null, posicaoAnterior: null }]);
