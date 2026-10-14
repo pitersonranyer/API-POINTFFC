@@ -20,8 +20,51 @@ const inconsistencia = () => new InternalServerErrorException({
 export class LotesInscricaoService {
   constructor(private readonly prisma: PrismaService, private readonly carteiras: CarteiraService) {}
 
+  criarFree(competicaoId: number, usuarioId: number, dto: CriarLoteInscricaoDto, chave: string | undefined) {
+    return this.criar(competicaoId, usuarioId, dto, chave, true);
+  }
+
+  async consultarResultadoFreeConfirmado(usuarioId: number, chave: string): Promise<{
+    resposta: LoteInscricaoResponseDto;
+    competenciaNome: string;
+    times: Array<{ timeIdCartola: number; nomeTime: string }>;
+  } | null> {
+    if (!Number.isSafeInteger(usuarioId) || usuarioId < 1 || typeof chave !== 'string'
+      || !/^[a-zA-Z0-9_-]{16,128}$/.test(chave)) return null;
+
+    const lote = await this.prisma.loteInscricao.findUnique({
+      where: { usuarioId_chaveIdempotenciaHash: { usuarioId, chaveIdempotenciaHash: hash(chave) } },
+      include: {
+        inscricoes: { orderBy: { timeIdCartola: 'asc' }, select: { timeIdCartola: true, nomeTime: true } },
+        competicaoLiga: { select: { nome: true } },
+      },
+    });
+    if (!lote || !lote.confirmadoEm || !lote.respostaOriginal) return null;
+
+    const timesIds = lote.inscricoes.map(inscricao => inscricao.timeIdCartola);
+    const requestHash = hash(JSON.stringify({
+      versao: 1,
+      competicaoId: lote.competicaoLigaId,
+      timesCartolaIds: timesIds,
+      valorUnitarioEsperado: '0.00',
+    }));
+    const resposta = this.replay(lote, requestHash);
+    const respostaValida = lote.usuarioId === usuarioId && lote.tipoAcesso === 'FREE'
+      && lote.valorUnitario.isZero() && lote.valorTotal.isZero() && lote.movimentacaoDebitoId === null
+      && resposta.tipoAcesso === 'FREE' && resposta.competicaoId === lote.competicaoLigaId
+      && resposta.quantidade === lote.quantidade && resposta.quantidade === timesIds.length
+      && resposta.valorUnitario === '0.00' && resposta.valorTotal === '0.00'
+      && resposta.movimentacaoDebitoId === null && resposta.saldoDisponivelAposOperacao === null
+      && resposta.inscricoes.length === lote.inscricoes.length
+      && resposta.inscricoes.every((inscricao, index) => inscricao.timeIdCartola === timesIds[index]
+        && inscricao.statusInscricao === 'ATIVA');
+    if (!respostaValida) throw inconsistencia();
+
+    return { resposta, competenciaNome: lote.competicaoLiga.nome, times: lote.inscricoes };
+  }
+
   async criar(competicaoId: number, usuarioId: number, dto: CriarLoteInscricaoDto,
-    chave: string | undefined): Promise<LoteInscricaoResponseDto> {
+    chave: string | undefined, somenteFree = false): Promise<LoteInscricaoResponseDto> {
     // Cada tentativa e uma transacao integral. Somente conflitos do banco sao repetidos.
     for (let tentativa = 0; ; tentativa++) {
       try {
@@ -57,6 +100,9 @@ export class LotesInscricaoService {
           const competicao = await tx.competicaoLiga.findUniqueOrThrow({ where: { id: competicaoId }, include: {
             ligaModalidade: { include: { liga: true, modalidade: true } },
           } });
+          if (somenteFree && (competicao.tipoAcesso !== 'FREE' || !competicao.valorInscricao.isZero())) {
+            throw conflito('COMPETICAO_NAO_FREE', 'Esta operação aceita somente competições gratuitas.');
+          }
           const now = new Date();
           const bloqueio = motivoBloqueioInscricao(competicao, now);
           if (bloqueio) throw conflito(bloqueio, 'Inscricoes indisponiveis para esta competicao.');

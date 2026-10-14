@@ -39,6 +39,33 @@ describe('LotesInscricaoService', () => {
     expect(f.state.movimentos).toEqual([]);
   });
 
+  it('cria um lote FREE via caminho restrito sem abrir carteira e recupera recibo persistido', async () => {
+    Object.assign(f.competicao, { tipoAcesso: 'FREE', valorInscricao: new Prisma.Decimal(0) });
+    const obterCarteira = jest.spyOn(f.carteiras, 'obterOuCriarEmTransacao');
+    const debitar = jest.spyOn(f.carteiras, 'debitarEmTransacao');
+    const freeDto = { timesCartolaIds: [456, 123], valorUnitarioEsperado: '0.00' };
+    const response = await f.service.criarFree(1, 10, freeDto, chave);
+    expect(response).toMatchObject({ tipoAcesso: 'FREE', quantidade: 2, valorUnitario: '0.00', valorTotal: '0.00',
+      movimentacaoDebitoId: null, saldoDisponivelAposOperacao: null });
+    expect(await f.service.consultarResultadoFreeConfirmado(10, chave)).toMatchObject({
+      resposta: response, competenciaNome: 'POINT FFC - Rodada 42',
+      times: [{ timeIdCartola: 123 }, { timeIdCartola: 456 }],
+    });
+    expect(obterCarteira).not.toHaveBeenCalled();
+    expect(debitar).not.toHaveBeenCalled();
+    expect(f.state.movimentos).toEqual([]);
+  });
+
+  it('o caminho FREE-only rejeita competicao paga dentro da transacao sem tocar na carteira', async () => {
+    const obterCarteira = jest.spyOn(f.carteiras, 'obterOuCriarEmTransacao');
+    const debitar = jest.spyOn(f.carteiras, 'debitarEmTransacao');
+    await expect(f.service.criarFree(1, 10, { timesCartolaIds: [123], valorUnitarioEsperado: '0.00' }, chave))
+      .rejects.toMatchObject({ response: { code: 'COMPETICAO_NAO_FREE' } });
+    expect(obterCarteira).not.toHaveBeenCalled();
+    expect(debitar).not.toHaveBeenCalled();
+    semEfeitos();
+  });
+
   it('saldo insuficiente retorna valores e reverte o lote completo', async () => {
     f.state.carteira.saldoDisponivel = new Prisma.Decimal('7.50');
     await expect(criar()).rejects.toMatchObject({ response: { statusCode: 409, code: 'SALDO_INSUFICIENTE',

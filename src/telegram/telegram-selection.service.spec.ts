@@ -1,4 +1,5 @@
 import { InscricoesCompeticaoService } from '../ligas-competicoes/inscricoes-competicao.service';
+import { LotesInscricaoService } from '../ligas-competicoes/lotes-inscricao.service';
 import { MeusTimesService } from '../meus-times/meus-times.service';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
@@ -28,6 +29,8 @@ describe('TelegramSelectionService', () => {
   let links: { resolveActiveUserId: jest.Mock };
   let teams: { listarTimesDoUsuario: jest.Mock };
   let inscriptions: { minhas: jest.Mock };
+  let enrollmentBatches: { criarFree: jest.Mock; consultarResultadoFreeConfirmado: jest.Mock };
+  let lastEnrollment: { response: Record<string, unknown>; ids: number[] } | null;
   let service: TelegramSelectionService;
 
   beforeEach(() => {
@@ -39,11 +42,31 @@ describe('TelegramSelectionService', () => {
     links = { resolveActiveUserId: jest.fn().mockResolvedValue(7) };
     teams = { listarTimesDoUsuario: jest.fn().mockResolvedValue([team(1001)]) };
     inscriptions = { minhas: jest.fn().mockResolvedValue([]) };
+    lastEnrollment = null;
+    enrollmentBatches = {
+      criarFree: jest.fn().mockImplementation(async (competicaoId: number, _usuarioId: number, dto: { timesCartolaIds: number[] }) => {
+        const ids = [...dto.timesCartolaIds].sort((a, b) => a - b);
+        const response = {
+          loteId: 500, competicaoId, quantidade: ids.length, tipoAcesso: 'FREE', moeda: 'BRL',
+          valorUnitario: '0.00', valorTotal: '0.00', movimentacaoDebitoId: null,
+          saldoDisponivelAposOperacao: null,
+          inscricoes: ids.map((timeIdCartola, index) => ({ id: index + 1, timeIdCartola, statusInscricao: 'ATIVA' })),
+        };
+        lastEnrollment = { response, ids };
+        return response;
+      }),
+      consultarResultadoFreeConfirmado: jest.fn().mockImplementation(async () => lastEnrollment && ({
+        resposta: lastEnrollment.response,
+        competenciaNome: competition().nome,
+        times: lastEnrollment.ids.map(timeIdCartola => ({ timeIdCartola, nomeTime: `Time ${timeIdCartola}` })),
+      })),
+    };
     service = new TelegramSelectionService(
       competitions as unknown as TelegramCompetitionsService,
       links as unknown as TelegramLinkService,
       teams as unknown as MeusTimesService,
       inscriptions as unknown as InscricoesCompeticaoService,
+      enrollmentBatches as unknown as LotesInscricaoService,
     );
   });
 
@@ -176,8 +199,21 @@ describe('TelegramSelectionService', () => {
     expect(summary?.text).toContain('Falcão (#102)');
     expect(summary!.text.indexOf('Trovão (#101)')).toBeLessThan(summary!.text.indexOf('Falcão (#102)'));
     expect(summary?.text).toContain('Os times foram selecionados, mas nenhuma inscrição foi realizada.');
-    expect(summary?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['🔄 Alterar seleção', '❌ Cancelar']);
+    expect(summary?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['✅ Confirmar inscrição', '↩️ Voltar à seleção', '❌ Cancelar']);
+    expect(button(summary!, '✅ Confirmar inscrição').length).toBeLessThanOrEqual(64);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
     expect(Object.keys(inscriptions)).toEqual(['minhas']);
+
+    const result = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    expect(result?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(result?.text).toContain('Competição: POINT FFC - Rodada 42');
+    expect(result?.text).toContain('Total: 2 times');
+    expect(result?.text).toContain('Valor: R$ 0,00');
+    expect(result?.text).toContain('Time 101 (#101)');
+    expect(result?.text).toContain('Time 102 (#102)');
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledWith(42, 7, {
+      timesCartolaIds: [101, 102], valorUnitarioEsperado: '0.00',
+    }, expect.stringMatching(/^[A-Za-z0-9_-]{24}$/));
   });
 
   it('keeps every selected team and the required notice when the summary needs multiple Telegram messages', async () => {
@@ -186,15 +222,49 @@ describe('TelegramSelectionService', () => {
     );
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
-    const summary = await press('54321', button(selected!, '✅ Continuar (80)'));
+    const summary = await press('54321', button(selected!, '✅ Continuar (50)'));
     const allText = [summary?.text ?? '', ...(summary?.followUpMessages ?? [])].join('\n');
     expect(summary?.text.length).toBeLessThanOrEqual(3900);
     expect(summary?.followUpMessages?.length).toBeGreaterThan(0);
     expect(allText).toContain('Equipe Cartola 1');
-    expect(allText).toContain('Equipe Cartola 80');
+    expect(allText).toContain('Equipe Cartola 50');
     expect(allText).toContain('(#1000)');
-    expect(allText).toContain('(#1079)');
+    expect(allText).toContain('(#1049)');
+    expect(allText).not.toContain('Equipe Cartola 51');
     expect(allText).toContain('Os times foram selecionados, mas nenhuma inscrição foi realizada.');
+  });
+
+  it('reuses the persistent idempotency key after an uncertain result and safely recovers duplicate callbacks', async () => {
+    const initial = await startTeams();
+    const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const confirmData = button(summary!, '✅ Confirmar inscrição');
+    const key = confirmData.split(':').at(-1);
+    expect(confirmData.length).toBeLessThanOrEqual(64);
+    enrollmentBatches.criarFree.mockRejectedValueOnce(new Error('connection lost after commit'));
+
+    const retry = await press('54321', confirmData);
+    expect(retry?.text).toContain('A operação pode ter sido concluída');
+    const retryData = button(retry!, '✅ Confirmar inscrição');
+    expect(retryData.split(':').at(-1)).toBe(key);
+
+    const [first, repeated] = await Promise.all([
+      press('54321', retryData),
+      press('54321', retryData),
+    ]);
+    expect(first?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(repeated?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(2);
+    expect(enrollmentBatches.consultarResultadoFreeConfirmado).toHaveBeenCalledWith(7, key);
+  });
+
+  it('does not enroll until explicit confirmation and blocks competition that became paid', async () => {
+    const initial = await startTeams();
+    const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    competitions.buscarGratuitaElegivel.mockResolvedValueOnce(competition({ tipoAcesso: 'PAGO', valorInscricao: 10 }));
+    const rejected = await press('54321', button(selected!, '✅ Continuar (1)'));
+    expect(rejected?.text).toContain('deixou de estar disponível');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
   });
 
   it('rejects the summary and clears selection when ownership or registration eligibility changes', async () => {

@@ -42,8 +42,16 @@ export function lotesFixture() {
       }),
     },
     loteInscricao: {
-      findUnique: jest.fn(async ({ where }) => state.lotes.find(row => row.usuarioId === where.usuarioId_chaveIdempotenciaHash.usuarioId
-        && row.chaveIdempotenciaHash === where.usuarioId_chaveIdempotenciaHash.chaveIdempotenciaHash) ?? null),
+      findUnique: jest.fn(async ({ where, include }) => {
+        const row = state.lotes.find(item => item.usuarioId === where.usuarioId_chaveIdempotenciaHash.usuarioId
+          && item.chaveIdempotenciaHash === where.usuarioId_chaveIdempotenciaHash.chaveIdempotenciaHash);
+        if (!row || !include) return row ?? null;
+        return { ...row,
+          inscricoes: state.inscricoes.filter(item => item.loteInscricaoId === row.id)
+            .sort((a, b) => a.timeIdCartola - b.timeIdCartola),
+          competicaoLiga: { nome: 'POINT FFC - Rodada 42' },
+        };
+      }),
       create: jest.fn(async ({ data }) => {
         const row = { id: state.lotes.length + 1, movimentacaoDebitoId: null, confirmadoEm: null, respostaOriginal: null, ...data };
         state.lotes.push(row); return row;
@@ -59,7 +67,7 @@ export function lotesFixture() {
       }),
     },
   };
-  const prisma: any = { $transaction: jest.fn(async callback => {
+  const prisma: any = { loteInscricao: tx.loteInscricao, $transaction: jest.fn(async callback => {
     const snapshot = { carteira: { ...state.carteira }, lotes: state.lotes.map(row => ({ ...row })),
       inscricoes: state.inscricoes.map(row => ({ ...row })), movimentos: state.movimentos.map(row => ({ ...row })) };
     try { return await callback(tx); } catch (error) { state = snapshot; throw error; }

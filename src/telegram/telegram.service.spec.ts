@@ -441,6 +441,36 @@ describe('TelegramService', () => {
     expect(JSON.stringify(logger.mock.calls)).not.toContain('valid-callback');
   });
 
+  it('sends a persisted enrollment receipt separately when editing the callback message fails', async () => {
+    selectionService.handleCallback.mockResolvedValueOnce({
+      text: '🏆 Inscrição realizada com sucesso!\n\nCompetição: Rodada 42\n\nTimes inscritos:\n• Time 1001 (#1001)\n\nTotal: 1 time\nValor: R$ 0,00',
+      buttons: [], inlineKeyboard: [], editMessage: true,
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+
+    await service.handleWebhook(webhookSecret, {
+      update_id: 906,
+      callback_query: {
+        id: 'callback-query-enrollment', from: { id: 54321 }, data: 'valid-confirm',
+        message: { message_id: 987, chat: { id: 54321, type: 'private' } },
+      },
+    });
+
+    expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.telegram.org/bot${botToken}/editMessageText`,
+      `https://api.telegram.org/bot${botToken}/sendMessage`,
+      `https://api.telegram.org/bot${botToken}/answerCallbackQuery`,
+    ]);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).text).toContain('Inscrição realizada com sucesso!');
+    expect(JSON.parse(fetchSpy.mock.calls[2][1]?.body as string)).toEqual({
+      callback_query_id: 'callback-query-enrollment', text: 'Inscrição confirmada.',
+    });
+    expect(selectionService.clearIfSession).not.toHaveBeenCalled();
+  });
+
   it('routes in-session text to the selection flow after preserving the existing menu actions', async () => {
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
     selectionService.handle.mockResolvedValueOnce({ text: 'Resumo da seleção', buttons: [['❌ Cancelar']] });
