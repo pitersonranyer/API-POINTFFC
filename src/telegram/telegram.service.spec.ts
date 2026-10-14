@@ -9,13 +9,14 @@ describe('TelegramService', () => {
     valorInscricao: 0, rodadaInicio: 27, rodadaFim: 27, fimInscricao: '2026-10-14T23:59:00.000Z' }];
   let fetchSpy: jest.SpyInstance;
   let competitionsService: { listarDivulgaveis: jest.Mock };
+  let telegramLinks: { createRequest: jest.Mock };
 
   const createService = (values: Record<string, string | undefined> = {}) => {
     const configService = {
       get: jest.fn((key: string) => values[key]),
     } as unknown as ConfigService;
 
-    return new TelegramService(configService, competitionsService as never);
+    return new TelegramService(configService, competitionsService as never, telegramLinks as never);
   };
 
   const privateMessage = (text: string, chatId: number | string = 12345) => ({
@@ -27,6 +28,7 @@ describe('TelegramService', () => {
 
   beforeEach(() => {
     competitionsService = { listarDivulgaveis: jest.fn().mockResolvedValue(competitions) };
+    telegramLinks = { createRequest: jest.fn().mockResolvedValue({ code: 'a'.repeat(48), expiresAt: new Date('2026-10-14T12:00:00Z') }) };
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
       json: jest.fn().mockResolvedValue({ ok: true }),
@@ -95,6 +97,29 @@ describe('TelegramService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { reply_markup: { keyboard: { text: string }[][] } };
     expect(requestBody.reply_markup.keyboard[0][0].text).toBe('🏆 Ver competições');
+  });
+
+  it('creates and sends a private one-time link code without logging it', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+    await service.handleWebhook(webhookSecret, {
+      update_id: 811,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '/vincular' },
+    });
+
+    expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
+    const messageText = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string).text as string;
+    expect(messageText).toContain('a'.repeat(48));
+    expect(messageText).toContain('10 minutos');
+    expect(logger).not.toHaveBeenCalled();
+  });
+
+  it('does not create link requests without a validated private Telegram sender ID', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      message: { chat: { id: 12345, type: 'private' }, text: '/vincular' },
+    });
+    expect(telegramLinks.createRequest).not.toHaveBeenCalled();
   });
 
   it('responds with the preparation message to an unknown text message', async () => {
