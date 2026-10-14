@@ -122,7 +122,13 @@ describe('TelegramService', () => {
       }),
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { reply_markup: { keyboard: { text: string }[][] } };
+    const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as {
+      text: string;
+      link_preview_options: { is_disabled: boolean };
+      reply_markup: { keyboard: { text: string }[][] };
+    };
+    expect(requestBody.text).toBe('⚽ Bem-vindo ao POINT FFC Connect!\n\nConsulte competições, gerencie seus times e acompanhe suas inscrições.\n\nEscolha uma opção no menu abaixo.');
+    expect(requestBody.link_preview_options).toEqual({ is_disabled: true });
     expect(requestBody.reply_markup.keyboard.map(row => row.map(button => button.text))).toEqual([
       ['🏆 Competições', '📋 Minhas inscrições'], ['🔗 Minha conta'],
     ]);
@@ -174,17 +180,21 @@ describe('TelegramService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     const orientation = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as {
       text: string;
+      link_preview_options: { is_disabled: boolean };
       reply_markup: { keyboard: Array<Array<{ text: string }>>; is_persistent: boolean };
     };
     const codeMessage = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string) as {
       text: string;
+      link_preview_options: { is_disabled: boolean };
       entities: Array<{ type: string; offset: number; length: number }>;
     };
     const completion = JSON.parse(fetchSpy.mock.calls[2][1]?.body as string) as {
       text: string;
+      link_preview_options: { is_disabled: boolean };
       reply_markup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
     };
     expect(orientation.text).toBe('Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.');
+    expect(orientation.link_preview_options).toEqual({ is_disabled: true });
     expect(orientation.reply_markup.keyboard.flat().map(button => button.text)).toEqual([
       '🏆 Competições', '📋 Minhas inscrições', '🔗 Minha conta',
     ]);
@@ -192,8 +202,10 @@ describe('TelegramService', () => {
     expect(codeMessage.text).toMatch(/^[a-f0-9]{48}$/);
     expect(codeMessage.text).toBe('a'.repeat(48));
     expect(codeMessage.entities).toEqual([{ type: 'code', offset: 0, length: 48 }]);
-    expect(Object.keys(codeMessage)).toEqual(['chat_id', 'text', 'entities']);
+    expect(codeMessage.link_preview_options).toEqual({ is_disabled: true });
+    expect(Object.keys(codeMessage)).toEqual(['chat_id', 'text', 'link_preview_options', 'entities']);
     expect(completion.text).toBe('Agora é só concluir sua vinculação no POINT FFC! ⚽\n\nToque no botão abaixo, faça login se necessário e informe o código que você acabou de receber.');
+    expect(completion.link_preview_options).toEqual({ is_disabled: true });
     expect(completion.reply_markup.inline_keyboard).toEqual([[
       { text: '🌐 Vincular no POINT FFC', url: 'https://pointffc.com.br/conectar-telegram/' },
     ]]);
@@ -423,6 +435,7 @@ describe('TelegramService', () => {
     expect(fetchSpy.mock.calls[0][0]).toBe(`https://api.telegram.org/bot${botToken}/editMessageText`);
     expect(JSON.parse(fetchSpy.mock.calls[0][1]?.body as string)).toMatchObject({
       chat_id: 54321, message_id: 987, text: 'Times selecionados: 1',
+      link_preview_options: { is_disabled: true },
     });
     expect(fetchSpy.mock.calls[1][0]).toBe(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`);
     expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string)).toEqual({ callback_query_id: 'callback-query-1' });
