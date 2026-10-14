@@ -101,6 +101,7 @@ interface SelectionSession {
   bulkResult?: BulkRegistrationSummary;
   registrationOrigin?: 'account' | 'competition';
   directCandidates?: DirectTeamCandidate[];
+  directSubmittedIds?: number[];
   directTeamIds?: number[];
   directAlreadyEnrolledIds?: number[];
   enrollmentTeamIds?: number[];
@@ -637,9 +638,45 @@ export class TelegramSelectionService {
       };
     }
 
+    if (session.enrollmentMode === 'direct') {
+      let latest: EligibilitySnapshot;
+      try { latest = await this.loadEligibility(session, usuarioId); } catch {
+        return this.renderConfirmationFailure(session, competition,
+          'Não foi possível revalidar a capacidade da competição. A inscrição não foi enviada; tente novamente.');
+      }
+      if (!latest.competition || latest.competition.tipoAcesso !== 'FREE') {
+        this.sessions.delete(session.telegramUserId);
+        return { text: 'A competição deixou de estar disponível para inscrição gratuita. Inicie novamente pelo menu.',
+          buttons: [], sessionToken: session.sessionToken, inlineKeyboard: [], editMessage: true };
+      }
+      const selected = [...(session.enrollmentTeamIds ?? [])];
+      const slots = this.remainingEnrollmentSlots(latest);
+      if (slots < selected.length) {
+        const kept = selected.slice(0, slots);
+        const dropped = selected.slice(slots);
+        session.directTeamIds = kept;
+        session.enrollmentTeamIds = kept;
+        for (const candidate of session.directCandidates ?? []) {
+          if (dropped.includes(candidate.timeId)) candidate.status = 'limit';
+        }
+        if (!kept.length) {
+          session.stage = 'direct-enrollment-preview';
+          this.refresh(session);
+          return { ...this.renderDirectEnrollmentPreview(session,
+            `A capacidade mudou. Foram enviados ${(session.directSubmittedIds ?? []).length} IDs distintos; 0 podem ser inscritos e ${dropped.length} ficaram fora por limite (${this.formatTeamIds(dropped)}).`), editMessage: true };
+        }
+        session.enrollmentTeamIds = kept;
+        this.refresh(session);
+        return { ...this.renderDirectEnrollmentConfirmation(session, latest.competition,
+          `A capacidade mudou. Foram enviados ${(session.directSubmittedIds ?? []).length} IDs distintos; ${kept.length} podem ser inscritos e ${dropped.length} ficaram fora por limite (${this.formatTeamIds(dropped)}). Revise e confirme novamente.`), editMessage: true };
+      }
+    }
+
     try {
       await this.enrollmentBatches.criarFree(session.competitionId, usuarioId, {
-        timesCartolaIds: [...(session.enrollmentTeamIds ?? session.selectedTeamIds)].sort((a, b) => a - b),
+        timesCartolaIds: session.enrollmentMode === 'direct'
+          ? [...(session.enrollmentTeamIds ?? session.selectedTeamIds)]
+          : [...(session.enrollmentTeamIds ?? session.selectedTeamIds)].sort((a, b) => a - b),
         valorUnitarioEsperado: '0.00',
       }, idempotencyKey);
       const confirmed = await this.enrollmentBatches.consultarResultadoFreeConfirmado(usuarioId, idempotencyKey);
@@ -1053,6 +1090,7 @@ export class TelegramSelectionService {
 
   private beginDirectEnrollment(session: SelectionSession): TelegramSelectionResponse {
     session.directCandidates = undefined;
+    session.directSubmittedIds = undefined;
     session.directTeamIds = undefined;
     session.directAlreadyEnrolledIds = undefined;
     session.stage = 'direct-enrollment-input';
@@ -1117,10 +1155,10 @@ export class TelegramSelectionService {
       }
     });
     const slots = this.remainingEnrollmentSlots(snapshot);
-    const eligible = candidates.filter(item => item.status === 'owned' || item.status === 'needs-registration')
-      .sort((a, b) => a.timeId - b.timeId);
+    const eligible = candidates.filter(item => item.status === 'owned' || item.status === 'needs-registration');
     for (const item of eligible.slice(slots)) item.status = 'limit';
     session.directCandidates = candidates;
+    session.directSubmittedIds = [...parsed.ids];
     session.directTeamIds = eligible.slice(0, slots).map(item => item.timeId);
     session.directAlreadyEnrolledIds = candidates.filter(item => item.status === 'already-enrolled').map(item => item.timeId);
     session.stage = 'direct-enrollment-preview';
@@ -1155,6 +1193,7 @@ export class TelegramSelectionService {
   private renderDirectEnrollmentPreview(session: SelectionSession, notice = ''): TelegramSelectionResponse {
     const candidates = session.directCandidates ?? [];
     const selected = new Set(session.directTeamIds ?? []);
+    const limited = candidates.filter(item => item.status === 'limit');
     const group = (status: DirectCandidateStatus) => candidates.filter(item => item.status === status);
     const lines = [
       `${notice ? `${notice}\n\n` : ''}📋 Prévia da inscrição`,
@@ -1164,9 +1203,12 @@ export class TelegramSelectionService {
       `✅ Já no seu perfil: ${group('owned').filter(item => selected.has(item.timeId)).length}`,
       `➕ Precisam ser cadastrados: ${group('needs-registration').filter(item => selected.has(item.timeId)).length}`,
       `ℹ️ Já inscritos nesta competição: ${group('already-enrolled').length}`,
-      `⚠️ Indisponíveis ou associados a outro perfil: ${group('other').length + group('limit').length}`,
+      `⚠️ Associados a outro perfil ou indisponíveis: ${group('other').length}`,
       `❌ Não encontrados: ${group('not-found').length}`,
       `⏳ Consulta temporariamente indisponível: ${group('temporary').length}`,
+      `📨 IDs distintos enviados: ${(session.directSubmittedIds ?? candidates.map(item => item.timeId)).length}`,
+      `✅ Podem ser inscritos: ${selected.size}`,
+      `🚫 Fora por limite: ${limited.length}`,
       '',
       `Times elegíveis para nova inscrição: ${selected.size}`,
     ];
@@ -1180,8 +1222,9 @@ export class TelegramSelectionService {
       lines.push('', 'Já inscritos nesta competição:');
       alreadyEnrolled.forEach(item => lines.push(`• ${this.truncate(item.team?.nome ?? `Time ${item.timeId}`, 45)} — #${item.timeId}`));
     }
-    const rejected = candidates.filter(item => ['other', 'limit', 'not-found', 'temporary', 'already-enrolled'].includes(item.status));
+    const rejected = candidates.filter(item => ['other', 'not-found', 'temporary', 'already-enrolled'].includes(item.status));
     if (rejected.length) lines.push('', `IDs não incluídos: ${this.formatTeamIds(rejected.map(item => item.timeId))}`);
+    if (limited.length) lines.push('', `IDs fora por limite: ${this.formatTeamIds(limited.map(item => item.timeId))}`);
     session.callbackNonce = randomBytes(6).toString('base64url');
     const keyboard: TelegramInlineButton[][] = [];
     if (selected.size) keyboard.push([{ text: '➡️ Continuar', callback_data: this.callbackData(session, 'direct-continue') }]);
@@ -1224,6 +1267,34 @@ export class TelegramSelectionService {
     if (usuarioId === null || usuarioId !== session.linkedUsuarioId) {
       this.sessions.delete(session.telegramUserId);
       return { text: `Seu vínculo POINT FFC não está ativo. Conecte sua conta:\n${LINK_URL}`, buttons: [], inlineKeyboard: [], sessionToken: session.sessionToken, editMessage: true, showMainMenu: true };
+    }
+    let latest: EligibilitySnapshot;
+    try { latest = await this.loadEligibility(session, usuarioId); } catch {
+      session.stage = 'direct-enrollment-preview';
+      return { ...this.renderDirectEnrollmentPreview(session, 'Não foi possível revalidar a capacidade. Nenhum time foi cadastrado.'), editMessage: true };
+    }
+    if (!latest.competition || latest.competition.tipoAcesso !== 'FREE') {
+      session.stage = 'direct-enrollment-preview';
+      return { ...this.renderDirectEnrollmentPreview(session, 'A competição deixou de estar disponível como FREE. Nenhum time foi cadastrado.'), editMessage: true };
+    }
+    const selectedIds = [...(session.directTeamIds ?? [])];
+    const alreadyRegistered = new Set(latest.registrations.map(row => row.timeIdCartola));
+    const slots = this.remainingEnrollmentSlots(latest);
+    const stillEligible = selectedIds.filter(id => !alreadyRegistered.has(id));
+    const allowed = stillEligible.slice(0, slots);
+    const dropped = stillEligible.slice(slots);
+    const newlyRegistered = selectedIds.filter(id => alreadyRegistered.has(id));
+    if (dropped.length || newlyRegistered.length) {
+      session.directTeamIds = allowed;
+      session.directAlreadyEnrolledIds = [...new Set([...(session.directAlreadyEnrolledIds ?? []), ...newlyRegistered])];
+      for (const candidate of session.directCandidates ?? []) {
+        if (alreadyRegistered.has(candidate.timeId)) candidate.status = 'already-enrolled';
+        else if (dropped.includes(candidate.timeId)) candidate.status = 'limit';
+      }
+      session.stage = 'direct-enrollment-preview';
+      this.refresh(session);
+      const note = `A elegibilidade mudou antes do cadastro. Foram enviados ${(session.directSubmittedIds ?? []).length} IDs distintos; ${allowed.length} podem seguir e ${dropped.length} ficaram fora por limite${dropped.length ? ` (${this.formatTeamIds(dropped)})` : ''}. Nenhum cadastro foi feito nesta tentativa.`;
+      return { ...this.renderDirectEnrollmentPreview(session, note), editMessage: true };
     }
     const requested = (session.directCandidates ?? []).filter(item => (session.directTeamIds ?? []).includes(item.timeId) && item.status === 'needs-registration');
     let statuses: Array<{ timeId: number; status: 'proprio' | 'outro' | 'disponivel' }>;

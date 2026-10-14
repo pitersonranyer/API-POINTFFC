@@ -655,7 +655,7 @@ describe('TelegramSelectionService', () => {
     const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
     const preview = await service.handle('54321', '1001 2002 3003');
     expect(preview?.text).toContain('Já inscritos nesta competição: 1');
-    expect(preview?.text).toContain('Indisponíveis ou associados a outro perfil: 1');
+    expect(preview?.text).toContain('Associados a outro perfil ou indisponíveis: 1');
     expect(preview?.text).toContain('Não encontrados: 1');
     expect(preview?.text).toContain('Times elegíveis para nova inscrição: 0');
     expect(preview?.text).not.toContain('99');
@@ -678,18 +678,65 @@ describe('TelegramSelectionService', () => {
     expect(prompt?.text).toContain('Máximo: 30 IDs distintos por envio.');
   });
 
-  it('caps direct enrollment candidates at remaining competition capacity', async () => {
+  it('reports submitted, eligible and capacity-excluded IDs without reordering the request', async () => {
     competitions.buscarGratuitaElegivel.mockResolvedValue(competition({ limiteParticipantes: 2 }));
     competitions.contarParticipantesAtivos.mockResolvedValue(1);
     const initial = await startTeams();
     const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
-    const preview = await service.handle('54321', '1001,1002,1003');
+    const preview = await service.handle('54321', '1003,1001,1002');
+    expect(preview?.text).toContain('IDs distintos enviados: 3');
+    expect(preview?.text).toContain('Podem ser inscritos: 1');
+    expect(preview?.text).toContain('Fora por limite: 2');
     expect(preview?.text).toContain('Times elegíveis para nova inscrição: 1');
-    expect(preview?.text).toContain('Indisponíveis ou associados a outro perfil: 2');
-    expect(preview?.text).toContain('Time 1001 — #1001');
-    expect(preview?.text).not.toContain('Time 1002 — #1002');
+    expect(preview?.text).toContain('Time 1003 — #1003');
+    expect(preview?.text).toContain('IDs fora por limite: #1001, #1002');
+    expect(preview?.text).not.toContain('Time 1001 — #1001');
     expect(prompt?.text).toContain('Inscrição por lista de IDs');
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('does not register new profile teams excluded by the competition capacity', async () => {
+    competitions.buscarGratuitaElegivel.mockResolvedValue(competition({ limiteParticipantes: 1 }));
+    teams.listarTimesDoUsuario.mockImplementation(async () => [team(1001), ...(associations.get(2002) === 7 ? [team(2002)] : [])]);
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '2002,2003');
+    expect(preview?.text).toContain('IDs fora por limite: #2003');
+    expect(preview?.text).toContain('Times elegíveis para nova inscrição: 1');
+    const register = await press('54321', button(preview!, '➡️ Continuar'));
+    const result = await press('54321', button(register!, '✅ Cadastrar e continuar'));
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledWith(7, [expect.objectContaining({ timeId: 2002 })]);
+    expect(teams.adicionarTimesEmLote.mock.calls[0][1].map((item: { timeId: number }) => item.timeId)).not.toContain(2003);
+    expect(result?.text).toContain('Times que serão inscritos: 1');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+  });
+
+  it('rechecks capacity at final confirmation and requires explicit review after a capacity reduction', async () => {
+    associations.set(1002, 7);
+    teams.listarTimesDoUsuario.mockResolvedValue([team(1001), team(1002)]);
+    competitions.buscarGratuitaElegivel.mockResolvedValue(competition({ limiteParticipantes: 2 }));
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '1002,1001');
+    const summary = await press('54321', button(preview!, '➡️ Continuar'));
+    expect(summary!.text.indexOf('#1002')).toBeLessThan(summary!.text.indexOf('#1001'));
+
+    competitions.buscarGratuitaElegivel.mockResolvedValue(competition({ limiteParticipantes: 2 }));
+    competitions.contarParticipantesAtivos.mockResolvedValue(1);
+    const updated = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    expect(updated?.text).toContain('A capacidade mudou');
+    expect(updated?.text).toContain('1 podem ser inscritos e 1 ficaram fora por limite (#1001)');
+    expect(updated?.text).toContain('Time 1002 (#1002)');
+    expect(updated?.text).not.toContain('Time 1001 — #1001');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+
+    const receipt = await press('54321', button(updated!, '✅ Confirmar inscrição'));
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledWith(42, 7, {
+      timesCartolaIds: [1002], valorUnitarioEsperado: '0.00',
+    }, expect.any(String));
+    expect(receipt?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
   });
 
   it('rechecks the active link and FREE competition before allowing direct enrollment', async () => {
