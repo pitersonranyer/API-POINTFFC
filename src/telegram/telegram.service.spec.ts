@@ -100,7 +100,7 @@ describe('TelegramService', () => {
     expect(requestBody.reply_markup.keyboard[1][0].text).toBe('🔗 Conectar minha conta');
   });
 
-  it('sends the link orientation and code separately without logging the code', async () => {
+  it('sends all three link messages in order and isolates the code without logging it', async () => {
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
     const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
     await service.handleWebhook(webhookSecret, {
@@ -109,16 +109,34 @@ describe('TelegramService', () => {
     });
 
     expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    const orientation = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { text: string };
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    const orientation = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as {
+      text: string;
+      reply_markup: { keyboard: Array<Array<{ text: string }>>; is_persistent: boolean };
+    };
     const codeMessage = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string) as {
       text: string;
       entities: Array<{ type: string; offset: number; length: number }>;
     };
+    const completion = JSON.parse(fetchSpy.mock.calls[2][1]?.body as string) as {
+      text: string;
+      reply_markup: { inline_keyboard: Array<Array<{ text: string; url: string }>> };
+    };
     expect(orientation.text).toBe('Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.');
+    expect(orientation.reply_markup.keyboard.flat().map(button => button.text)).toEqual([
+      '🏆 Ver competições', '🔗 Conectar minha conta',
+    ]);
+    expect(orientation.reply_markup.is_persistent).toBe(true);
     expect(codeMessage.text).toMatch(/^[a-f0-9]{48}$/);
     expect(codeMessage.text).toBe('a'.repeat(48));
     expect(codeMessage.entities).toEqual([{ type: 'code', offset: 0, length: 48 }]);
+    expect(Object.keys(codeMessage)).toEqual(['chat_id', 'text', 'entities']);
+    expect(completion.text).toBe('Agora é só concluir sua vinculação no POINT FFC! ⚽\n\nToque no botão abaixo, faça login se necessário e informe o código que você acabou de receber.');
+    expect(completion.reply_markup.inline_keyboard).toEqual([[
+      { text: '🌐 Vincular no POINT FFC', url: 'https://pointffc.com.br/conectar-telegram/' },
+    ]]);
+    expect(completion.reply_markup.inline_keyboard[0][0].url).not.toContain(codeMessage.text);
+    expect(completion.text).not.toContain(codeMessage.text);
     expect(logger).not.toHaveBeenCalled();
   });
 
@@ -134,8 +152,32 @@ describe('TelegramService', () => {
     });
 
     expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).text).toMatch(/^[a-f0-9]{48}$/);
+    expect(JSON.parse(fetchSpy.mock.calls[2][1]?.body as string).reply_markup.inline_keyboard[0][0].url)
+      .toBe('https://pointffc.com.br/conectar-telegram/');
+  });
+
+  it('does not regenerate or invalidate the delivered code when the navigation button send fails', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
+    const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+    const update = {
+      update_id: 816,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '/vincular' },
+    };
+
+    await expect(service.handleWebhook(webhookSecret, update)).resolves.toBeUndefined();
+    const deliveredCode = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).text as string;
+    expect(deliveredCode).toMatch(/^[a-f0-9]{48}$/);
+    expect(JSON.stringify(logger.mock.calls)).not.toContain(deliveredCode);
+    expect(JSON.stringify(logger.mock.calls)).toContain('código já emitido permanece válido');
+
+    await expect(service.handleWebhook(webhookSecret, update)).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(telegramLinks.createRequest).toHaveBeenCalledTimes(1);
   });
 
   it('does not create link requests without a validated private Telegram sender ID', async () => {
