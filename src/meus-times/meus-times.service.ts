@@ -7,6 +7,7 @@ import { AdicionarTimeDto } from './dto/adicionar-time.dto';
 import { TimeUsuarioResponseDto } from './dto/time-usuario-response.dto';
 
 export type AdicionarTimeResultado = { status: 'adicionado' | 'ja_existente'; timeId: number };
+export type StatusAssociacaoTime = 'proprio' | 'outro' | 'disponivel';
 export type ImportarTimesResultado = {
   solicitados: number;
   adicionados: number;
@@ -27,6 +28,26 @@ export class MeusTimesService {
 
   buscarTimeDoUsuario(usuarioId: number, timeId: number): Promise<TimeUsuario | null> {
     return this.prisma.timeUsuario.findUnique({ where: { usuarioId_timeId: { usuarioId, timeId } } });
+  }
+
+  async consultarStatusAssociacaoTimes(
+    usuarioId: number,
+    timeIds: number[],
+  ): Promise<Array<{ timeId: number; status: StatusAssociacaoTime }>> {
+    const uniqueIds = [...new Set(timeIds)];
+    if (uniqueIds.length === 0) return [];
+    const associations = await this.prisma.timeUsuario.findMany({
+      where: { timeId: { in: uniqueIds } },
+      select: { timeId: true, usuarioId: true },
+    });
+    const byTimeId = new Map(associations.map(item => [item.timeId, item.usuarioId]));
+    return uniqueIds.map(timeId => {
+      const ownerId = byTimeId.get(timeId);
+      return {
+        timeId,
+        status: ownerId === undefined ? 'disponivel' : ownerId === usuarioId ? 'proprio' : 'outro',
+      };
+    });
   }
 
   async adicionarTime(usuarioId: number, dadosTime: AdicionarTimeDto): Promise<AdicionarTimeResultado> {

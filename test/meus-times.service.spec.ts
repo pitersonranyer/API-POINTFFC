@@ -66,6 +66,21 @@ describe('MeusTimesService', () => {
     expect(result[0]).not.toHaveProperty('usuarioId');
   });
 
+  it('classifica em lote as associacoes sem expor o ID do perfil de terceiros', async () => {
+    delegate.findMany.mockResolvedValue([{ timeId: 10, usuarioId: 1 }, { timeId: 20, usuarioId: 2 }]);
+    const result = await service.consultarStatusAssociacaoTimes(1, [10, 20, 30, 20]);
+    expect(delegate.findMany).toHaveBeenCalledWith({
+      where: { timeId: { in: [10, 20, 30] } },
+      select: { timeId: true, usuarioId: true },
+    });
+    expect(result).toEqual([
+      { timeId: 10, status: 'proprio' },
+      { timeId: 20, status: 'outro' },
+      { timeId: 30, status: 'disponivel' },
+    ]);
+    expect(result).not.toEqual(expect.arrayContaining([expect.objectContaining({ usuarioId: 2 })]));
+  });
+
   it('remove usando simultaneamente usuario e time', async () => {
     delegate.deleteMany.mockResolvedValue({ count: 1 });
     await service.removerTime(1, 10);

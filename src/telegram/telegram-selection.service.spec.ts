@@ -29,11 +29,13 @@ describe('TelegramSelectionService', () => {
     contarParticipantesAtivos: jest.Mock;
   };
   let links: { resolveActiveUserId: jest.Mock };
-  let teams: { listarTimesDoUsuario: jest.Mock; adicionarTime: jest.Mock; buscarTimeDoUsuario: jest.Mock };
+  let teams: { listarTimesDoUsuario: jest.Mock; adicionarTime: jest.Mock; adicionarTimesEmLote: jest.Mock;
+    buscarTimeDoUsuario: jest.Mock; consultarStatusAssociacaoTimes: jest.Mock };
   let cartola: { getTeamById: jest.Mock };
   let inscriptions: { minhas: jest.Mock; minhasDoUsuario: jest.Mock };
   let enrollmentBatches: { criarFree: jest.Mock; consultarResultadoFreeConfirmado: jest.Mock };
   let lastEnrollment: { response: Record<string, unknown>; ids: number[] } | null;
+  let associations: Map<number, number>;
   let service: TelegramSelectionService;
 
   beforeEach(() => {
@@ -43,12 +45,35 @@ describe('TelegramSelectionService', () => {
       contarParticipantesAtivos: jest.fn().mockResolvedValue(0),
     };
     links = { resolveActiveUserId: jest.fn().mockResolvedValue(7) };
+    associations = new Map([[1001, 7]]);
     teams = {
       listarTimesDoUsuario: jest.fn().mockResolvedValue([team(1001)]),
-      adicionarTime: jest.fn().mockResolvedValue({ status: 'adicionado', timeId: 13933388 }),
+      adicionarTime: jest.fn().mockImplementation(async (usuarioId: number, dto: { timeId: number }) => {
+        const owner = associations.get(dto.timeId);
+        if (owner !== undefined) return { status: 'ja_existente', timeId: dto.timeId };
+        associations.set(dto.timeId, usuarioId);
+        return { status: 'adicionado', timeId: dto.timeId };
+      }),
+      adicionarTimesEmLote: jest.fn().mockImplementation(async (usuarioId: number, times: Array<{ timeId: number }>) => {
+        const result = { solicitados: times.length, adicionados: 0, jaExistentes: 0, falhas: [] as Array<{ timeId: number | null; motivo: 'dados_invalidos' | 'erro_persistencia' }>,
+          timesAdicionados: [] as number[], timesJaExistentes: [] as number[] };
+        for (const item of times) {
+          const added = await teams.adicionarTime(usuarioId, item);
+          if (added.status === 'adicionado') { result.adicionados += 1; result.timesAdicionados.push(item.timeId); }
+          else { result.jaExistentes += 1; result.timesJaExistentes.push(item.timeId); }
+        }
+        return result;
+      }),
       buscarTimeDoUsuario: jest.fn().mockResolvedValue(null),
+      consultarStatusAssociacaoTimes: jest.fn().mockImplementation(async (usuarioId: number, ids: number[]) => ids.map(timeId => {
+        const owner = associations.get(timeId);
+        return { timeId, status: owner === undefined ? 'disponivel' : owner === usuarioId ? 'proprio' : 'outro' };
+      })),
     };
-    cartola = { getTeamById: jest.fn().mockResolvedValue({ value: { time: { time_id: 13933388, nome: 'Real Prime CFC', nome_cartola: 'Cartoleiro', url_escudo_png: 'https://cartola.example/escudo.png' } } }) };
+    cartola = { getTeamById: jest.fn().mockImplementation(async (timeId: number) => ({ value: { time: {
+      time_id: timeId, nome: timeId === 13933388 ? 'Real Prime CFC' : `Time ${timeId}`,
+      nome_cartola: 'Cartoleiro', url_escudo_png: 'https://cartola.example/escudo.png',
+    } } })) };
     inscriptions = { minhas: jest.fn().mockResolvedValue([]), minhasDoUsuario: jest.fn().mockResolvedValue([]) };
     lastEnrollment = null;
     enrollmentBatches = {
@@ -97,6 +122,13 @@ describe('TelegramSelectionService', () => {
     return response;
   };
 
+  const startBulkRegistrationPrompt = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
+    const list = await startTeams(telegramUserId);
+    const response = await press(telegramUserId, button(list, '📋 Cadastrar vários times'));
+    if (!response?.inlineKeyboard) throw new Error('expected bulk team registration prompt');
+    return response;
+  };
+
   const button = (response: TelegramSelectionResponse, text: string): string => {
     const result = response.inlineKeyboard?.flat().find(item => item.text === text);
     if (!result) throw new Error(`missing button: ${text}`);
@@ -134,15 +166,291 @@ describe('TelegramSelectionService', () => {
     teams.listarTimesDoUsuario.mockResolvedValue([]);
     const response = await startTeams();
     expect(response.text).toContain('Você ainda não possui times cadastrados no POINT FFC');
-    expect(response.inlineKeyboard?.flat().map(item => item.text)).toEqual(['➕ Cadastrar time', '🏠 Menu principal']);
+    expect(response.inlineKeyboard?.flat().map(item => item.text)).toEqual(['➕ Cadastrar time', '📋 Cadastrar vários times', '🏠 Menu principal']);
   });
 
   it('offers adding another team without removing the current team-selection controls', async () => {
     const response = await startTeams();
     const labels = response.inlineKeyboard?.flat().map(item => item.text) ?? [];
     expect(labels).toContain('➕ Adicionar outro time');
+    expect(labels).toContain('📋 Cadastrar vários times');
     expect(labels).toContain('☑️ Selecionar todos');
     expect(labels).toContain('🏠 Menu principal');
+  });
+
+  it.each(['1002\n1003', '1002,1003', '1002 1003', '1002;1003'])('accepts bulk IDs separated by supported delimiter %s', async input => {
+    const prompt = await startBulkRegistrationPrompt();
+    expect(prompt.text).toContain('Máximo: 30 IDs por envio.');
+    const preview = await service.handle('54321', input);
+    expect(preview?.text).toContain('✅ Times disponíveis: 2');
+    expect(preview?.text).toContain('Time 1002 — #1002');
+    expect(preview?.text).toContain('Time 1003 — #1003');
+    expect(cartola.getTeamById).toHaveBeenCalledTimes(2);
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(preview?.inlineKeyboard?.flat().map(item => item.text)).toContain('✅ Confirmar cadastro');
+  });
+
+  it('offers bulk registration both when the profile has no teams and alongside single-team addition', async () => {
+    teams.listarTimesDoUsuario.mockResolvedValue([]);
+    const empty = await startTeams();
+    expect(empty.inlineKeyboard?.flat().map(item => item.text)).toContain('📋 Cadastrar vários times');
+
+    await service.clear('54321');
+    teams.listarTimesDoUsuario.mockResolvedValue([team(1001)]);
+    const existing = await startTeams();
+    expect(existing.inlineKeyboard?.flat().map(item => item.text)).toEqual(expect.arrayContaining([
+      '➕ Adicionar outro time', '📋 Cadastrar vários times',
+    ]));
+  });
+
+  it('removes repeated IDs from a bulk message before querying Cartola', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002, 1002;1003\n1002');
+    expect(preview?.text).toContain('✅ Times disponíveis: 2');
+    expect(cartola.getTeamById).toHaveBeenCalledTimes(2);
+    expect(teams.consultarStatusAssociacaoTimes).toHaveBeenLastCalledWith(7, [1002, 1003]);
+  });
+
+  it('rejects a malformed list as a whole and does not consult or persist any team', async () => {
+    await startBulkRegistrationPrompt();
+    const response = await service.handle('54321', '1002, time-1003');
+    expect(response?.text).toContain('somente IDs numéricos');
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    expect(teams.consultarStatusAssociacaoTimes).not.toHaveBeenCalled();
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('rejects more than 30 distinct IDs instead of silently truncating the request', async () => {
+    await startBulkRegistrationPrompt();
+    const response = await service.handle('54321', Array.from({ length: 31 }, (_, index) => String(2000 + index)).join(','));
+    expect(response?.text).toContain('mais de 30 IDs distintos');
+    expect(response?.text).toContain('nenhum ID foi consultado ou cadastrado');
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    expect(teams.consultarStatusAssociacaoTimes).not.toHaveBeenCalled();
+  });
+
+  it('accepts exactly 30 distinct IDs and keeps the Telegram preview within message limits', async () => {
+    await startBulkRegistrationPrompt();
+    const ids = Array.from({ length: 30 }, (_, index) => 2000 + index);
+    const preview = await service.handle('54321', ids.join(';'));
+    expect(preview?.text.length).toBeLessThan(3900);
+    expect(preview?.text).toContain('Times disponíveis: 30');
+    expect(cartola.getTeamById).toHaveBeenCalledTimes(30);
+    expect(preview?.inlineKeyboard?.flat().every(item => Buffer.byteLength(item.callback_data, 'utf8') <= 64)).toBe(true);
+  });
+
+  it('rejects a message exceeding the configured input size', async () => {
+    await startBulkRegistrationPrompt();
+    const response = await service.handle('54321', '1'.repeat(2001));
+    expect(response?.text).toContain('mensagem é muito longa');
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+  });
+
+  it('does not parse a list outside an active batch-registration session', async () => {
+    await expect(service.handle('54321', '1002,1003')).resolves.toBeNull();
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    expect(teams.consultarStatusAssociacaoTimes).not.toHaveBeenCalled();
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('marks own-profile and other-profile associations without exposing another owner', async () => {
+    associations.set(1002, 99);
+    const previewPrompt = await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1001,1002,1003');
+    expect(preview?.text).toContain('Já cadastrados no seu perfil: 1');
+    expect(preview?.text).toContain('Indisponíveis ou associados a outro perfil: 1');
+    expect(preview?.text).toContain('#1002');
+    expect(preview?.text).not.toContain('99');
+    expect(preview?.text).toContain('✅ Times disponíveis: 1');
+    expect(preview?.inlineKeyboard?.flat().map(item => item.text)).toContain('✅ Confirmar cadastro');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(previewPrompt.text).toContain('Cadastro de vários times');
+  });
+
+  it('reports missing and temporarily unavailable Cartola teams without persisting', async () => {
+    cartola.getTeamById.mockImplementation(async (timeId: number) => {
+      if (timeId === 1002) throw new NotFoundException();
+      if (timeId === 1003) throw new Error('temporary outage');
+      return { value: { time: { time_id: timeId, nome: `Time ${timeId}` } } };
+    });
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    expect(preview?.text).toContain('Não encontrados no Cartola: 1');
+    expect(preview?.text).toContain('Consulta temporariamente indisponível: 1');
+    expect(preview?.inlineKeyboard?.flat().map(item => item.text)).not.toContain('✅ Confirmar cadastro');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('limits simultaneous Cartola lookups to four', async () => {
+    let active = 0;
+    let maximum = 0;
+    cartola.getTeamById.mockImplementation(async (timeId: number) => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise(resolve => setTimeout(resolve, 1));
+      active -= 1;
+      return { value: { time: { time_id: timeId, nome: `Time ${timeId}` } } };
+    });
+    await startBulkRegistrationPrompt();
+    await service.handle('54321', Array.from({ length: 12 }, (_, index) => String(2000 + index)).join(' '));
+    expect(maximum).toBeLessThanOrEqual(4);
+    expect(cartola.getTeamById).toHaveBeenCalledTimes(12);
+  });
+
+  it('confirms a bulk registration only after the explicit callback and reuses the batch service', async () => {
+    const prompt = await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(preview?.inlineKeyboard?.flat().map(item => item.text)).toContain('✅ Confirmar cadastro');
+
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    expect(links.resolveActiveUserId).toHaveBeenLastCalledWith('54321');
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledWith(7, [
+      expect.objectContaining({ timeId: 1002, nome: 'Time 1002' }),
+      expect.objectContaining({ timeId: 1003, nome: 'Time 1003' }),
+    ]);
+    expect(result?.text).toContain('✅ Cadastro concluído!');
+    expect(result?.text).toContain('Adicionados: 2');
+    expect(result?.text).toContain('Total de IDs distintos: 2');
+    expect(result?.inlineKeyboard?.flat().map(item => item.text)).toEqual([
+      '⚽ Voltar à competição', '📋 Cadastrar mais times', '🏠 Menu principal',
+    ]);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt.text).toContain('Cadastro de vários times');
+  });
+
+  it('does not confirm after a revoked Telegram link', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    links.resolveActiveUserId.mockResolvedValueOnce(null);
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    expect(result?.text).toContain('vínculo POINT FFC não está ativo');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('rejects bulk callbacks from another user or a different inline message', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    const confirm = button(preview!, '✅ Confirmar cadastro');
+    await expect(press('99999', confirm)).resolves.toBeNull();
+    await expect(press('54321', confirm, 901)).resolves.toBeNull();
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('processes concurrent duplicate bulk confirmation callbacks at most once', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    const confirm = button(preview!, '✅ Confirmar cadastro');
+    const results = await Promise.all([press('54321', confirm), press('54321', confirm)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not process a bulk confirmation after the session expires', async () => {
+    jest.useFakeTimers();
+    try {
+      await startBulkRegistrationPrompt();
+      const preview = await service.handle('54321', '1002,1003');
+      jest.advanceTimersByTime(10 * 60 * 1000 + 1);
+      const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+      expect(result?.text).toContain('Sua seleção expirou');
+      expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('cancels the batch journey without persisting and invalidates its callbacks', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    const confirm = button(preview!, '✅ Confirmar cadastro');
+    const cancelled = await press('54321', button(preview!, '❌ Cancelar'));
+    expect(cancelled?.showMainMenu).toBe(true);
+    await expect(press('54321', confirm)).resolves.toBeNull();
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('revalidates associations before batch confirmation and rejects another profile safely', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    associations.set(1002, 88);
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    expect(result?.text).toContain('Indisponíveis ou associados a outro perfil: 1');
+    expect(result?.text).toContain('#1002');
+    expect(result?.text).not.toContain('88');
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledWith(7, [expect.objectContaining({ timeId: 1003 })]);
+  });
+
+  it('revalidates Cartola and skips the write when an available team disappears', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002');
+    cartola.getTeamById.mockRejectedValueOnce(new NotFoundException());
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    expect(cartola.getTeamById).toHaveBeenLastCalledWith(1002, { forceRefresh: true });
+    expect(result?.text).toContain('Não encontrados: 1');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+  });
+
+  it('allows replacing the preview list without retaining earlier candidate IDs', async () => {
+    await startBulkRegistrationPrompt();
+    const firstPreview = await service.handle('54321', '1002');
+    const prompt = await press('54321', button(firstPreview!, '✏️ Enviar outra lista'));
+    expect(prompt?.text).toContain('Cadastro de vários times');
+    const secondPreview = await service.handle('54321', '1003');
+    expect(secondPreview?.text).toContain('Time 1003 — #1003');
+    expect(secondPreview?.text).not.toContain('#1002');
+  });
+
+  it('reports partial batch success and pending IDs without retrying uncertain writes', async () => {
+    teams.adicionarTimesEmLote.mockImplementationOnce(async (usuarioId: number, items: Array<{ timeId: number }>) => {
+      associations.set(items[0].timeId, usuarioId);
+      return { solicitados: items.length, adicionados: 1, jaExistentes: 0, falhas: [{ timeId: items[1].timeId, motivo: 'erro_persistencia' }],
+        timesAdicionados: [items[0].timeId], timesJaExistentes: [] };
+    });
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002,1003');
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    expect(result?.text).toContain('Adicionados: 1');
+    expect(result?.text).toContain('Pendentes por falha temporária ou resultado incerto: 1');
+    expect(result?.text).toContain('#1003');
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledTimes(1);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('checks persisted state after an uncertain batch result and never repeats the write', async () => {
+    teams.adicionarTimesEmLote.mockImplementationOnce(async (usuarioId: number, items: Array<{ timeId: number }>) => {
+      associations.set(items[0].timeId, usuarioId);
+      throw new Error('connection lost after commit');
+    });
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002');
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    expect(result?.text).toContain('Já cadastrados no seu perfil: 1');
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledTimes(1);
+    expect(teams.consultarStatusAssociacaoTimes).toHaveBeenCalledTimes(3);
+  });
+
+  it('returns to the FREE competition with the updated team list and does not enroll automatically', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002');
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    teams.listarTimesDoUsuario.mockResolvedValue([team(1001), team(1002, 'Time 1002')]);
+    const returned = await press('54321', button(result!, '⚽ Voltar à competição'));
+    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
+    expect(returned?.inlineKeyboard?.flat().some(item => item.text.includes('Time 1002'))).toBe(true);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('does not present an enrollment or a false single-team success when the competition closed', async () => {
+    await startBulkRegistrationPrompt();
+    const preview = await service.handle('54321', '1002');
+    const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
+    competitions.buscarGratuitaElegivel.mockResolvedValueOnce(null);
+    competitions.listarGratuitasElegiveis.mockResolvedValueOnce([]);
+    const returned = await press('54321', button(result!, '⚽ Voltar à competição'));
+    expect(returned?.text).toContain('A competição deixou de estar disponível');
+    expect(returned?.text).toContain('Não há competições gratuitas abertas');
+    expect(returned?.text).not.toContain('Time adicionado ao seu perfil');
+    expect(returned?.inlineKeyboard?.flat().map(item => item.text)).toContain('📋 Cadastrar mais times');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
   });
 
   it('accepts only a single bounded numeric ID during the registration input step', async () => {
