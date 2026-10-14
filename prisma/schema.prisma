@@ -252,7 +252,7 @@ model TimeUsuario {
   usuario     Usuario  @relation(fields: [usuarioId], references: [idUsuario], onDelete: Cascade)
 
   @@id([usuarioId, timeId])
-  @@index([timeId])
+  @@unique([timeId], map: "TIME_USUARIO_TIME_ID_key")
   @@map("TIME_USUARIO")
 }
 
