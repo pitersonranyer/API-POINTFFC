@@ -20,7 +20,7 @@ describe('TelegramCompetitionsService', () => {
   });
 
   const ligasService = { listarCompeticoes: jest.fn() };
-  const prisma = { inscricaoTimeCompeticao: { groupBy: jest.fn() } };
+  const prisma = { inscricaoTimeCompeticao: { groupBy: jest.fn(), count: jest.fn() } };
   const service = new TelegramCompetitionsService(
     ligasService as unknown as LigasCompeticoesService,
     prisma as unknown as PrismaService,
@@ -78,5 +78,13 @@ describe('TelegramCompetitionsService', () => {
     ligasService.listarCompeticoes.mockResolvedValueOnce([openCompetition(11)]);
     prisma.inscricaoTimeCompeticao.groupBy.mockResolvedValueOnce([]);
     await expect(service.buscarGratuitaElegivel(10, new Date('2026-09-15T12:00:00.000Z'))).resolves.toBeNull();
+  });
+
+  it('counts current active participants to cap temporary Telegram selections', async () => {
+    prisma.inscricaoTimeCompeticao.count.mockResolvedValue(12);
+    await expect(service.contarParticipantesAtivos(10)).resolves.toBe(12);
+    expect(prisma.inscricaoTimeCompeticao.count).toHaveBeenCalledWith({
+      where: { competicaoLigaId: 10, statusInscricao: 'ATIVA' },
+    });
   });
 });

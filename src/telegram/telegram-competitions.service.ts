@@ -58,4 +58,10 @@ export class TelegramCompetitionsService {
     const competicoes = await this.listarGratuitasElegiveis(now);
     return competicoes.find(competicao => competicao.id === id) ?? null;
   }
+
+  async contarParticipantesAtivos(competicaoId: number): Promise<number> {
+    return this.prisma.inscricaoTimeCompeticao.count({
+      where: { competicaoLigaId: competicaoId, statusInscricao: 'ATIVA' },
+    });
+  }
 }

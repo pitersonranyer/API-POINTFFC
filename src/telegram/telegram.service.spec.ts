@@ -14,7 +14,14 @@ describe('TelegramService', () => {
   let fetchSpy: jest.SpyInstance;
   let competitionsService: { listarDivulgaveis: jest.Mock };
   let telegramLinks: { createRequest: jest.Mock };
-  let selectionService: { start: jest.Mock; handle: jest.Mock; clear: jest.Mock };
+  let selectionService: {
+    start: jest.Mock;
+    handle: jest.Mock;
+    handleCallback: jest.Mock;
+    attachInlineMessage: jest.Mock;
+    clear: jest.Mock;
+    clearIfSession: jest.Mock;
+  };
 
   const createService = (values: Record<string, string | undefined> = {}) => {
     const configService = {
@@ -37,7 +44,10 @@ describe('TelegramService', () => {
     selectionService = {
       start: jest.fn().mockResolvedValue({ text: 'Selecione uma competição gratuita.', buttons: [['1. Rodada 27']] }),
       handle: jest.fn().mockResolvedValue(null),
+      handleCallback: jest.fn().mockResolvedValue(null),
+      attachInlineMessage: jest.fn().mockReturnValue(true),
       clear: jest.fn(),
+      clearIfSession: jest.fn(),
     };
     fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue({
       ok: true,
@@ -315,6 +325,120 @@ describe('TelegramService', () => {
     const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
     expect(body.text).toContain('Selecione uma competição gratuita.');
     expect(body.reply_markup.keyboard).toEqual([[{ text: '1. Rodada 27' }]]);
+  });
+
+  it('sends the inline team keyboard and binds the returned Telegram message to the session', async () => {
+    selectionService.start.mockResolvedValueOnce({
+      text: 'Escolha seus times.',
+      buttons: [],
+      sessionToken: 'session-token-123',
+      inlineKeyboard: [[{ text: '⬜ Meu time (#1001)', callback_data: 'pfc:session-token-123:nonce1234:toggle-team:rt' }]],
+    });
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ ok: true, result: { message_id: 987 } }),
+    } as unknown as Response);
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+
+    await service.handleWebhook(webhookSecret, {
+      update_id: 901,
+      message: { chat: { id: 54321, type: 'private' }, from: { id: 54321 }, text: '⚽ Participar grátis' },
+    });
+
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(body.reply_markup.inline_keyboard[0][0].callback_data).toMatch(/^pfc:/);
+    expect(selectionService.attachInlineMessage).toHaveBeenCalledWith('54321', 'session-token-123', '54321', 987);
+  });
+
+  it('routes private callbacks, edits the same message, and answers the callback query', async () => {
+    selectionService.handleCallback.mockResolvedValueOnce({
+      text: 'Times selecionados: 1',
+      buttons: [],
+      inlineKeyboard: [[{ text: '✅ Meu time (#1001)', callback_data: 'new-current-callback' }]],
+      editMessage: true,
+      sessionToken: 'current-session',
+    });
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+
+    await service.handleWebhook(webhookSecret, {
+      update_id: 902,
+      callback_query: {
+        id: 'callback-query-1',
+        from: { id: 54321 },
+        data: 'pfc:session12345678:nonce1234:toggle-team:rt',
+        message: { message_id: 987, chat: { id: 54321, type: 'private' } },
+      },
+    });
+
+    expect(selectionService.handleCallback).toHaveBeenCalledWith({
+      telegramUserId: '54321', chatId: '54321', messageId: 987,
+      data: 'pfc:session12345678:nonce1234:toggle-team:rt',
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`https://api.telegram.org/bot${botToken}/editMessageText`);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1]?.body as string)).toMatchObject({
+      chat_id: 54321, message_id: 987, text: 'Times selecionados: 1',
+    });
+    expect(fetchSpy.mock.calls[1][0]).toBe(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string)).toEqual({ callback_query_id: 'callback-query-1' });
+  });
+
+  it('deduplicates a repeated callback update without editing the selection twice', async () => {
+    selectionService.handleCallback.mockResolvedValueOnce({
+      text: 'Times selecionados: 1', buttons: [], inlineKeyboard: [], editMessage: true,
+    });
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    const update = {
+      update_id: 905,
+      callback_query: {
+        id: 'callback-query-repeat', from: { id: 54321 }, data: 'valid-callback',
+        message: { message_id: 987, chat: { id: 54321, type: 'private' } },
+      },
+    };
+
+    await service.handleWebhook(webhookSecret, update);
+    await service.handleWebhook(webhookSecret, update);
+
+    expect(selectionService.handleCallback).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls.filter(([url]) => url.endsWith('/editMessageText'))).toHaveLength(1);
+    expect(fetchSpy.mock.calls.filter(([url]) => url.endsWith('/answerCallbackQuery'))).toHaveLength(2);
+  });
+
+  it('answers invalid and non-private callbacks without passing identity to the selection service', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 903,
+      callback_query: {
+        id: 'callback-query-invalid', from: { id: 54321 }, data: 'invalid',
+        message: { message_id: 987, chat: { id: -100, type: 'group' } },
+      },
+    });
+    expect(selectionService.handleCallback).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`);
+  });
+
+  it('invalidates the matching session and answers safely when editing the selection fails', async () => {
+    selectionService.handleCallback.mockResolvedValueOnce({
+      text: 'Nova seleção', buttons: [], inlineKeyboard: [], editMessage: true, sessionToken: 'matching-token',
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+
+    await service.handleWebhook(webhookSecret, {
+      update_id: 904,
+      callback_query: {
+        id: 'callback-query-edit-failure', from: { id: 54321 }, data: 'valid-callback',
+        message: { message_id: 987, chat: { id: 54321, type: 'private' } },
+      },
+    });
+
+    expect(selectionService.clearIfSession).toHaveBeenCalledWith('54321', 'matching-token');
+    expect(fetchSpy.mock.calls[1][0]).toBe(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`);
+    expect(JSON.stringify(logger.mock.calls)).not.toContain(botToken);
+    expect(JSON.stringify(logger.mock.calls)).not.toContain('valid-callback');
   });
 
   it('routes in-session text to the selection flow after preserving the existing menu actions', async () => {
