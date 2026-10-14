@@ -1,8 +1,9 @@
-import { Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'crypto';
 import { CompeticaoCardDto } from '../ligas-competicoes/dto/ligas-competicoes-response.dto';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
+import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 
 const COMPETITIONS_BUTTON = '🏆 Ver competições';
 const WELCOME_MESSAGE = `⚽ Bem-vindo ao POINT FFC Connect!
@@ -15,6 +16,7 @@ const COMPETITIONS_ERROR_MESSAGE = 'Não foi possível consultar as competiçõe
 const UNKNOWN_MESSAGE = `⚽ Use o botão abaixo para consultar as competições disponíveis.
 
 Envie /start para ver o menu novamente.`;
+const LINK_RATE_LIMIT_MESSAGE = 'Você atingiu o limite de solicitações de vínculo. Tente novamente mais tarde.';
 const TELEGRAM_API_TIMEOUT_MS = 5000;
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const TELEGRAM_SAFE_MESSAGE_LIMIT = 3900;
@@ -25,6 +27,7 @@ interface TelegramMessage {
     id: number | string;
     type: string;
   };
+  from?: { id: number | string };
   text: string;
 }
 
@@ -37,6 +40,7 @@ export class TelegramService {
   constructor(
     private readonly configService: ConfigService,
     private readonly competitionsService: TelegramCompetitionsService,
+    private readonly telegramLinks: TelegramLinkService,
   ) {}
 
   async handleWebhook(secretToken: string | undefined, update: unknown): Promise<void> {
@@ -79,12 +83,38 @@ export class TelegramService {
       return;
     }
 
+    if (this.isLinkCommand(text)) {
+      await this.createLinkRequest(message);
+      return;
+    }
+
     if (text === COMPETITIONS_BUTTON) {
       await this.sendCompetitions(message.chat.id);
       return;
     }
 
     await this.sendOrFail(message.chat.id, UNKNOWN_MESSAGE);
+  }
+
+  private async createLinkRequest(message: TelegramMessage): Promise<void> {
+    if (!message.from || !this.isValidTelegramUserId(message.from.id)) {
+      await this.sendOrFail(message.chat.id, 'Não foi possível iniciar a vinculação. Envie /vincular novamente no chat privado do bot.');
+      return;
+    }
+
+    try {
+      const request = await this.telegramLinks.createRequest(String(message.from.id));
+      await this.sendOrFail(
+        message.chat.id,
+        `🔐 Seu código de vinculação POINT FFC é:\n\n${request.code}\n\nEle expira em 10 minutos e pode ser usado uma única vez. Informe-o na sua conta POINT FFC para concluir a vinculação.`,
+      );
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        await this.sendOrFail(message.chat.id, LINK_RATE_LIMIT_MESSAGE);
+        return;
+      }
+      throw error;
+    }
   }
 
   private async sendCompetitions(chatId: number | string): Promise<void> {
@@ -187,7 +217,11 @@ export class TelegramService {
     const chatId = message.chat.id;
     if (!this.isValidChatId(chatId)) return undefined;
 
-    return { chat: { id: chatId, type: 'private' }, text: message.text };
+    const from = this.isRecord(message.from) && this.isValidTelegramUserId(message.from.id)
+      ? { id: message.from.id }
+      : undefined;
+
+    return { chat: { id: chatId, type: 'private' }, from, text: message.text };
   }
 
   private getUpdateId(update: unknown): number | undefined {
@@ -212,6 +246,15 @@ export class TelegramService {
 
   private isStartCommand(text: string): boolean {
     return /^\/start(?:@PointFFCConnectBot)?(?:\s|$)/i.test(text);
+  }
+
+  private isLinkCommand(text: string): boolean {
+    return /^\/vincular(?:@PointFFCConnectBot)?(?:\s|$)/i.test(text);
+  }
+
+  private isValidTelegramUserId(value: unknown): value is number | string {
+    if (typeof value === 'number') return Number.isSafeInteger(value) && value > 0;
+    return typeof value === 'string' && /^[1-9]\d{0,19}$/.test(value);
   }
 
   private secretsMatch(configuredSecret: string, providedSecret: string): boolean {
