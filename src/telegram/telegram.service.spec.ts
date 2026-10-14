@@ -124,15 +124,16 @@ describe('TelegramService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { reply_markup: { keyboard: { text: string }[][] } };
     expect(requestBody.reply_markup.keyboard.map(row => row.map(button => button.text))).toEqual([
-      ['🏆 Competições', '⚽ Participar grátis'], ['📋 Minhas inscrições', '🔗 Minha conta'],
+      ['🏆 Competições', '📋 Minhas inscrições'], ['🔗 Minha conta'],
     ]);
   });
 
   it('routes the new competition label and keeps the old label compatible', async () => {
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
     await service.handleWebhook(webhookSecret, { update_id: 820, message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🏆 Competições' } });
-    await service.handleWebhook(webhookSecret, { update_id: 821, ...privateMessage('🏆 Ver competições') });
+    await service.handleWebhook(webhookSecret, { update_id: 821, message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🏆 Ver competições' } });
     expect(competitionsService.listarDivulgaveis).toHaveBeenCalledTimes(2);
+    expect(selectionService.start).toHaveBeenCalledTimes(2);
   });
 
   it('shows linked account status and contextual team management actions', async () => {
@@ -185,7 +186,7 @@ describe('TelegramService', () => {
     };
     expect(orientation.text).toBe('Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.');
     expect(orientation.reply_markup.keyboard.flat().map(button => button.text)).toEqual([
-      '🏆 Competições', '⚽ Participar grátis', '📋 Minhas inscrições', '🔗 Minha conta',
+      '🏆 Competições', '📋 Minhas inscrições', '🔗 Minha conta',
     ]);
     expect(orientation.reply_markup.is_persistent).toBe(true);
     expect(codeMessage.text).toMatch(/^[a-f0-9]{48}$/);
@@ -350,6 +351,10 @@ describe('TelegramService', () => {
     expect(requestBody.text).toContain('POINT FFC - Liga Premium');
     expect(requestBody.text).toContain('R$ 5,00');
     expect(requestBody.text).toContain('https://pointffc.com.br/competicoes?id=42');
+    const participation = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string) as { text: string; reply_markup: { inline_keyboard: unknown[][] } };
+    expect(participation.text).toContain('Selecione uma competição gratuita');
+    expect(participation.reply_markup.inline_keyboard).toHaveLength(1);
+    expect(selectionService.start).toHaveBeenCalledWith('54321');
   });
 
   it('starts the separate free participation journey without changing public competition disclosure', async () => {

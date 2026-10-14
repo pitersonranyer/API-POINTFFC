@@ -29,7 +29,7 @@ const DESELECT_ALL_BUTTON = '⬜ Desmarcar todos';
 const HOME_BUTTON = '🏠 Menu principal';
 const MY_REGISTRATIONS_BUTTON = '📋 Minhas inscrições';
 
-type SelectionStage = 'competitions' | 'teams' | 'summary' | 'receipt' | 'registrations' | 'account'
+type SelectionStage = 'competitions' | 'participation-offer' | 'teams' | 'summary' | 'receipt' | 'registrations' | 'account'
   | 'team-registration-input' | 'team-registration-preview' | 'team-registration-result'
   | 'team-registration-bulk-input' | 'team-registration-bulk-preview'
   | 'team-registration-bulk-processing' | 'team-registration-bulk-result'
@@ -251,7 +251,7 @@ export class TelegramSelectionService {
         }
         this.sessions.delete(callback.telegramUserId);
         return {
-          text: 'Sua seleção expirou. Toque em “⚽ Participar grátis” para começar novamente.',
+          text: 'Sua seleção expirou. Toque em “🏆 Competições” para começar novamente.',
           buttons: [],
           sessionToken: session.sessionToken,
           inlineKeyboard: [],
@@ -275,6 +275,17 @@ export class TelegramSelectionService {
           if (!session.competitionOptions.some(option => option.value === competitionId)) return null;
           return this.selectCompetition(session, competitionId);
         }
+        return null;
+      }
+      if (session.stage === 'participation-offer') {
+        if (action === 'participate-selected') return this.enterSelectedCompetition(session);
+        if (action === 'back-to-competitions') {
+          session.stage = 'competitions';
+          session.competitionId = undefined;
+          this.refresh(session);
+          return { ...this.renderCompetitionPage(session), editMessage: true };
+        }
+        if (action === 'cancel') return this.endJourney(session, 'Jornada cancelada.');
         return null;
       }
       if (session.stage === 'receipt') {
@@ -479,7 +490,7 @@ export class TelegramSelectionService {
     if (!eligibility.competition || eligibility.competition.tipoAcesso !== 'FREE') {
       this.sessions.delete(session.telegramUserId);
       return {
-        text: 'A competição deixou de estar disponível para participação gratuita. Toque em “⚽ Participar grátis” para consultar novamente.',
+        text: 'A competição deixou de estar disponível para participação gratuita. Toque em “🏆 Competições” para consultar novamente.',
         buttons: [],
         sessionToken: session.sessionToken,
         inlineKeyboard: [],
@@ -517,8 +528,53 @@ export class TelegramSelectionService {
       return { ...this.renderCompetitionPage(session, 'Não foi possível verificar seu vínculo agora.'), editMessage: true };
     }
     if (usuarioId === null) return this.endJourney(session, `Para participar, conecte sua conta POINT FFC primeiro:\n${LINK_URL}`);
-    try { return { ...await this.showTeams(session, competitionId, usuarioId), editMessage: true }; } catch {
+    try { return { ...await this.offerParticipation(session, competitionId, usuarioId), editMessage: true }; } catch {
       return { ...this.renderCompetitionPage(session, 'Não foi possível consultar seus times agora.'), editMessage: true };
+    }
+  }
+
+  private async offerParticipation(
+    session: SelectionSession,
+    competitionId: number,
+    usuarioId: number,
+  ): Promise<TelegramSelectionResponse> {
+    const competition = await this.competitions.buscarGratuitaElegivel(competitionId);
+    if (!competition || competition.tipoAcesso !== 'FREE') {
+      session.stage = 'competitions';
+      session.competitionId = undefined;
+      this.refresh(session);
+      return this.renderCompetitionPage(session, 'Esta competição não está mais aberta para participação gratuita. Escolha outra.');
+    }
+    const index = session.competitions.findIndex(item => item.id === competition.id);
+    if (index >= 0) session.competitions[index] = competition;
+    session.competitionId = competition.id;
+    session.linkedUsuarioId = usuarioId;
+    session.stage = 'participation-offer';
+    this.refresh(session);
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    return {
+      text: `${this.formatCompetition(competition)}\n\nDeseja participar desta competição?`,
+      buttons: [],
+      inlineKeyboard: [
+        [{ text: '⚽ Participar', callback_data: this.callbackData(session, 'participate-selected') }],
+        [{ text: '↩️ Voltar às competições', callback_data: this.callbackData(session, 'back-to-competitions') }],
+      ],
+      sessionToken: session.sessionToken,
+    };
+  }
+
+  private async enterSelectedCompetition(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      return { text: 'Não foi possível verificar seu vínculo agora. Tente novamente.', buttons: [], answerText: 'Tente novamente.' };
+    }
+    if (usuarioId === null || usuarioId !== session.linkedUsuarioId) {
+      return this.endJourney(session, `Seu vínculo POINT FFC não está ativo. Conecte sua conta para continuar:\n${LINK_URL}`);
+    }
+    if (!session.competitionId) return this.renderCompetitionPage(session, 'Selecione uma competição para continuar.');
+    try { return { ...await this.showTeams(session, session.competitionId, usuarioId), editMessage: true }; } catch {
+      session.stage = 'competitions';
+      return { ...this.renderCompetitionPage(session, 'Não foi possível consultar seus times agora. Tente novamente.'), editMessage: true };
     }
   }
 
@@ -832,12 +888,12 @@ export class TelegramSelectionService {
     const session = this.sessions.get(telegramUserId);
     if (!session) {
       return this.isSelectionInput(text.trim())
-        ? this.main('Sua seleção expirou ou foi reiniciada. Toque em “⚽ Participar grátis” para começar novamente.')
+        ? this.main('Sua seleção expirou ou foi reiniciada. Toque em “🏆 Competições” para começar novamente.')
         : null;
     }
     if (session.expiresAt <= Date.now()) {
       this.sessions.delete(telegramUserId);
-      return this.main('Sua seleção expirou. Toque em “⚽ Participar grátis” para começar novamente.');
+      return this.main('Sua seleção expirou. Toque em “🏆 Competições” para começar novamente.');
     }
 
     const input = text.trim();
@@ -879,7 +935,7 @@ export class TelegramSelectionService {
     }
 
     try {
-      return await this.showTeams(session, option.value, usuarioId);
+      return await this.offerParticipation(session, option.value, usuarioId);
     } catch {
       return this.main('Não foi possível consultar seus times agora. Tente iniciar a jornada novamente em instantes.');
     }
@@ -1068,7 +1124,7 @@ export class TelegramSelectionService {
       buttons: [],
       inlineKeyboard: [
         ...(session.registrationOrigin === 'account'
-          ? [[{ text: '⚽ Participar grátis', callback_data: this.callbackData(session, 'registration-participate') }],
+          ? [[{ text: '⚽ Participar', callback_data: this.callbackData(session, 'registration-participate') }],
             [{ text: '🔗 Minha conta', callback_data: this.callbackData(session, 'registration-account') }]]
           : [[{ text: session.competitionId ? '⚽ Voltar à competição' : '⚽ Inscrever em competição', callback_data: this.callbackData(session, 'registration-participate') }]]),
         [{ text: session.registrationOrigin === 'account' ? '➕ Cadastrar um time' : '➕ Adicionar outro time', callback_data: this.callbackData(session, 'registration-add-another') }],
@@ -1125,7 +1181,7 @@ export class TelegramSelectionService {
     }
     if (!snapshot.competition || snapshot.competition.tipoAcesso !== 'FREE') {
       this.sessions.delete(session.telegramUserId);
-      return this.main('A competição não está mais disponível para inscrição gratuita. Toque em “⚽ Participar grátis” para escolher outra.');
+      return this.main('A competição não está mais disponível para inscrição gratuita. Toque em “🏆 Competições” para escolher outra.');
     }
     let associations: Array<{ timeId: number; status: 'proprio' | 'outro' | 'disponivel' }>;
     try { associations = await this.teams.consultarStatusAssociacaoTimes(usuarioId, parsed.ids); } catch {
@@ -1668,7 +1724,7 @@ export class TelegramSelectionService {
     session.callbackNonce = randomBytes(6).toString('base64url');
     const keyboard: TelegramInlineButton[][] = [
       ...(session.registrationOrigin === 'account'
-        ? [[{ text: '⚽ Participar grátis', callback_data: this.callbackData(session, 'registration-participate') }],
+        ? [[{ text: '⚽ Participar', callback_data: this.callbackData(session, 'registration-participate') }],
           [{ text: '🔗 Minha conta', callback_data: this.callbackData(session, 'registration-account') }]]
         : [[{ text: '⚽ Voltar à competição', callback_data: this.callbackData(session, 'registration-return') }]]),
       [{ text: '📋 Cadastrar mais times', callback_data: this.callbackData(session, 'registration-bulk-add-another') }],
@@ -1951,7 +2007,7 @@ export class TelegramSelectionService {
     const prefix = `${CALLBACK_PREFIX}:${session.sessionToken}:${session.callbackNonce}:`;
     if (!data.startsWith(prefix) || Buffer.byteLength(data, 'utf8') > 64) return null;
     const action = data.slice(prefix.length);
-    if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel', 'back-competitions', 'main-menu', 'my-inscriptions',
+    if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel', 'back-competitions', 'back-to-competitions', 'participate-selected', 'main-menu', 'my-inscriptions',
       'add-team', 'add-bulk-teams', 'account-register-one', 'account-register-bulk', 'registration-back', 'registration-confirm', 'registration-participate', 'registration-add-another', 'registration-account',
       'registration-return', 'registration-bulk-confirm', 'registration-bulk-edit', 'registration-bulk-add-another', 'direct-enrollment', 'direct-back-manual',
       'direct-edit', 'direct-continue', 'direct-register-confirm'].includes(action)) return action;
@@ -2046,7 +2102,7 @@ export class TelegramSelectionService {
     return rows;
   }
 
-  private main(text: string, buttons = [['🏆 Competições', '⚽ Participar grátis'], ['📋 Minhas inscrições', '🔗 Minha conta']]): TelegramSelectionResponse {
+  private main(text: string, buttons = [['🏆 Competições', '📋 Minhas inscrições'], ['🔗 Minha conta']]): TelegramSelectionResponse {
     return { text, buttons };
   }
 
