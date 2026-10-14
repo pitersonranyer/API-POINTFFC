@@ -114,16 +114,22 @@ describe('TelegramSelectionService', () => {
     return selected;
   };
 
+  const startAccountManagement = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
+    const list = await service.startAccountTeamManagement(telegramUserId);
+    if (!list.sessionToken) throw new Error('expected account-management session');
+    service.attachInlineMessage(telegramUserId, list.sessionToken, telegramUserId, 900);
+    return list;
+  };
+
   const startRegistrationPrompt = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
-    const list = await startTeams(telegramUserId);
-    const addLabel = list.text.includes('Você ainda não possui times') ? '➕ Cadastrar time' : '➕ Adicionar outro time';
-    const response = await press(telegramUserId, button(list, addLabel));
+    const list = await startAccountManagement(telegramUserId);
+    const response = await press(telegramUserId, button(list, '➕ Cadastrar um time'));
     if (!response?.inlineKeyboard) throw new Error('expected team registration prompt');
     return response;
   };
 
   const startBulkRegistrationPrompt = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
-    const list = await startTeams(telegramUserId);
+    const list = await startAccountManagement(telegramUserId);
     const response = await press(telegramUserId, button(list, '📋 Cadastrar vários times'));
     if (!response?.inlineKeyboard) throw new Error('expected bulk team registration prompt');
     return response;
@@ -162,20 +168,24 @@ describe('TelegramSelectionService', () => {
     expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
   });
 
-  it('offers first-team registration when the linked account has no teams', async () => {
+  it('keeps the competition screen focused on enrollment when the account has no teams', async () => {
     teams.listarTimesDoUsuario.mockResolvedValue([]);
     const response = await startTeams();
     expect(response.text).toContain('Você ainda não possui times cadastrados no POINT FFC');
-    expect(response.inlineKeyboard?.flat().map(item => item.text)).toEqual(['➕ Cadastrar time', '📋 Cadastrar vários times', '🏠 Menu principal']);
+    expect(response.inlineKeyboard?.flat().map(item => item.text)).toEqual(['📋 Inscrever por lista de IDs', '↩️ Voltar']);
   });
 
-  it('offers adding another team without removing the current team-selection controls', async () => {
+  it('keeps account team registration separate and simplifies the competition selection controls', async () => {
     const response = await startTeams();
     const labels = response.inlineKeyboard?.flat().map(item => item.text) ?? [];
-    expect(labels).toContain('➕ Adicionar outro time');
-    expect(labels).toContain('📋 Cadastrar vários times');
     expect(labels).toContain('☑️ Selecionar todos');
-    expect(labels).toContain('🏠 Menu principal');
+    expect(labels).toContain('📋 Inscrever por lista de IDs');
+    expect(labels).not.toContain('➕ Adicionar outro time');
+    expect(labels).not.toContain('📋 Cadastrar vários times');
+    expect(labels).not.toContain('❌ Cancelar');
+    expect(labels).not.toContain('🗑️ Limpar seleção');
+    const account = await startAccountManagement();
+    expect(account.inlineKeyboard?.flat().map(item => item.text)).toEqual(['➕ Cadastrar um time', '📋 Cadastrar vários times', '🏠 Menu principal']);
   });
 
   it.each(['1002\n1003', '1002,1003', '1002 1003', '1002;1003'])('accepts bulk IDs separated by supported delimiter %s', async input => {
@@ -190,16 +200,16 @@ describe('TelegramSelectionService', () => {
     expect(preview?.inlineKeyboard?.flat().map(item => item.text)).toContain('✅ Confirmar cadastro');
   });
 
-  it('offers bulk registration both when the profile has no teams and alongside single-team addition', async () => {
+  it('offers one-time and bulk team management from Minha conta for linked profiles', async () => {
     teams.listarTimesDoUsuario.mockResolvedValue([]);
-    const empty = await startTeams();
+    const empty = await startAccountManagement();
     expect(empty.inlineKeyboard?.flat().map(item => item.text)).toContain('📋 Cadastrar vários times');
 
     await service.clear('54321');
     teams.listarTimesDoUsuario.mockResolvedValue([team(1001)]);
-    const existing = await startTeams();
+    const existing = await startAccountManagement();
     expect(existing.inlineKeyboard?.flat().map(item => item.text)).toEqual(expect.arrayContaining([
-      '➕ Adicionar outro time', '📋 Cadastrar vários times',
+      '➕ Cadastrar um time', '📋 Cadastrar vários times',
     ]));
   });
 
@@ -313,7 +323,7 @@ describe('TelegramSelectionService', () => {
     expect(result?.text).toContain('Adicionados: 2');
     expect(result?.text).toContain('Total de IDs distintos: 2');
     expect(result?.inlineKeyboard?.flat().map(item => item.text)).toEqual([
-      '⚽ Voltar à competição', '📋 Cadastrar mais times', '🏠 Menu principal',
+      '⚽ Participar grátis', '🔗 Minha conta', '📋 Cadastrar mais times', '🏠 Menu principal',
     ]);
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
     expect(prompt.text).toContain('Cadastro de vários times');
@@ -428,14 +438,13 @@ describe('TelegramSelectionService', () => {
     expect(teams.consultarStatusAssociacaoTimes).toHaveBeenCalledTimes(3);
   });
 
-  it('returns to the FREE competition with the updated team list and does not enroll automatically', async () => {
+  it('returns to Minha conta with the updated profile and does not enroll automatically', async () => {
     await startBulkRegistrationPrompt();
     const preview = await service.handle('54321', '1002');
     const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
     teams.listarTimesDoUsuario.mockResolvedValue([team(1001), team(1002, 'Time 1002')]);
-    const returned = await press('54321', button(result!, '⚽ Voltar à competição'));
-    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
-    expect(returned?.inlineKeyboard?.flat().some(item => item.text.includes('Time 1002'))).toBe(true);
+    const returned = await press('54321', button(result!, '🔗 Minha conta'));
+    expect(returned?.text).toContain('Times cadastrados: 2');
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
   });
 
@@ -445,7 +454,7 @@ describe('TelegramSelectionService', () => {
     const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
     competitions.buscarGratuitaElegivel.mockResolvedValueOnce(null);
     competitions.listarGratuitasElegiveis.mockResolvedValueOnce([]);
-    const returned = await press('54321', button(result!, '⚽ Voltar à competição'));
+    const returned = await press('54321', button(result!, '⚽ Participar grátis'));
     expect(returned?.text).toContain('A competição deixou de estar disponível');
     expect(returned?.text).toContain('Não há competições gratuitas abertas');
     expect(returned?.text).not.toContain('Time adicionado ao seu perfil');
@@ -577,7 +586,7 @@ describe('TelegramSelectionService', () => {
     expect(teams.buscarTimeDoUsuario).toHaveBeenCalledWith(7, 13933388);
   });
 
-  it('returns to the still-open competition with the newly registered team loaded', async () => {
+  it('returns to Minha conta after profile registration without enrolling the team', async () => {
     teams.adicionarTime.mockImplementation(async (_usuarioId: number, dados: { timeId: number; nome: string }) => {
       teams.listarTimesDoUsuario.mockResolvedValue([team(1001), team(dados.timeId, dados.nome)]);
       return { status: 'adicionado', timeId: dados.timeId };
@@ -585,10 +594,177 @@ describe('TelegramSelectionService', () => {
     await startRegistrationPrompt();
     const preview = await service.handle('54321', '13933388');
     const receipt = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
-    const returned = await press('54321', button(receipt!, '⚽ Voltar à competição'));
-    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
-    expect(returned?.inlineKeyboard?.flat().some(item => item.text.includes('Real Prime CFC'))).toBe(true);
+    const returned = await press('54321', button(receipt!, '🔗 Minha conta'));
+    expect(returned?.text).toContain('Sua conta POINT FFC está conectada');
+    expect(returned?.inlineKeyboard?.flat().map(item => item.text)).toContain('📋 Cadastrar vários times');
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('previews direct IDs without writes, then requires separate profile and enrollment confirmations', async () => {
+    teams.listarTimesDoUsuario.mockImplementation(async () => [team(1001), ...(associations.get(2002) === 7 ? [team(2002, 'Time novo')] : [])]);
+    const initial = await startTeams();
+    const manual = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    const prompt = await press('54321', button(manual!, '📋 Inscrever por lista de IDs'));
+    expect(prompt?.text).toContain('1 time(s) marcado(s) na seleção manual');
+    const preview = await service.handle('54321', '1001, 2002, 2002');
+    expect(preview?.text).toContain('Prévia da inscrição');
+    expect(preview?.text).toContain('Times elegíveis para nova inscrição: 2');
+    expect(preview?.text).toContain('Time 2002 — #2002');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+
+    const register = await press('54321', button(preview!, '➡️ Continuar'));
+    expect(register?.text).toContain('O cadastro não realiza a inscrição.');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    const summary = await press('54321', button(register!, '✅ Cadastrar e continuar'));
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledTimes(1);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(summary?.text).toContain('Confirmar inscrição');
+    expect(summary?.text).toContain('Times que serão inscritos: 2');
+    expect(summary?.text).toContain('Valor: GRÁTIS');
+    expect(summary?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['✅ Confirmar inscrição', '↩️ Voltar']);
+
+    const receipt = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(1);
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledWith(42, 7, {
+      timesCartolaIds: [1001, 2002], valorUnitarioEsperado: '0.00',
+    }, expect.any(String));
+    expect(receipt?.text).toContain('🏆 Inscrição realizada com sucesso!');
+  });
+
+  it('does not combine direct IDs with manual checkboxes and restores the manual selection on back', async () => {
+    const initial = await startTeams();
+    const manual = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    const prompt = await press('54321', button(manual!, '📋 Inscrever por lista de IDs'));
+    expect(prompt?.text).toContain('A lista será uma seleção própria');
+    const preview = await service.handle('54321', '1002');
+    expect(preview?.text).toContain('Times elegíveis para nova inscrição: 1');
+    const returned = await press('54321', button(preview!, '↩️ Voltar à seleção manual'));
+    expect(returned?.text).toContain('Sua seleção manual foi preservada');
+    expect(returned?.text).toContain('Times selecionados: 1');
+    expect(returned?.inlineKeyboard?.flat().some(item => item.text === '✅ Time 1001 (#1001)')).toBe(true);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('classifies already-enrolled, other-profile and missing teams without exposing another owner', async () => {
+    inscriptions.minhas.mockResolvedValue([registration(1001)]);
+    associations.set(2002, 99);
+    cartola.getTeamById.mockRejectedValueOnce(new NotFoundException());
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '1001 2002 3003');
+    expect(preview?.text).toContain('Já inscritos nesta competição: 1');
+    expect(preview?.text).toContain('Indisponíveis ou associados a outro perfil: 1');
+    expect(preview?.text).toContain('Não encontrados: 1');
+    expect(preview?.text).toContain('Times elegíveis para nova inscrição: 0');
+    expect(preview?.text).not.toContain('99');
+    expect(preview?.inlineKeyboard?.flat().map(item => item.text)).not.toContain('➡️ Continuar');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+  });
+
+  it('rejects malformed and over-limit direct lists as a whole', async () => {
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const invalid = await service.handle('54321', '1002, time-1003');
+    expect(invalid?.text).toContain('somente IDs numéricos');
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    const tooMany = await service.handle('54321', Array.from({ length: 31 }, (_, index) => String(5000 + index)).join(';'));
+    expect(tooMany?.text).toContain('mais de 30 IDs distintos');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Máximo: 30 IDs distintos por envio.');
+  });
+
+  it('caps direct enrollment candidates at remaining competition capacity', async () => {
+    competitions.buscarGratuitaElegivel.mockResolvedValue(competition({ limiteParticipantes: 2 }));
+    competitions.contarParticipantesAtivos.mockResolvedValue(1);
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '1001,1002,1003');
+    expect(preview?.text).toContain('Times elegíveis para nova inscrição: 1');
+    expect(preview?.text).toContain('Indisponíveis ou associados a outro perfil: 2');
+    expect(preview?.text).toContain('Time 1001 — #1001');
+    expect(preview?.text).not.toContain('Time 1002 — #1002');
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the active link and FREE competition before allowing direct enrollment', async () => {
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '1001');
+    competitions.buscarGratuitaElegivel.mockResolvedValueOnce(null);
+    const unavailable = await press('54321', button(preview!, '➡️ Continuar'));
+    expect(unavailable?.text).toContain('competição gratuita');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+  });
+
+  it('rechecks the link immediately before final confirmation', async () => {
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '1001');
+    links.resolveActiveUserId.mockResolvedValue(null);
+    const rejected = await press('54321', button(preview!, '➡️ Continuar'));
+    expect(rejected?.text).toContain('Seu vínculo POINT FFC não está ativo');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+  });
+
+  it('does not register direct IDs after the Telegram link is revoked', async () => {
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '2002');
+    const registration = await press('54321', button(preview!, '➡️ Continuar'));
+    links.resolveActiveUserId.mockResolvedValue(null);
+    const rejected = await press('54321', button(registration!, '✅ Cadastrar e continuar'));
+    expect(rejected?.text).toContain('vínculo POINT FFC não está ativo');
+    expect(teams.adicionarTimesEmLote).not.toHaveBeenCalled();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+  });
+
+  it('rejects adulterated and simultaneous profile-registration callbacks for a direct list', async () => {
+    teams.listarTimesDoUsuario.mockImplementation(async () => [team(1001), ...(associations.get(2002) === 7 ? [team(2002)] : [])]);
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '2002');
+    const registration = await press('54321', button(preview!, '➡️ Continuar'));
+    const confirm = button(registration!, '✅ Cadastrar e continuar');
+    expect(await press('54321', `${confirm}x`)).toBeNull();
+    const [first, repeated] = await Promise.all([press('54321', confirm), press('54321', confirm)]);
+    expect(teams.adicionarTimesEmLote).toHaveBeenCalledTimes(1);
+    expect(first?.text).toContain('Confirmar inscrição');
+    expect(repeated).toBeNull();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
+  });
+
+  it('reports partial profile registration and only offers successfully owned teams for enrollment', async () => {
+    teams.listarTimesDoUsuario.mockImplementation(async () => [team(1001), ...(associations.get(2002) === 7 ? [team(2002)] : [])]);
+    teams.adicionarTimesEmLote.mockImplementationOnce(async (usuarioId: number, items: Array<{ timeId: number }>) => {
+      associations.set(items[0].timeId, usuarioId);
+      return { solicitados: items.length, adicionados: 1, jaExistentes: 0, falhas: [{ timeId: items[1].timeId, motivo: 'erro_persistencia' as const }],
+        timesAdicionados: [items[0].timeId], timesJaExistentes: [] };
+    });
+    const initial = await startTeams();
+    const prompt = await press('54321', button(initial, '📋 Inscrever por lista de IDs'));
+    const preview = await service.handle('54321', '2002,2003');
+    const register = await press('54321', button(preview!, '➡️ Continuar'));
+    const summary = await press('54321', button(register!, '✅ Cadastrar e continuar'));
+    expect(summary?.text).toContain('1 time(s) confirmado(s) no perfil');
+    expect(summary?.text).toContain('Pendentes: #2003');
+    expect(summary?.text).toContain('Times que serão inscritos: 1');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+    const receipt = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledWith(42, 7, {
+      timesCartolaIds: [2002], valorUnitarioEsperado: '0.00',
+    }, expect.any(String));
+    expect(receipt?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(prompt?.text).toContain('Inscrição por lista de IDs');
   });
 
   it('lists only the linked user registrations and pages them using inline controls', async () => {
@@ -626,7 +802,7 @@ describe('TelegramSelectionService', () => {
   it('opens Minhas inscrições from a completed receipt without changing the persisted enrollment', async () => {
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
-    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const summary = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     const receipt = await press('54321', button(summary!, '✅ Confirmar inscrição'));
     expect(receipt?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['📋 Minhas inscrições', '🏠 Menu principal']);
     inscriptions.minhasDoUsuario.mockResolvedValueOnce([{
@@ -657,7 +833,7 @@ describe('TelegramSelectionService', () => {
 
     const unselected = await press('54321', button(selected!, '✅ Time 1001 (#1001)'));
     expect(unselected?.text).toContain('Times selecionados: 0');
-    expect(unselected?.inlineKeyboard?.flat().some(item => item.text.startsWith('✅ Continuar'))).toBe(false);
+    expect(unselected?.inlineKeyboard?.flat().some(item => item.text.startsWith('➡️ Continuar'))).toBe(false);
     expect([
       links.resolveActiveUserId.mock.calls.length,
       competitions.buscarGratuitaElegivel.mock.calls.length,
@@ -678,16 +854,17 @@ describe('TelegramSelectionService', () => {
     expect(selectedAll?.inlineKeyboard?.flat()).toContainEqual(expect.objectContaining({ text: '⬜ Desmarcar todos' }));
     const cleared = await press('54321', button(selectedAll!, '⬜ Desmarcar todos'));
     expect(cleared?.text).toContain('Times selecionados: 0');
-    expect(cleared?.inlineKeyboard?.flat().some(item => item.text === '✅ Continuar (11)')).toBe(false);
+    expect(cleared?.inlineKeyboard?.flat().some(item => item.text === '➡️ Continuar com selecionados (11)')).toBe(false);
   });
 
-  it('clears a partial selection with Limpar seleção', async () => {
+  it('clears a partial selection through the Select all toggle', async () => {
     teams.listarTimesDoUsuario.mockResolvedValue([team(100), team(101)]);
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 100 (#100)'));
-    const cleared = await press('54321', button(selected!, '🗑️ Limpar seleção'));
+    const all = await press('54321', button(selected!, '☑️ Selecionar todos'));
+    const cleared = await press('54321', button(all!, '⬜ Desmarcar todos'));
     expect(cleared?.text).toContain('Times selecionados: 0');
-    expect(cleared?.inlineKeyboard?.flat().some(item => item.text.startsWith('✅ Continuar'))).toBe(false);
+    expect(cleared?.inlineKeyboard?.flat().some(item => item.text.startsWith('➡️ Continuar'))).toBe(false);
   });
 
   it('caps select all by the remaining per-user and competition capacity', async () => {
@@ -699,7 +876,7 @@ describe('TelegramSelectionService', () => {
     const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
     expect(selected?.text).toContain('Times selecionados: 2');
     expect(selected?.text).toContain('Selecionamos 2 times. O limite disponível para esta competição é de 2.');
-    expect(selected?.inlineKeyboard?.flat().some(item => item.text === '✅ Continuar (2)')).toBe(true);
+    expect(selected?.inlineKeyboard?.flat().some(item => item.text === '➡️ Continuar com selecionados (2)')).toBe(true);
   });
 
   it('preserves selections and the global counter across pages in both directions', async () => {
@@ -728,7 +905,7 @@ describe('TelegramSelectionService', () => {
     const initial = await startTeams();
     const one = await press('54321', button(initial, '⬜ Falcão (#102)'));
     const two = await press('54321', button(one!, '⬜ Trovão (#101)'));
-    const summary = await press('54321', button(two!, '✅ Continuar (2)'));
+    const summary = await press('54321', button(two!, '➡️ Continuar com selecionados (2)'));
     expect(summary?.text).toContain('Resumo da seleção');
     expect(summary?.text).toContain('Competição: POINT FFC - Rodada 42');
     expect(summary?.text).toContain('Rodada: 42');
@@ -761,7 +938,7 @@ describe('TelegramSelectionService', () => {
     );
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
-    const summary = await press('54321', button(selected!, '✅ Continuar (50)'));
+    const summary = await press('54321', button(selected!, '➡️ Continuar com selecionados (50)'));
     const allText = [summary?.text ?? '', ...(summary?.followUpMessages ?? [])].join('\n');
     expect(summary?.text.length).toBeLessThanOrEqual(3900);
     expect(summary?.followUpMessages?.length).toBeGreaterThan(0);
@@ -776,7 +953,7 @@ describe('TelegramSelectionService', () => {
   it('reuses the persistent idempotency key after an uncertain result and safely recovers duplicate callbacks', async () => {
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
-    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const summary = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     const confirmData = button(summary!, '✅ Confirmar inscrição');
     const key = confirmData.split(':').at(-1);
     expect(confirmData.length).toBeLessThanOrEqual(64);
@@ -802,7 +979,7 @@ describe('TelegramSelectionService', () => {
   it('recovers a confirmed receipt after session loss without creating another batch', async () => {
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
-    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const summary = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     enrollmentBatches.consultarResultadoFreeConfirmado.mockRejectedValueOnce(new Error('response lost'));
     const uncertain = await press('54321', button(summary!, '✅ Confirmar inscrição'));
     expect(uncertain?.text).toContain('operação pode ter sido concluída');
@@ -819,7 +996,7 @@ describe('TelegramSelectionService', () => {
   it('recovers after a process restart and scopes the persisted key to the active linked user', async () => {
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
-    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const summary = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     enrollmentBatches.consultarResultadoFreeConfirmado.mockRejectedValueOnce(new Error('process lost response'));
     const uncertain = await press('54321', button(summary!, '✅ Confirmar inscrição'));
     const recoveryCallback = button(uncertain!, '✅ Confirmar inscrição');
@@ -863,7 +1040,7 @@ describe('TelegramSelectionService', () => {
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
     competitions.buscarGratuitaElegivel.mockResolvedValueOnce(competition({ tipoAcesso: 'PAGO', valorInscricao: 10 }));
-    const rejected = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const rejected = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     expect(rejected?.text).toContain('deixou de estar disponível');
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
   });
@@ -873,7 +1050,7 @@ describe('TelegramSelectionService', () => {
     const initial = await startTeams();
     const selected = await press('54321', button(initial, '⬜ Time 100 (#100)'));
     teams.listarTimesDoUsuario.mockResolvedValue([team(101)]);
-    const refreshed = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const refreshed = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     expect(refreshed?.text).toContain('A elegibilidade mudou desde o carregamento');
     expect(refreshed?.text).toContain('Times selecionados: 0');
     expect(refreshed?.text).not.toContain('Resumo da seleção');
@@ -884,7 +1061,7 @@ describe('TelegramSelectionService', () => {
     const initial = await startTeams();
     links.resolveActiveUserId.mockResolvedValueOnce(null);
     const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
-    const response = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const response = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     expect(response?.editMessage).toBe(true);
     expect(response?.text).toContain('vínculo ativo');
     expect(response?.inlineKeyboard).toEqual([]);
@@ -894,7 +1071,7 @@ describe('TelegramSelectionService', () => {
     const initial = await startTeams();
     competitions.buscarGratuitaElegivel.mockResolvedValueOnce(null);
     const selected = await press('54321', button(initial, '☑️ Selecionar todos'));
-    const response = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const response = await press('54321', button(selected!, '➡️ Continuar com selecionados (1)'));
     expect(response?.text).toContain('deixou de estar disponível');
     expect(response?.inlineKeyboard).toEqual([]);
   });
@@ -942,7 +1119,7 @@ describe('TelegramSelectionService', () => {
     teams.listarTimesDoUsuario.mockResolvedValue([team(1001)]);
     const initial = await startTeams();
     expect(initial.text).toContain('Não há times elegíveis disponíveis');
-    expect(initial.inlineKeyboard?.flat().some(item => item.text.startsWith('✅ Continuar'))).toBe(false);
+    expect(initial.inlineKeyboard?.flat().some(item => item.text.startsWith('➡️ Continuar'))).toBe(false);
     expect(teams.listarTimesDoUsuario).toHaveBeenCalledWith(7);
   });
 
@@ -958,7 +1135,7 @@ describe('TelegramSelectionService', () => {
     };
     const selectedAll = await press('54321', button(initial, '☑️ Selecionar todos'));
     const nextPage = await press('54321', button(selectedAll!, '➡️ Próxima'));
-    const cleared = await press('54321', button(nextPage!, '🗑️ Limpar seleção'));
+    const cleared = await press('54321', button(nextPage!, '⬜ Desmarcar todos'));
     expect(links.resolveActiveUserId).toHaveBeenCalledTimes(baseline.link);
     expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledTimes(baseline.competition);
     expect(teams.listarTimesDoUsuario).toHaveBeenCalledTimes(baseline.teams);
@@ -966,7 +1143,7 @@ describe('TelegramSelectionService', () => {
     expect(competitions.contarParticipantesAtivos).toHaveBeenCalledTimes(baseline.participants);
 
     const selected = await press('54321', button(cleared!, '☑️ Selecionar todos'));
-    await press('54321', button(selected!, '✅ Continuar (10)'));
+    await press('54321', button(selected!, '➡️ Continuar com selecionados (10)'));
     expect(links.resolveActiveUserId).toHaveBeenCalledTimes(baseline.link + 1);
     expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledTimes(baseline.competition + 1);
     expect(teams.listarTimesDoUsuario).toHaveBeenCalledTimes(baseline.teams + 1);
