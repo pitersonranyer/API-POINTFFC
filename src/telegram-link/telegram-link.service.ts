@@ -89,6 +89,15 @@ export class TelegramLinkService {
     return link?.usuario.status === 'ATIVO' ? link.usuarioId : null;
   }
 
+  async resolveActiveUser(telegramUserId: string): Promise<{ idUsuario: number; email: string } | null> {
+    const link = await this.prisma.telegramAccountLink.findUnique({
+      where: { telegramUserId },
+      select: { usuario: { select: { idUsuario: true, email: true, status: true } } },
+    });
+    if (link?.usuario.status !== 'ATIVO') return null;
+    return { idUsuario: link.usuario.idUsuario, email: link.usuario.email };
+  }
+
   async disconnect(usuarioId: number): Promise<TelegramLinkStatus> {
     await this.prisma.telegramAccountLink.deleteMany({ where: { usuarioId } });
     return { linked: false };

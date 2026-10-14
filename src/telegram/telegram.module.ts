@@ -8,10 +8,12 @@ import { MeusTimesModule } from '../meus-times/meus-times.module';
 import { TelegramSelectionService } from './telegram-selection.service';
 import { TelegramWebhookSyncService } from './telegram-webhook-sync.service';
 import { CartolaModule } from '../cartola/cartola.module';
+import { CarteiraModule } from '../carteira/carteira.module';
+import { TelegramWalletService } from './telegram-wallet.service';
 
 @Module({
-  imports: [LigasCompeticoesModule, TelegramLinkModule, MeusTimesModule, CartolaModule],
+  imports: [LigasCompeticoesModule, TelegramLinkModule, MeusTimesModule, CartolaModule, CarteiraModule],
   controllers: [TelegramWebhookController],
-  providers: [TelegramService, TelegramCompetitionsService, TelegramSelectionService, TelegramWebhookSyncService],
+  providers: [TelegramService, TelegramCompetitionsService, TelegramSelectionService, TelegramWebhookSyncService, TelegramWalletService],
 })
 export class TelegramModule {}

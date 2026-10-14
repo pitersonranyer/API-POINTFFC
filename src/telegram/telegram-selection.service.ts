@@ -10,6 +10,7 @@ import { CartolaService } from '../cartola/cartola.service';
 import { CartolaTimePayload } from '../cartola/cartola.types';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
+import { TelegramWalletOperationView, TelegramWalletPayment, TelegramWalletService } from './telegram-wallet.service';
 
 const SESSION_TTL_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = 1000;
@@ -30,6 +31,7 @@ const HOME_BUTTON = '🏠 Menu principal';
 const MY_REGISTRATIONS_BUTTON = '📋 Minhas inscrições';
 
 type SelectionStage = 'competitions' | 'participation-offer' | 'teams' | 'summary' | 'receipt' | 'registrations' | 'account'
+  | 'wallet' | 'wallet-input' | 'wallet-confirmation' | 'wallet-charge'
   | 'team-registration-input' | 'team-registration-preview' | 'team-registration-result'
   | 'team-registration-bulk-input' | 'team-registration-bulk-preview'
   | 'team-registration-bulk-processing' | 'team-registration-bulk-result'
@@ -106,6 +108,7 @@ interface SelectionSession {
   directAlreadyEnrolledIds?: number[];
   enrollmentTeamIds?: number[];
   enrollmentMode?: 'manual' | 'direct';
+  walletRequestId?: string;
 }
 
 export interface TelegramSelectionResponse {
@@ -118,6 +121,8 @@ export interface TelegramSelectionResponse {
   answerText?: string;
   followUpMessages?: string[];
   showMainMenu?: boolean;
+  copyText?: string;
+  qrCodeBase64?: string;
 }
 
 export interface TelegramSelectionCallback {
@@ -139,6 +144,7 @@ export class TelegramSelectionService {
     private readonly inscriptions: InscricoesCompeticaoService,
     private readonly enrollmentBatches: LotesInscricaoService,
     private readonly cartola: CartolaService,
+    private readonly wallet: TelegramWalletService,
   ) {}
 
   async start(telegramUserId: string): Promise<TelegramSelectionResponse> {
@@ -295,7 +301,32 @@ export class TelegramSelectionService {
       if (session.stage === 'account') {
         if (action === 'account-register-one') return this.beginTeamRegistration(session, 'account');
         if (action === 'account-register-bulk') return this.beginBulkTeamRegistration(session, 'account');
+        if (action === 'account-wallet') return this.openWallet(session);
         return action === 'main-menu' || action === 'cancel' ? this.endJourney(session, 'Menu principal') : null;
+      }
+      if (session.stage === 'wallet') {
+        if (action === 'wallet-add') return this.beginWalletInput(session);
+        if (action === 'wallet-refresh') return this.refreshWalletBalance(session);
+        if (action === 'wallet-back') return this.renderAccountTeamManagement(session, true);
+        return null;
+      }
+      if (session.stage === 'wallet-input') {
+        if (action === 'wallet-back') return this.openWallet(session);
+        return null;
+      }
+      if (session.stage === 'wallet-confirmation') {
+        if (action === 'wallet-confirm') return this.confirmWalletPix(session);
+        if (action === 'wallet-edit') return this.beginWalletInput(session);
+        if (action === 'wallet-abandon') return this.abandonWalletRequest(session);
+        if (action === 'wallet-back') return this.openWallet(session);
+        return null;
+      }
+      if (session.stage === 'wallet-charge') {
+        if (action === 'wallet-refresh') return this.refreshWalletPayment(session);
+        if (action === 'wallet-recover') return this.recoverWalletPayment(session);
+        if (action === 'wallet-add') return this.beginWalletInput(session);
+        if (action === 'wallet-back') return this.openWallet(session);
+        return null;
       }
       if (session.stage === 'team-registration-input') {
         if (action === 'registration-back') {
@@ -635,6 +666,7 @@ export class TelegramSelectionService {
       text: `🔗 Sua conta POINT FFC está conectada ao Telegram.\n\n👥 Times cadastrados: ${count}\n\nGerencie seus times do Cartola.\n\nAcesse o site:\nhttps://pointffc.com.br`,
       buttons: [],
       inlineKeyboard: [
+        [{ text: '💰 Minha carteira', callback_data: this.callbackData(session, 'account-wallet') }],
         [{ text: '➕ Cadastrar um time', callback_data: this.callbackData(session, 'account-register-one') }],
         [{ text: '📋 Cadastrar vários times', callback_data: this.callbackData(session, 'account-register-bulk') }],
         [{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }],
@@ -642,6 +674,238 @@ export class TelegramSelectionService {
       sessionToken: session.sessionToken,
       ...(editMessage ? { editMessage: true } : {}),
     };
+  }
+
+  private async openWallet(session: SelectionSession, notice = ''): Promise<TelegramSelectionResponse> {
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      return { text: '', buttons: [], answerText: 'Não foi possível verificar seu vínculo agora.' };
+    }
+    if (usuarioId === null || usuarioId !== session.linkedUsuarioId) {
+      return this.endJourney(session, `Seu vínculo não está ativo. Conecte sua conta POINT FFC:\n${LINK_URL}`);
+    }
+    try {
+      const snapshot = await this.wallet.consultar(session.telegramUserId);
+      if (snapshot.usuarioId !== usuarioId) return this.endJourney(session, 'Seu vínculo mudou. Abra Minha conta novamente.');
+      const operation = snapshot.operation;
+      session.walletRequestId = operation?.id;
+      if (operation?.confirmado) {
+        if (operation.recarga) return this.renderWalletPayment(session, operation.recarga, snapshot, notice);
+        session.stage = 'wallet-charge';
+        this.refresh(session);
+        session.callbackNonce = randomBytes(6).toString('base64url');
+        return {
+          text: `${notice ? `${notice}\n\n` : ''}🔄 Sua solicitação PIX foi autorizada e está pronta para recuperação segura.\n\nValor: R$ ${operation.valor}`,
+          buttons: [], inlineKeyboard: [
+            [{ text: '🔄 Recuperar cobrança', callback_data: this.callbackData(session, 'wallet-recover') }],
+            [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }],
+          ], sessionToken: session.sessionToken, editMessage: true,
+        };
+      }
+      if (operation) return this.renderWalletConfirmation(session, operation, 'Há uma solicitação aguardando confirmação.');
+      return this.renderWalletHome(session, snapshot, notice);
+    } catch {
+      return { text: 'Não foi possível consultar sua carteira agora. Tente novamente.', buttons: [], answerText: 'Falha ao consultar carteira.' };
+    }
+  }
+
+  private renderWalletHome(session: SelectionSession, snapshot: Awaited<ReturnType<TelegramWalletService['consultar']>>, notice = ''): TelegramSelectionResponse {
+    session.stage = 'wallet';
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    this.refresh(session);
+    return {
+      text: `${notice ? `${notice}\n\n` : ''}💰 Minha carteira\n\nSaldo disponível: R$ ${snapshot.saldoDisponivel}\nSaldo bloqueado: R$ ${snapshot.saldoBloqueado}\nStatus: ${snapshot.status === 'ATIVA' ? 'Ativa' : 'Bloqueada'}`,
+      buttons: [], inlineKeyboard: [
+        [{ text: '💰 Adicionar saldo', callback_data: this.callbackData(session, 'wallet-add') }],
+        [{ text: '🔄 Atualizar saldo', callback_data: this.callbackData(session, 'wallet-refresh') }],
+        [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }],
+      ], sessionToken: session.sessionToken, editMessage: true,
+    };
+  }
+
+  private beginWalletInput(session: SelectionSession): TelegramSelectionResponse {
+    session.stage = 'wallet-input';
+    session.walletRequestId = undefined;
+    this.refresh(session);
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    return {
+      text: '💰 Informe o valor que deseja adicionar em reais, por exemplo: 25,00. A cobrança só será criada após sua confirmação.',
+      buttons: [], inlineKeyboard: [[{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }]],
+      sessionToken: session.sessionToken, editMessage: true,
+    };
+  }
+
+  private async previewWalletAmount(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
+    const amount = input.replace(',', '.');
+    try { this.wallet.validarValor(amount); } catch {
+      this.refresh(session);
+      session.callbackNonce = randomBytes(6).toString('base64url');
+      return {
+        text: 'Valor inválido. Informe um valor positivo em reais, com até duas casas decimais e dentro do limite permitido.\n\nExemplo: 25,00',
+        buttons: [], inlineKeyboard: [[{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }]],
+        sessionToken: session.sessionToken,
+      };
+    }
+    try {
+      const operation = await this.wallet.preparar(session.telegramUserId, amount);
+      if (operation.usuarioId !== session.linkedUsuarioId) return this.endJourney(session, 'Seu vínculo mudou. Abra Minha conta novamente.');
+      session.walletRequestId = operation.id;
+      if (operation.confirmado) {
+        if (operation.recarga) return this.renderWalletPayment(session, operation.recarga, await this.wallet.consultar(session.telegramUserId), 'Já existe uma cobrança de uma solicitação confirmada.');
+        session.stage = 'wallet-charge';
+        this.refresh(session);
+        session.callbackNonce = randomBytes(6).toString('base64url');
+        return {
+          text: `Já existe uma solicitação confirmada para R$ ${operation.valor}. Nenhuma nova cobrança será criada.`,
+          buttons: [], inlineKeyboard: [
+            [{ text: '🔄 Recuperar cobrança', callback_data: this.callbackData(session, 'wallet-recover') }],
+            [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }],
+          ], sessionToken: session.sessionToken,
+        };
+      }
+      const mismatch = this.normalizeWalletAmount(amount) !== operation.valor
+        ? `Já existe uma solicitação aguardando confirmação no valor de R$ ${operation.valor}. O valor enviado agora não foi usado.\n\n` : '';
+      return this.renderWalletConfirmation(session, operation, `${mismatch}Confirme para gerar uma cobrança PIX.`);
+    } catch {
+      session.stage = 'wallet-input';
+      this.refresh(session);
+      session.callbackNonce = randomBytes(6).toString('base64url');
+      return {
+        text: 'Não foi possível preparar a recarga agora. Tente novamente em instantes.', buttons: [],
+        inlineKeyboard: [[{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }]],
+        sessionToken: session.sessionToken,
+      };
+    }
+  }
+
+  private renderWalletConfirmation(session: SelectionSession, operation: TelegramWalletOperationView, notice: string): TelegramSelectionResponse {
+    session.stage = 'wallet-confirmation';
+    session.walletRequestId = operation.id;
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    this.refresh(session);
+    return {
+      text: `💰 Confirmar geração do PIX\n\nValor: R$ ${operation.valor}\n\n${notice}\n\nA cobrança só será solicitada após tocar em Confirmar.`,
+      buttons: [], inlineKeyboard: [
+        [{ text: '✅ Confirmar e gerar PIX', callback_data: this.callbackData(session, 'wallet-confirm') }],
+        [{ text: '✏️ Alterar valor', callback_data: this.callbackData(session, 'wallet-edit') }],
+        [{ text: '❌ Cancelar solicitação', callback_data: this.callbackData(session, 'wallet-abandon') }],
+        [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }],
+      ], sessionToken: session.sessionToken,
+    };
+  }
+
+  private async confirmWalletPix(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    if (!session.walletRequestId) return this.renderWalletHomeAfterError(session, 'A confirmação expirou. Inicie a solicitação novamente.');
+    try {
+      const payment = await this.wallet.confirmar(session.telegramUserId, session.walletRequestId);
+      const snapshot = await this.wallet.consultar(session.telegramUserId);
+      if (snapshot.usuarioId !== session.linkedUsuarioId) return this.endJourney(session, 'Seu vínculo mudou. Abra Minha conta novamente.');
+      return this.renderWalletPayment(session, payment, snapshot, 'Cobrança PIX gerada. O saldo será atualizado após a confirmação do pagamento.');
+    } catch {
+      session.stage = 'wallet-charge';
+      this.refresh(session);
+      session.callbackNonce = randomBytes(6).toString('base64url');
+      return {
+        text: 'Não foi possível concluir a solicitação agora. A confirmação ficou registrada; use Recuperar cobrança para repetir a mesma operação com segurança.',
+        buttons: [], inlineKeyboard: [
+          [{ text: '🔄 Recuperar cobrança', callback_data: this.callbackData(session, 'wallet-recover') }],
+          [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }],
+        ], sessionToken: session.sessionToken,
+      };
+    }
+  }
+
+  private recoverWalletPayment(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    return this.refreshWalletPayment(session);
+  }
+
+  private async refreshWalletPayment(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    if (!session.walletRequestId) return this.renderWalletHomeAfterError(session, 'Não há uma cobrança para consultar.');
+    try {
+      const payment = await this.wallet.atualizar(session.telegramUserId, session.walletRequestId);
+      const snapshot = await this.wallet.consultar(session.telegramUserId);
+      if (snapshot.usuarioId !== session.linkedUsuarioId) return this.endJourney(session, 'Seu vínculo mudou. Abra Minha conta novamente.');
+      return this.renderWalletPayment(session, payment, snapshot, 'Status consultado no Mercado Pago.');
+    } catch {
+      session.stage = 'wallet-charge';
+      this.refresh(session);
+      session.callbackNonce = randomBytes(6).toString('base64url');
+      return {
+        text: 'Não foi possível consultar a cobrança agora. Nenhum crédito foi aplicado por esta ação. Tente novamente em instantes.',
+        buttons: [], inlineKeyboard: [
+          [{ text: '🔄 Tentar novamente', callback_data: this.callbackData(session, 'wallet-refresh') }],
+          [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }],
+        ], sessionToken: session.sessionToken,
+      };
+    }
+  }
+
+  private renderWalletPayment(
+    session: SelectionSession,
+    payment: TelegramWalletPayment,
+    snapshot: Awaited<ReturnType<TelegramWalletService['consultar']>>,
+    notice = '',
+  ): TelegramSelectionResponse {
+    const pending = payment.status === 'PENDENTE' || payment.status === 'PROCESSANDO';
+    session.walletRequestId = snapshot.operation?.id ?? session.walletRequestId;
+    session.stage = pending ? 'wallet-charge' : 'wallet';
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    this.refresh(session);
+    const expiration = payment.expiracao
+      ? `\nExpira em: ${payment.expiracao.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}` : '';
+    const balance = `\n\nSaldo disponível: R$ ${snapshot.saldoDisponivel}\nSaldo bloqueado: R$ ${snapshot.saldoBloqueado}`;
+    const settlementNotice = payment.status === 'APROVADA'
+      ? '\n\nO provedor confirmou o pagamento. O saldo será atualizado pelo processamento oficial da recarga.' : '';
+    const pixCopy = pending && payment.pixCopiaCola ? '\n\nO código PIX foi enviado em uma mensagem separada para facilitar a cópia.' : '';
+    const qrLabel = pending && payment.qrCode ? '\nQR Code enviado em uma mensagem separada.' : '';
+    const keyboard: TelegramInlineButton[][] = [[{
+      text: pending ? '🔄 Consultar pagamento e saldo' : '💰 Adicionar saldo',
+      callback_data: this.callbackData(session, pending ? 'wallet-refresh' : 'wallet-add'),
+    }], [{ text: '↩️ Minha conta', callback_data: this.callbackData(session, 'wallet-back') }]];
+    return {
+      text: `💰 Recarga PIX\n\nValor: R$ ${payment.valor}\nStatus: ${this.formatWalletStatus(payment.status)}${expiration}${balance}${settlementNotice}${notice ? `\n\n${notice}` : ''}${pixCopy}${qrLabel}`,
+      buttons: [], inlineKeyboard: keyboard, sessionToken: session.sessionToken, editMessage: true,
+      ...(pending && payment.pixCopiaCola ? { copyText: payment.pixCopiaCola } : {}),
+      ...(pending && payment.qrCode ? { qrCodeBase64: payment.qrCode } : {}),
+    };
+  }
+
+  private async refreshWalletBalance(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    return this.openWallet(session, 'Saldo atualizado.');
+  }
+
+  private async abandonWalletRequest(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    if (session.walletRequestId) {
+      try { await this.wallet.abandonar(session.telegramUserId, session.walletRequestId); } catch {
+        return this.renderWalletHomeAfterError(session, 'A solicitação já foi confirmada ou não pode ser cancelada.');
+      }
+    }
+    session.walletRequestId = undefined;
+    return this.openWallet(session, 'Solicitação cancelada antes da geração do PIX.');
+  }
+
+  private async renderWalletHomeAfterError(session: SelectionSession, message: string): Promise<TelegramSelectionResponse> {
+    try {
+      const snapshot = await this.wallet.consultar(session.telegramUserId);
+      if (snapshot.usuarioId !== session.linkedUsuarioId) return this.endJourney(session, 'Seu vínculo mudou. Abra Minha conta novamente.');
+      session.walletRequestId = snapshot.operation?.id;
+      return this.renderWalletHome(session, snapshot, message);
+    } catch {
+      return { text: 'Não foi possível acessar a carteira agora. Tente novamente.', buttons: [], answerText: message };
+    }
+  }
+
+  private normalizeWalletAmount(value: string): string {
+    const [units, cents = ''] = value.split('.');
+    return `${BigInt(units)}.${cents.padEnd(2, '0')}`;
+  }
+
+  private formatWalletStatus(status: string): string {
+    const labels: Record<string, string> = {
+      PENDENTE: 'Aguardando pagamento', PROCESSANDO: 'Processando', APROVADA: 'Pagamento confirmado',
+      REJEITADA: 'Não aprovada', CANCELADA: 'Cancelada', EXPIRADA: 'Expirada', REEMBOLSADA: 'Reembolsada',
+    };
+    return labels[status] ?? 'Em processamento';
   }
 
   private endJourney(session: SelectionSession, text: string): TelegramSelectionResponse {
@@ -905,6 +1169,7 @@ export class TelegramSelectionService {
     if (session.stage === 'team-registration-input') return this.previewCartolaTeam(session, input);
     if (session.stage === 'team-registration-bulk-input') return this.previewCartolaTeams(session, input);
     if (session.stage === 'direct-enrollment-input') return this.previewDirectEnrollment(session, input);
+    if (session.stage === 'wallet-input') return this.previewWalletAmount(session, input);
     if (session.stage === 'competitions') return this.handleCompetitionStep(session, input);
     return null;
   }
@@ -2010,7 +2275,8 @@ export class TelegramSelectionService {
     if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel', 'back-competitions', 'back-to-competitions', 'participate-selected', 'main-menu', 'my-inscriptions',
       'add-team', 'add-bulk-teams', 'account-register-one', 'account-register-bulk', 'registration-back', 'registration-confirm', 'registration-participate', 'registration-add-another', 'registration-account',
       'registration-return', 'registration-bulk-confirm', 'registration-bulk-edit', 'registration-bulk-add-another', 'direct-enrollment', 'direct-back-manual',
-      'direct-edit', 'direct-continue', 'direct-register-confirm'].includes(action)) return action;
+      'direct-edit', 'direct-continue', 'direct-register-confirm', 'account-wallet', 'wallet-add', 'wallet-refresh', 'wallet-back',
+      'wallet-confirm', 'wallet-edit', 'wallet-abandon', 'wallet-recover'].includes(action)) return action;
     if (session.stage === 'competitions' && /^select-competition:[0-9a-z]{1,8}$/.test(action)) return action;
     const confirm = /^confirm:([A-Za-z0-9_-]{24})$/.exec(action);
     if (confirm && confirm[1] === session.confirmationKey) return action;

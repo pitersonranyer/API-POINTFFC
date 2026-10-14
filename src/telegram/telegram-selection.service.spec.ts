@@ -6,6 +6,7 @@ import { NotFoundException } from '@nestjs/common';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramSelectionResponse, TelegramSelectionService } from './telegram-selection.service';
+import { TelegramWalletService } from './telegram-wallet.service';
 
 describe('TelegramSelectionService', () => {
   const competition = (overrides: Record<string, unknown> = {}) => ({
@@ -34,6 +35,7 @@ describe('TelegramSelectionService', () => {
   let cartola: { getTeamById: jest.Mock };
   let inscriptions: { minhas: jest.Mock; minhasDoUsuario: jest.Mock };
   let enrollmentBatches: { criarFree: jest.Mock; consultarResultadoFreeConfirmado: jest.Mock };
+  let wallet: { consultar: jest.Mock; validarValor: jest.Mock; preparar: jest.Mock; confirmar: jest.Mock; atualizar: jest.Mock; abandonar: jest.Mock };
   let lastEnrollment: { response: Record<string, unknown>; ids: number[] } | null;
   let associations: Map<number, number>;
   let service: TelegramSelectionService;
@@ -94,6 +96,14 @@ describe('TelegramSelectionService', () => {
         times: lastEnrollment.ids.map(timeIdCartola => ({ timeIdCartola, nomeTime: `Time ${timeIdCartola}` })),
       })),
     };
+    wallet = {
+      consultar: jest.fn().mockResolvedValue({ usuarioId: 7, saldoDisponivel: '12.50', saldoBloqueado: '3.00', status: 'ATIVA', operation: null }),
+      validarValor: jest.fn(),
+      preparar: jest.fn().mockResolvedValue({ id: 'request-1', usuarioId: 7, valor: '25.00', confirmado: false, expiraEm: new Date(Date.now() + 600000), recarga: null }),
+      confirmar: jest.fn().mockResolvedValue({ id: 88, valor: '25.00', status: 'PENDENTE', idPagamentoExterno: 'mp-88', pixCopiaCola: '000201PIX-CODE', qrCode: 'aGVsbG8=', expiracao: new Date(Date.now() + 3600000) }),
+      atualizar: jest.fn(),
+      abandonar: jest.fn(),
+    };
     service = createFreshService();
   });
 
@@ -104,6 +114,7 @@ describe('TelegramSelectionService', () => {
     inscriptions as unknown as InscricoesCompeticaoService,
     enrollmentBatches as unknown as LotesInscricaoService,
     cartola as unknown as CartolaService,
+    wallet as unknown as TelegramWalletService,
   );
 
   const startTeams = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
@@ -191,7 +202,7 @@ describe('TelegramSelectionService', () => {
     expect(labels).not.toContain('❌ Cancelar');
     expect(labels).not.toContain('🗑️ Limpar seleção');
     const account = await startAccountManagement();
-    expect(account.inlineKeyboard?.flat().map(item => item.text)).toEqual(['➕ Cadastrar um time', '📋 Cadastrar vários times', '🏠 Menu principal']);
+    expect(account.inlineKeyboard?.flat().map(item => item.text)).toEqual(['💰 Minha carteira', '➕ Cadastrar um time', '📋 Cadastrar vários times', '🏠 Menu principal']);
   });
 
   it.each(['1002\n1003', '1002,1003', '1002 1003', '1002;1003'])('accepts bulk IDs separated by supported delimiter %s', async input => {
@@ -217,6 +228,45 @@ describe('TelegramSelectionService', () => {
     expect(existing.inlineKeyboard?.flat().map(item => item.text)).toEqual(expect.arrayContaining([
       '➕ Cadastrar um time', '📋 Cadastrar vários times',
     ]));
+  });
+
+  it('shows linked wallet balances and does not expose user identifiers', async () => {
+    const account = await startAccountManagement();
+    const walletHome = await press('54321', button(account, '💰 Minha carteira'));
+    expect(wallet.consultar).toHaveBeenCalledWith('54321');
+    expect(walletHome?.text).toContain('Saldo disponível: R$ 12.50');
+    expect(walletHome?.text).toContain('Saldo bloqueado: R$ 3.00');
+    expect(walletHome?.text).not.toContain('54321');
+    expect(walletHome?.text).not.toContain('usuarioId');
+  });
+
+  it('requires an explicit callback confirmation before generating PIX', async () => {
+    const account = await startAccountManagement();
+    const walletHome = await press('54321', button(account, '💰 Minha carteira'));
+    const input = await press('54321', button(walletHome!, '💰 Adicionar saldo'));
+    expect(input?.text).toContain('só será criada após sua confirmação');
+    expect(wallet.confirmar).not.toHaveBeenCalled();
+    const confirmation = await service.handle('54321', '25,00');
+    expect(confirmation?.text).toContain('R$ 25.00');
+    expect(wallet.preparar).toHaveBeenCalledWith('54321', '25.00');
+    expect(wallet.confirmar).not.toHaveBeenCalled();
+    const payment = await press('54321', button(confirmation!, '✅ Confirmar e gerar PIX'));
+    expect(wallet.confirmar).toHaveBeenCalledWith('54321', 'request-1');
+    expect(payment?.text).toContain('Cobrança PIX gerada');
+    expect(payment?.copyText).toBe('000201PIX-CODE');
+    expect(payment?.qrCodeBase64).toBe('aGVsbG8=');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid values without preparing a charge', async () => {
+    wallet.validarValor.mockImplementation(() => { throw new Error('invalid'); });
+    const account = await startAccountManagement();
+    const walletHome = await press('54321', button(account, '💰 Minha carteira'));
+    const input = await press('54321', button(walletHome!, '💰 Adicionar saldo'));
+    const invalid = await service.handle('54321', '0');
+    expect(input?.text).toContain('Informe o valor');
+    expect(invalid?.text).toContain('Valor inválido');
+    expect(wallet.preparar).not.toHaveBeenCalled();
   });
 
   it('removes repeated IDs from a bulk message before querying Cartola', async () => {

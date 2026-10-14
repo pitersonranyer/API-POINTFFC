@@ -199,6 +199,23 @@ export class TelegramService {
     if (response?.editMessage) {
       const edited = await this.editMessageText(callback.chatId, callback.messageId!, response);
       if (!edited) {
+        if (response.copyText || response.qrCodeBase64) {
+          const markup = response.inlineKeyboard?.length
+            ? { inline_keyboard: response.inlineKeyboard } as TelegramReplyMarkup : null;
+          const sent = await this.sendMessage(callback.chatId, response.text, undefined, markup);
+          if (sent.accepted && sent.messageId && response.sessionToken) {
+            this.selectionService.attachInlineMessage(callback.fromId, response.sessionToken, String(callback.chatId), sent.messageId);
+            await this.sendWalletAttachments(callback.chatId, response);
+            await this.editMessageReplyMarkup(callback.chatId, callback.messageId!, []);
+          }
+          this.logger.warn(sent.accepted
+            ? 'Resultado da carteira Telegram enviado em uma nova mensagem após falha de edição.'
+            : 'Resultado da carteira Telegram não pôde ser exibido; a cobrança pode ser recuperada pelo fluxo da carteira.');
+          await this.answerCallbackQuery(callback.id, sent.accepted
+            ? 'Cobrança consultada.'
+            : 'Não foi possível exibir o resultado. A cobrança pode ser recuperada em Minha carteira.');
+          return;
+        }
         if (response.text.startsWith('🏆 Inscrição realizada com sucesso!')) {
           const receiptMarkup = response.inlineKeyboard?.length
             ? { inline_keyboard: response.inlineKeyboard } as TelegramReplyMarkup : MAIN_REPLY_KEYBOARD;
@@ -225,6 +242,7 @@ export class TelegramService {
         if (response.showMainMenu) await this.sendOrFail(callback.chatId, WELCOME_MESSAGE);
         return;
       }
+      await this.sendWalletAttachments(callback.chatId, response);
     }
     await this.answerCallbackQuery(
       callback.id,
@@ -258,6 +276,54 @@ export class TelegramService {
         throw new ServiceUnavailableException('Resposta Telegram não enviada.');
       }
     }
+    await this.sendWalletAttachments(chatId, response);
+  }
+
+  private async sendWalletAttachments(chatId: number | string, response: TelegramSelectionResponse): Promise<void> {
+    if (response.copyText) {
+      const code = response.copyText;
+      if (code.length <= TELEGRAM_MESSAGE_LIMIT) {
+        const sent = await this.sendMessage(chatId, code, [{ type: 'code', offset: 0, length: code.length }], null);
+        if (!sent.accepted) this.logger.warn('Código PIX não enviado pelo Telegram; use a opção de recuperar cobrança.');
+      } else {
+        this.logger.warn('Código PIX excedeu o limite de mensagem Telegram e não foi enviado.');
+      }
+    }
+    if (response.qrCodeBase64) await this.sendWalletQrCode(chatId, response.qrCodeBase64);
+  }
+
+  private async sendWalletQrCode(chatId: number | string, encoded: string): Promise<void> {
+    if (encoded.length > 3_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) {
+      this.logger.warn('QR Code PIX não enviado: imagem inválida ou acima do limite.');
+      return;
+    }
+    const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!botToken?.trim()) {
+      this.logger.warn('QR Code PIX não enviado: configuração do bot ausente.');
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TELEGRAM_API_TIMEOUT_MS);
+    try {
+      const bytes = Uint8Array.from(Buffer.from(encoded, 'base64'));
+      const form = new FormData();
+      form.append('chat_id', String(chatId));
+      form.append('caption', 'QR Code PIX');
+      form.append('photo', new Blob([bytes], { type: 'image/png' }), 'pix.png');
+      const response = await fetch('https://api.telegram.org/bot' + botToken + '/sendPhoto', {
+        method: 'POST', body: form, signal: controller.signal,
+      });
+      let accepted = false;
+      if (response.ok) {
+        try {
+          const result: unknown = await response.json();
+          accepted = this.isRecord(result) && result.ok === true;
+        } catch { accepted = false; }
+      }
+      if (!accepted) this.logger.warn('QR Code PIX não enviado pela API do Telegram.');
+    } catch {
+      this.logger.warn('QR Code PIX não enviado por falha de comunicação.');
+    } finally { clearTimeout(timeout); }
   }
 
   private async createLinkRequest(message: TelegramMessage): Promise<void> {

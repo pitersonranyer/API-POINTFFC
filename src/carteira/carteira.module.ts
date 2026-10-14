@@ -12,5 +12,5 @@ import { RecargaPixWebhookController } from './recarga-pix-webhook.controller';
 @Module({ imports: [PrismaModule, AuthModule],
   controllers: [CarteiraController, RecargaPixController, RecargaPixWebhookController],
   providers: [CarteiraService, RecargaCarteiraService, MercadoPagoRecargaClient, RecargaPixService],
-  exports: [CarteiraService, RecargaCarteiraService] })
+  exports: [CarteiraService, RecargaCarteiraService, RecargaPixService] })
 export class CarteiraModule {}
