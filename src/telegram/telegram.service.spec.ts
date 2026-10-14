@@ -161,7 +161,7 @@ describe('TelegramService', () => {
     expect(JSON.stringify(fetchSpy.mock.calls)).not.toContain('internal diagnostic');
   });
 
-  it('acknowledges a repeated update without sending duplicate messages', async () => {
+  it('suppresses a repeated update only after its response was sent successfully', async () => {
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
     const update = { update_id: 84, ...privateMessage('/start') };
     await service.handleWebhook(webhookSecret, update);
@@ -180,14 +180,53 @@ describe('TelegramService', () => {
     expect(texts.every(text => text.length <= 4096)).toBe(true);
   });
 
-  it('acknowledges the update without throwing when Telegram communication fails', async () => {
+  it('does not mark an update complete when Telegram send fails and retries it on redelivery', async () => {
     const service = createService({
       TELEGRAM_WEBHOOK_SECRET: webhookSecret,
       TELEGRAM_BOT_TOKEN: botToken,
     });
-    fetchSpy.mockRejectedValue(new Error('failure'));
+    fetchSpy.mockRejectedValueOnce(new Error('failure'));
+    const update = { update_id: 86, ...privateMessage('/start') };
 
-    await expect(service.handleWebhook(webhookSecret, privateMessage('/start'))).resolves.toBeUndefined();
+    await expect(service.handleWebhook(webhookSecret, update)).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.handleWebhook(webhookSecret, update)).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a query-failure update if the generic error message could not be sent', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    competitionsService.listarDivulgaveis.mockRejectedValueOnce(new Error('private database details'));
+    fetchSpy.mockRejectedValueOnce(new Error('send failed'));
+    const update = { update_id: 87, ...privateMessage('🏆 Ver competições') };
+
+    await expect(service.handleWebhook(webhookSecret, update)).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.handleWebhook(webhookSecret, update)).resolves.toBeUndefined();
+
+    expect(competitionsService.listarDivulgaveis).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not send a generic error after a partial list and leaves the update retryable', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    const longList = Array.from({ length: 24 }, (_, index) => ({
+      ...competitions[0], id: index + 42, nome: `Competição ${index + 1} ${'Nome '.repeat(50)}`,
+    }));
+    competitionsService.listarDivulgaveis.mockResolvedValue(longList);
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ ok: true }),
+    } as unknown as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
+    const update = { update_id: 88, ...privateMessage('🏆 Ver competições') };
+
+    await expect(service.handleWebhook(webhookSecret, update)).rejects.toThrow(ServiceUnavailableException);
+    const firstAttempt = fetchSpy.mock.calls.map(call => JSON.parse(call[1]?.body as string).text as string);
+    expect(firstAttempt.length).toBeGreaterThan(1);
+    expect(firstAttempt.some(text => text.includes('Não foi possível consultar'))).toBe(false);
+
+    await expect(service.handleWebhook(webhookSecret, update)).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(firstAttempt.length * 2);
+    expect(competitionsService.listarDivulgaveis).toHaveBeenCalledTimes(2);
   });
 
   it('does not call Telegram when the bot token is missing or empty', async () => {
@@ -197,8 +236,8 @@ describe('TelegramService', () => {
       TELEGRAM_BOT_TOKEN: '',
     });
 
-    await missingTokenService.handleWebhook(webhookSecret, privateMessage('/start'));
-    await emptyTokenService.handleWebhook(webhookSecret, privateMessage('/start'));
+    await expect(missingTokenService.handleWebhook(webhookSecret, privateMessage('/start'))).rejects.toThrow(ServiceUnavailableException);
+    await expect(emptyTokenService.handleWebhook(webhookSecret, privateMessage('/start'))).rejects.toThrow(ServiceUnavailableException);
 
     expect(fetchSpy).not.toHaveBeenCalled();
   });

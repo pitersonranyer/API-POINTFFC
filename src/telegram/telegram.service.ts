@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  ServiceUnavailableException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { timingSafeEqual } from 'crypto';
 import { CompeticaoCardDto } from '../ligas-competicoes/dto/ligas-competicoes-response.dto';
@@ -36,7 +31,8 @@ interface TelegramMessage {
 @Injectable()
 export class TelegramService {
   private readonly logger = new Logger(TelegramService.name);
-  private readonly processedUpdates = new Map<number, true>();
+  private readonly completedUpdates = new Map<number, true>();
+  private readonly inFlightUpdates = new Map<number, Promise<void>>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -55,11 +51,31 @@ export class TelegramService {
     }
 
     const message = this.getSupportedPrivateTextMessage(update);
-    if (!message || this.isDuplicateUpdate(update)) return;
+    if (!message) return;
 
+    const updateId = this.getUpdateId(update);
+    if (updateId !== undefined && this.completedUpdates.has(updateId)) return;
+    if (updateId !== undefined) {
+      const inFlight = this.inFlightUpdates.get(updateId);
+      if (inFlight) return inFlight;
+    }
+
+    const processing = this.processMessage(message);
+    if (updateId === undefined) return processing;
+
+    this.inFlightUpdates.set(updateId, processing);
+    try {
+      await processing;
+      this.rememberCompletedUpdate(updateId);
+    } finally {
+      this.inFlightUpdates.delete(updateId);
+    }
+  }
+
+  private async processMessage(message: TelegramMessage): Promise<void> {
     const text = message.text.trim();
     if (this.isStartCommand(text)) {
-      await this.sendMessage(message.chat.id, WELCOME_MESSAGE);
+      await this.sendOrFail(message.chat.id, WELCOME_MESSAGE);
       return;
     }
 
@@ -68,23 +84,32 @@ export class TelegramService {
       return;
     }
 
-    await this.sendMessage(message.chat.id, UNKNOWN_MESSAGE);
+    await this.sendOrFail(message.chat.id, UNKNOWN_MESSAGE);
   }
 
   private async sendCompetitions(chatId: number | string): Promise<void> {
+    let competitions: CompeticaoCardDto[];
     try {
-      const competitions = await this.competitionsService.listarDivulgaveis();
-      if (competitions.length === 0) {
-        await this.sendMessage(chatId, EMPTY_COMPETITIONS_MESSAGE);
-        return;
-      }
-
-      for (const text of this.formatCompetitionMessages(competitions)) {
-        await this.sendMessage(chatId, text);
-      }
+      competitions = await this.competitionsService.listarDivulgaveis();
     } catch {
       this.logger.warn('Consulta de competições Telegram falhou.');
-      await this.sendMessage(chatId, COMPETITIONS_ERROR_MESSAGE);
+      await this.sendOrFail(chatId, COMPETITIONS_ERROR_MESSAGE);
+      return;
+    }
+
+    if (competitions.length === 0) {
+      await this.sendOrFail(chatId, EMPTY_COMPETITIONS_MESSAGE);
+      return;
+    }
+
+    for (const text of this.formatCompetitionMessages(competitions)) {
+      await this.sendOrFail(chatId, text);
+    }
+  }
+
+  private async sendOrFail(chatId: number | string, text: string): Promise<void> {
+    if (!await this.sendMessage(chatId, text)) {
+      throw new ServiceUnavailableException('Resposta Telegram não enviada.');
     }
   }
 
@@ -165,18 +190,19 @@ export class TelegramService {
     return { chat: { id: chatId, type: 'private' }, text: message.text };
   }
 
-  private isDuplicateUpdate(update: unknown): boolean {
+  private getUpdateId(update: unknown): number | undefined {
     if (!this.isRecord(update) || typeof update.update_id !== 'number' || !Number.isSafeInteger(update.update_id)) {
-      return false;
+      return undefined;
     }
+    return update.update_id;
+  }
 
-    if (this.processedUpdates.has(update.update_id)) return true;
-    this.processedUpdates.set(update.update_id, true);
-    if (this.processedUpdates.size > MAX_REMEMBERED_UPDATES) {
-      const oldest = this.processedUpdates.keys().next().value;
-      if (oldest !== undefined) this.processedUpdates.delete(oldest);
+  private rememberCompletedUpdate(updateId: number): void {
+    this.completedUpdates.set(updateId, true);
+    if (this.completedUpdates.size > MAX_REMEMBERED_UPDATES) {
+      const oldest = this.completedUpdates.keys().next().value;
+      if (oldest !== undefined) this.completedUpdates.delete(oldest);
     }
-    return false;
   }
 
   private isValidChatId(value: unknown): value is number | string {
@@ -202,11 +228,11 @@ export class TelegramService {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
-  private async sendMessage(chatId: number | string, text: string): Promise<void> {
+  private async sendMessage(chatId: number | string, text: string): Promise<boolean> {
     const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!botToken?.trim()) {
       this.logger.warn('Resposta Telegram não enviada: configuração do bot ausente.');
-      return;
+      return false;
     }
 
     const controller = new AbortController();
@@ -240,8 +266,10 @@ export class TelegramService {
         }
       }
       if (!telegramAccepted) this.logger.warn('Resposta Telegram não enviada: API retornou erro.');
+      return telegramAccepted;
     } catch {
       this.logger.warn('Resposta Telegram não enviada: falha de comunicação.');
+      return false;
     } finally {
       clearTimeout(timeout);
     }
