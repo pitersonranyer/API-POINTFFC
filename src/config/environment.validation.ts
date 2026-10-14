@@ -25,4 +25,6 @@ export const environmentValidationSchema = Joi.object({
   MERCADO_PAGO_ACCESS_TOKEN: Joi.string().optional().allow(''),
   MERCADO_PAGO_WEBHOOK_SECRET: Joi.string().optional().allow(''),
   MERCADO_PAGO_POC_PAYER_EMAIL: Joi.string().optional().allow(''),
+  TELEGRAM_BOT_TOKEN: Joi.string().optional().allow(''),
+  TELEGRAM_WEBHOOK_SECRET: Joi.string().optional().allow(''),
 });

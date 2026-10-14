@@ -23,6 +23,7 @@ import { LigasCompeticoesModule } from './ligas-competicoes/ligas-competicoes.mo
 import { AdminModule } from './admin/admin.module';
 import { DesafiosModule } from './desafios/desafios.module';
 import { FantasyModule } from './fantasy/fantasy.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { FantasyModule } from './fantasy/fantasy.module';
     AdminModule,
     DesafiosModule,
     FantasyModule,
+    TelegramModule,
   ],
 })
 export class AppModule {}
