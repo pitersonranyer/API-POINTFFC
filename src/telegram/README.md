@@ -1,6 +1,6 @@
 # POINT FFC Connect: webhook
 
-The menu uses a Telegram reply keyboard. Selecting **🏆 Ver competições** arrives as a regular private `message`, so this integration does not require `callback_query` in the webhook's `allowed_updates` list.
+The menu uses a Telegram reply keyboard. Selecting **🏆 Ver competições** or **🔗 Conectar minha conta** arrives as a regular private `message`, so this integration does not require `callback_query` in the webhook's `allowed_updates` list.
 
 If Telegram's current webhook has a custom `allowed_updates` list that omits `message`, update it through the deployment's approved secret-management tooling. Keep the existing webhook URL and configured secret header value, and include `message` in `allowed_updates`, for example:
 
@@ -20,7 +20,7 @@ Only fully processed `update_id` values are deduplicated. The process keeps at m
 
 ## Telegram account linking
 
-In a private chat, send `/vincular` to receive a 48-character random hexadecimal code. It expires in 10 minutes and can be used once. The Telegram user ID comes from the authenticated Telegram webhook update; it is not accepted from the browser. The raw code is sent only to that private chat and is never stored or logged. The database stores its SHA-256 hash.
+In a private chat, select **🔗 Conectar minha conta** or send `/vincular` to receive a 48-character random hexadecimal code. The bot sends the instructions and code in separate messages; the code is the only visible text in the second message and is marked with Telegram's `code` entity for easier copying. It expires in 10 minutes and can be used once. The Telegram user ID comes from the authenticated Telegram webhook update; it is not accepted from the browser. The raw code is sent only to that private chat and is never stored or logged. The database stores its SHA-256 hash.
 
 All API routes below require `Authorization: Bearer <POINT_FFC_JWT>`. The server derives `usuarioId` from the JWT's authenticated `Usuario`; callers cannot choose an account ID.
 

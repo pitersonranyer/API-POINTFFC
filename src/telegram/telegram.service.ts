@@ -6,14 +6,15 @@ import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 
 const COMPETITIONS_BUTTON = '🏆 Ver competições';
+const CONNECT_ACCOUNT_BUTTON = '🔗 Conectar minha conta';
 const WELCOME_MESSAGE = `⚽ Bem-vindo ao POINT FFC Connect!
 
-Consulte as competições públicas disponíveis no POINT FFC pelo botão abaixo.
+Consulte as competições públicas ou conecte sua conta POINT FFC pelos botões abaixo.
 
 🌐 https://pointffc.com.br`;
 const EMPTY_COMPETITIONS_MESSAGE = 'No momento, não há competições abertas para divulgação.';
 const COMPETITIONS_ERROR_MESSAGE = 'Não foi possível consultar as competições agora. Tente novamente em instantes.';
-const UNKNOWN_MESSAGE = `⚽ Use o botão abaixo para consultar as competições disponíveis.
+const UNKNOWN_MESSAGE = `⚽ Use os botões abaixo para consultar as competições ou conectar sua conta POINT FFC.
 
 Envie /start para ver o menu novamente.`;
 const LINK_RATE_LIMIT_MESSAGE = 'Você atingiu o limite de solicitações de vínculo. Tente novamente mais tarde.';
@@ -83,7 +84,7 @@ export class TelegramService {
       return;
     }
 
-    if (this.isLinkCommand(text)) {
+    if (this.isLinkCommand(text) || text === CONNECT_ACCOUNT_BUTTON) {
       await this.createLinkRequest(message);
       return;
     }
@@ -106,8 +107,11 @@ export class TelegramService {
       const request = await this.telegramLinks.createRequest(String(message.from.id));
       await this.sendOrFail(
         message.chat.id,
-        `🔐 Seu código de vinculação POINT FFC é:\n\n${request.code}\n\nEle expira em 10 minutos e pode ser usado uma única vez. Informe-o na sua conta POINT FFC para concluir a vinculação.`,
+        'Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.',
       );
+      await this.sendOrFail(message.chat.id, request.code, [
+        { type: 'code', offset: 0, length: request.code.length },
+      ]);
     } catch (error) {
       if (error instanceof HttpException && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
         await this.sendOrFail(message.chat.id, LINK_RATE_LIMIT_MESSAGE);
@@ -137,8 +141,12 @@ export class TelegramService {
     }
   }
 
-  private async sendOrFail(chatId: number | string, text: string): Promise<void> {
-    if (!await this.sendMessage(chatId, text)) {
+  private async sendOrFail(
+    chatId: number | string,
+    text: string,
+    entities?: Array<{ type: 'code'; offset: number; length: number }>,
+  ): Promise<void> {
+    if (!await this.sendMessage(chatId, text, entities)) {
       throw new ServiceUnavailableException('Resposta Telegram não enviada.');
     }
   }
@@ -271,7 +279,11 @@ export class TelegramService {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
-  private async sendMessage(chatId: number | string, text: string): Promise<boolean> {
+  private async sendMessage(
+    chatId: number | string,
+    text: string,
+    entities?: Array<{ type: 'code'; offset: number; length: number }>,
+  ): Promise<boolean> {
     const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!botToken?.trim()) {
       this.logger.warn('Resposta Telegram não enviada: configuração do bot ausente.');
@@ -290,8 +302,9 @@ export class TelegramService {
           body: JSON.stringify({
             chat_id: chatId,
             text,
+            ...(entities ? { entities } : {}),
             reply_markup: {
-              keyboard: [[{ text: COMPETITIONS_BUTTON }]],
+              keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }]],
               resize_keyboard: true,
             },
           }),
