@@ -13,9 +13,10 @@ describe('TelegramService', () => {
   ];
   let fetchSpy: jest.SpyInstance;
   let competitionsService: { listarDivulgaveis: jest.Mock };
-  let telegramLinks: { createRequest: jest.Mock };
+  let telegramLinks: { createRequest: jest.Mock; resolveActiveUserId: jest.Mock };
   let selectionService: {
     start: jest.Mock;
+    startMyRegistrations: jest.Mock;
     handle: jest.Mock;
     handleCallback: jest.Mock;
     attachInlineMessage: jest.Mock;
@@ -40,9 +41,13 @@ describe('TelegramService', () => {
 
   beforeEach(() => {
     competitionsService = { listarDivulgaveis: jest.fn().mockResolvedValue(competitions) };
-    telegramLinks = { createRequest: jest.fn().mockResolvedValue({ code: 'a'.repeat(48), expiresAt: new Date('2026-10-14T12:00:00Z') }) };
+    telegramLinks = {
+      createRequest: jest.fn().mockResolvedValue({ code: 'a'.repeat(48), expiresAt: new Date('2026-10-14T12:00:00Z') }),
+      resolveActiveUserId: jest.fn().mockResolvedValue(null),
+    };
     selectionService = {
-      start: jest.fn().mockResolvedValue({ text: 'Selecione uma competição gratuita.', buttons: [['1. Rodada 27']] }),
+      start: jest.fn().mockResolvedValue({ text: 'Selecione uma competição gratuita.', buttons: [], inlineKeyboard: [[{ text: 'Rodada 27', callback_data: 'pfc:test:nonce:select-competition:16' }]] }),
+      startMyRegistrations: jest.fn().mockResolvedValue({ text: '📋 Minhas inscrições', buttons: [], inlineKeyboard: [[{ text: '🏠 Menu principal', callback_data: 'pfc:test:nonce:main-menu' }]] }),
       handle: jest.fn().mockResolvedValue(null),
       handleCallback: jest.fn().mockResolvedValue(null),
       attachInlineMessage: jest.fn().mockReturnValue(true),
@@ -116,9 +121,41 @@ describe('TelegramService', () => {
     );
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { reply_markup: { keyboard: { text: string }[][] } };
-    expect(requestBody.reply_markup.keyboard[0][0].text).toBe('🏆 Ver competições');
-    expect(requestBody.reply_markup.keyboard[1][0].text).toBe('🔗 Conectar minha conta');
-    expect(requestBody.reply_markup.keyboard[2][0].text).toBe('⚽ Participar grátis');
+    expect(requestBody.reply_markup.keyboard.map(row => row.map(button => button.text))).toEqual([
+      ['🏆 Competições', '⚽ Participar grátis'], ['📋 Minhas inscrições', '🔗 Minha conta'],
+    ]);
+  });
+
+  it('routes the new competition label and keeps the old label compatible', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, { update_id: 820, message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🏆 Competições' } });
+    await service.handleWebhook(webhookSecret, { update_id: 821, ...privateMessage('🏆 Ver competições') });
+    expect(competitionsService.listarDivulgaveis).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows linked account status with a safe site button', async () => {
+    telegramLinks.resolveActiveUserId.mockResolvedValue(42);
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 822,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🔗 Minha conta' },
+    });
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
+    expect(telegramLinks.resolveActiveUserId).toHaveBeenCalledWith('54321');
+    expect(body.text).toContain('Sua conta POINT FFC está conectada');
+    expect(body.reply_markup.inline_keyboard[0][0]).toEqual({ text: '🌐 Acessar POINT FFC', url: 'https://pointffc.com.br' });
+    expect(body.text).not.toContain('42');
+  });
+
+  it('starts account linking when Minha conta has no active link and routes Minhas inscrições', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, { update_id: 823, message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🔗 Minha conta' } });
+    expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
+    fetchSpy.mockClear();
+    await service.handleWebhook(webhookSecret, { update_id: 824, message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '📋 Minhas inscrições' } });
+    expect(selectionService.startMyRegistrations).toHaveBeenCalledWith('54321');
+    expect(JSON.parse(fetchSpy.mock.calls[0][1]?.body as string).reply_markup.inline_keyboard[0][0].text)
+      .toBe('🏠 Menu principal');
   });
 
   it('sends all three link messages in order and isolates the code without logging it', async () => {
@@ -145,7 +182,7 @@ describe('TelegramService', () => {
     };
     expect(orientation.text).toBe('Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.');
     expect(orientation.reply_markup.keyboard.flat().map(button => button.text)).toEqual([
-      '🏆 Ver competições', '🔗 Conectar minha conta', '⚽ Participar grátis',
+      '🏆 Competições', '⚽ Participar grátis', '📋 Minhas inscrições', '🔗 Minha conta',
     ]);
     expect(orientation.reply_markup.is_persistent).toBe(true);
     expect(codeMessage.text).toMatch(/^[a-f0-9]{48}$/);
@@ -324,7 +361,7 @@ describe('TelegramService', () => {
     expect(competitionsService.listarDivulgaveis).not.toHaveBeenCalled();
     const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
     expect(body.text).toContain('Selecione uma competição gratuita.');
-    expect(body.reply_markup.keyboard).toEqual([[{ text: '1. Rodada 27' }]]);
+    expect(body.reply_markup.inline_keyboard).toEqual([[{ text: 'Rodada 27', callback_data: 'pfc:test:nonce:select-competition:16' }]]);
   });
 
   it('sends the inline team keyboard and binds the returned Telegram message to the session', async () => {
@@ -444,10 +481,13 @@ describe('TelegramService', () => {
   it('sends a persisted enrollment receipt separately when editing the callback message fails', async () => {
     selectionService.handleCallback.mockResolvedValueOnce({
       text: '🏆 Inscrição realizada com sucesso!\n\nCompetição: Rodada 42\n\nTimes inscritos:\n• Time 1001 (#1001)\n\nTotal: 1 time\nValor: R$ 0,00',
-      buttons: [], inlineKeyboard: [], editMessage: true,
+      buttons: [], inlineKeyboard: [
+        [{ text: '📋 Minhas inscrições', callback_data: 'pfc:receipt-token:nonce1234:my-inscriptions' }],
+        [{ text: '🏠 Menu principal', callback_data: 'pfc:receipt-token:nonce1234:main-menu' }],
+      ], sessionToken: 'receipt-token', editMessage: true,
     });
     fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
-    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true, result: { message_id: 988 } }) } as unknown as Response);
     fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
 
@@ -462,13 +502,18 @@ describe('TelegramService', () => {
     expect(fetchSpy.mock.calls.map(([url]) => url)).toEqual([
       `https://api.telegram.org/bot${botToken}/editMessageText`,
       `https://api.telegram.org/bot${botToken}/sendMessage`,
+      `https://api.telegram.org/bot${botToken}/editMessageReplyMarkup`,
       `https://api.telegram.org/bot${botToken}/answerCallbackQuery`,
     ]);
     expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).text).toContain('Inscrição realizada com sucesso!');
-    expect(JSON.parse(fetchSpy.mock.calls[2][1]?.body as string)).toEqual({
+    expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).reply_markup.inline_keyboard.flat().map((button: { text: string }) => button.text))
+      .toEqual(['📋 Minhas inscrições', '🏠 Menu principal']);
+    expect(JSON.parse(fetchSpy.mock.calls[2][1]?.body as string)).toEqual({ chat_id: 54321, message_id: 987, reply_markup: { inline_keyboard: [] } });
+    expect(JSON.parse(fetchSpy.mock.calls[3][1]?.body as string)).toEqual({
       callback_query_id: 'callback-query-enrollment', text: 'Inscrição confirmada.',
     });
     expect(selectionService.clearIfSession).not.toHaveBeenCalled();
+    expect(selectionService.attachInlineMessage).toHaveBeenCalledWith('54321', 'receipt-token', '54321', 988);
   });
 
   it('routes in-session text to the selection flow after preserving the existing menu actions', async () => {

@@ -6,9 +6,12 @@ import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 import { TelegramSelectionCallback, TelegramSelectionService, TelegramSelectionResponse } from './telegram-selection.service';
 
-const COMPETITIONS_BUTTON = '🏆 Ver competições';
-const CONNECT_ACCOUNT_BUTTON = '🔗 Conectar minha conta';
+const COMPETITIONS_BUTTON = '🏆 Competições';
+const LEGACY_COMPETITIONS_BUTTON = '🏆 Ver competições';
+const CONNECT_ACCOUNT_BUTTON = '🔗 Minha conta';
+const LEGACY_CONNECT_ACCOUNT_BUTTON = '🔗 Conectar minha conta';
 const PARTICIPATE_FREE_BUTTON = '⚽ Participar grátis';
+const MY_REGISTRATIONS_BUTTON = '📋 Minhas inscrições';
 const LINK_WEBSITE_BUTTON = '🌐 Vincular no POINT FFC';
 const LINK_WEBSITE_URL = 'https://pointffc.com.br/conectar-telegram/';
 const LINK_COMPLETION_MESSAGE = 'Agora é só concluir sua vinculação no POINT FFC! ⚽\n\nToque no botão abaixo, faça login se necessário e informe o código que você acabou de receber.';
@@ -47,13 +50,16 @@ interface TelegramMessageSendResult {
 }
 
 const MAIN_REPLY_KEYBOARD: TelegramReplyMarkup = {
-  keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }], [{ text: PARTICIPATE_FREE_BUTTON }]],
+  keyboard: [[{ text: COMPETITIONS_BUTTON }, { text: PARTICIPATE_FREE_BUTTON }], [{ text: MY_REGISTRATIONS_BUTTON }, { text: CONNECT_ACCOUNT_BUTTON }]],
   resize_keyboard: true,
   is_persistent: true,
 };
 
 const LINK_WEBSITE_KEYBOARD: TelegramReplyMarkup = {
   inline_keyboard: [[{ text: LINK_WEBSITE_BUTTON, url: LINK_WEBSITE_URL }]],
+};
+const PUBLIC_WEBSITE_KEYBOARD: TelegramReplyMarkup = {
+  inline_keyboard: [[{ text: '🌐 Acessar POINT FFC', url: 'https://pointffc.com.br' }]],
 };
 
 interface TelegramMessage {
@@ -125,13 +131,13 @@ export class TelegramService {
       return;
     }
 
-    if (this.isLinkCommand(text) || text === CONNECT_ACCOUNT_BUTTON) {
+    if (this.isLinkCommand(text) || text === LEGACY_CONNECT_ACCOUNT_BUTTON) {
       if (message.from) this.selectionService.clear(String(message.from.id));
       await this.createLinkRequest(message);
       return;
     }
 
-    if (text === COMPETITIONS_BUTTON) {
+    if (text === COMPETITIONS_BUTTON || text === LEGACY_COMPETITIONS_BUTTON) {
       if (message.from) this.selectionService.clear(String(message.from.id));
       await this.sendCompetitions(message.chat.id);
       return;
@@ -143,6 +149,26 @@ export class TelegramService {
         return;
       }
       const response = await this.selectionService.start(String(message.from.id));
+      await this.sendSelectionResponse(message.chat.id, response, String(message.from.id));
+      return;
+    }
+
+    if (text === CONNECT_ACCOUNT_BUTTON) {
+      if (!message.from) {
+        await this.sendOrFail(message.chat.id, 'Não foi possível identificar sua conta Telegram. Toque no botão novamente no chat privado do bot.');
+        return;
+      }
+      this.selectionService.clear(String(message.from.id));
+      await this.showAccountStatus(message);
+      return;
+    }
+
+    if (text === MY_REGISTRATIONS_BUTTON) {
+      if (!message.from) {
+        await this.sendOrFail(message.chat.id, 'Não foi possível identificar sua conta Telegram. Toque no botão novamente no chat privado do bot.');
+        return;
+      }
+      const response = await this.selectionService.startMyRegistrations(String(message.from.id));
       await this.sendSelectionResponse(message.chat.id, response, String(message.from.id));
       return;
     }
@@ -178,7 +204,13 @@ export class TelegramService {
       const edited = await this.editMessageText(callback.chatId, callback.messageId!, response);
       if (!edited) {
         if (response.text.startsWith('🏆 Inscrição realizada com sucesso!')) {
-          const receipt = await this.sendMessage(callback.chatId, response.text, undefined, null);
+          const receiptMarkup = response.inlineKeyboard?.length
+            ? { inline_keyboard: response.inlineKeyboard } as TelegramReplyMarkup : MAIN_REPLY_KEYBOARD;
+          const receipt = await this.sendMessage(callback.chatId, response.text, undefined, receiptMarkup);
+          if (receipt.accepted && receipt.messageId && response.sessionToken) {
+            this.selectionService.attachInlineMessage(callback.fromId, response.sessionToken, String(callback.chatId), receipt.messageId);
+          }
+          await this.editMessageReplyMarkup(callback.chatId, callback.messageId!, []);
           for (const text of response.followUpMessages ?? []) {
             const sent = await this.sendMessage(callback.chatId, text, undefined, null);
             if (!sent.accepted) this.logger.warn('Continuação do comprovante de inscrição Telegram não enviada.');
@@ -194,6 +226,7 @@ export class TelegramService {
         this.logger.warn('Mensagem interativa Telegram não atualizada; a sessão foi encerrada para evitar seleção divergente.');
         this.selectionService.clearIfSession(callback.fromId, response.sessionToken);
         await this.answerCallbackQuery(callback.id, 'Não foi possível atualizar a seleção. Inicie novamente pelo menu.');
+        if (response.showMainMenu) await this.sendOrFail(callback.chatId, WELCOME_MESSAGE);
         return;
       }
     }
@@ -201,6 +234,9 @@ export class TelegramService {
       callback.id,
       response?.answerText ?? (response ? undefined : 'Esta seleção expirou ou foi substituída. Inicie novamente pelo menu.'),
     );
+    if (response?.showMainMenu) {
+      await this.sendOrFail(callback.chatId, WELCOME_MESSAGE);
+    }
     for (const text of response?.followUpMessages ?? []) {
       const sent = await this.sendMessage(callback.chatId, text, undefined, null);
       if (!sent.accepted) this.logger.warn('Continuação do resumo de seleção Telegram não enviada.');
@@ -250,6 +286,22 @@ export class TelegramService {
         return;
       }
       throw error;
+    }
+  }
+
+  private async showAccountStatus(message: TelegramMessage): Promise<void> {
+    try {
+      const usuarioId = await this.telegramLinks.resolveActiveUserId(String(message.from!.id));
+      if (usuarioId === null) {
+        await this.createLinkRequest(message);
+        return;
+      }
+      await this.sendOrFail(message.chat.id,
+        '🔗 Sua conta POINT FFC está conectada ao Telegram.\n\nAcesse o site para gerenciar sua conta.',
+        undefined, PUBLIC_WEBSITE_KEYBOARD);
+    } catch {
+      this.logger.warn('Consulta de vínculo Telegram falhou.');
+      await this.sendOrFail(message.chat.id, 'Não foi possível consultar sua conta agora. Tente novamente em instantes.');
     }
   }
 
@@ -539,6 +591,23 @@ export class TelegramService {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async editMessageReplyMarkup(chatId: number | string, messageId: number, keyboard: TelegramSelectionResponse['inlineKeyboard']): Promise<void> {
+    const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!botToken?.trim()) return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TELEGRAM_API_TIMEOUT_MS);
+    try {
+      const response = await fetch('https://api.telegram.org/bot' + botToken + '/editMessageReplyMarkup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard ?? [] } }),
+        signal: controller.signal,
+      });
+      if (!response.ok) this.logger.warn('Teclado inline anterior do Telegram não pôde ser removido.');
+    } catch {
+      this.logger.warn('Falha ao remover teclado inline anterior do Telegram.');
+    } finally { clearTimeout(timeout); }
   }
 
   private async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {

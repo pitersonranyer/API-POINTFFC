@@ -28,7 +28,7 @@ describe('TelegramSelectionService', () => {
   };
   let links: { resolveActiveUserId: jest.Mock };
   let teams: { listarTimesDoUsuario: jest.Mock };
-  let inscriptions: { minhas: jest.Mock };
+  let inscriptions: { minhas: jest.Mock; minhasDoUsuario: jest.Mock };
   let enrollmentBatches: { criarFree: jest.Mock; consultarResultadoFreeConfirmado: jest.Mock };
   let lastEnrollment: { response: Record<string, unknown>; ids: number[] } | null;
   let service: TelegramSelectionService;
@@ -41,7 +41,7 @@ describe('TelegramSelectionService', () => {
     };
     links = { resolveActiveUserId: jest.fn().mockResolvedValue(7) };
     teams = { listarTimesDoUsuario: jest.fn().mockResolvedValue([team(1001)]) };
-    inscriptions = { minhas: jest.fn().mockResolvedValue([]) };
+    inscriptions = { minhas: jest.fn().mockResolvedValue([]), minhasDoUsuario: jest.fn().mockResolvedValue([]) };
     lastEnrollment = null;
     enrollmentBatches = {
       criarFree: jest.fn().mockImplementation(async (competicaoId: number, _usuarioId: number, dto: { timesCartolaIds: number[] }) => {
@@ -100,6 +100,65 @@ describe('TelegramSelectionService', () => {
     expect(result.text).toContain('Rodada: 42');
     expect(result.text).toContain('Valor: R$ 0,00');
     expect(result.text).toContain('Prazo:');
+    expect(result.inlineKeyboard?.[0][0].callback_data).toMatch(/select-competition:/);
+    expect(result.buttons.flat()).toEqual(expect.arrayContaining(['1. POINT FFC - Rodada 42 (R42, #42)']));
+  });
+
+  it('selects a competition through its inline button and keeps the same message context', async () => {
+    const page = await service.start('54321');
+    service.attachInlineMessage('54321', page.sessionToken!, '54321', 900);
+    const selected = await press('54321', button(page, '1. POINT FFC - Rodada 42 (R42)'));
+    expect(selected?.editMessage).toBe(true);
+    expect(selected?.text).toContain('Escolha seus times');
+    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
+  });
+
+  it('lists only the linked user registrations and pages them using inline controls', async () => {
+    inscriptions.minhasDoUsuario.mockResolvedValue(Array.from({ length: 9 }, (_, index) => ({
+      id: index + 1, timeIdCartola: 1000 + index, nomeTime: `Time ${index + 1}`, dataInscricao: new Date(),
+      competicao: { nome: 'Liga atual', rodadaInicio: 12, rodadaFim: 12, dataFim: new Date(Date.now() + 100_000) },
+    })));
+    const page = await service.startMyRegistrations('54321');
+    expect(links.resolveActiveUserId).toHaveBeenCalledWith('54321');
+    expect(inscriptions.minhasDoUsuario).toHaveBeenCalledWith(7);
+    expect(page.text).toContain('Liga atual (Rodada 12)');
+    expect(page.text).toContain('Time 1 (#1000)');
+    expect(page.text).not.toContain('Time 9');
+    expect(page.inlineKeyboard?.flat().map(item => item.text)).toContain('➡️ Próxima');
+  });
+
+  it('rejects Minhas inscrições when the Telegram link is missing', async () => {
+    links.resolveActiveUserId.mockResolvedValueOnce(null);
+    const page = await service.startMyRegistrations('54321');
+    expect(page.text).toContain('conecte sua conta POINT FFC');
+    expect(inscriptions.minhasDoUsuario).not.toHaveBeenCalled();
+  });
+
+  it('returns to the menu and invalidates the active competition callback', async () => {
+    const page = await service.start('54321');
+    service.attachInlineMessage('54321', page.sessionToken!, '54321', 900);
+    const select = button(page, '1. POINT FFC - Rodada 42 (R42)');
+    const home = await press('54321', button(page, '🏠 Menu principal'));
+    expect(home?.showMainMenu).toBe(true);
+    expect(home?.editMessage).toBe(true);
+    expect(home?.inlineKeyboard).toEqual([]);
+    expect(await press('54321', select)).toBeNull();
+  });
+
+  it('opens Minhas inscrições from a completed receipt without changing the persisted enrollment', async () => {
+    const initial = await startTeams();
+    const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    const receipt = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    expect(receipt?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['📋 Minhas inscrições', '🏠 Menu principal']);
+    inscriptions.minhasDoUsuario.mockResolvedValueOnce([{
+      id: 1, timeIdCartola: 1001, nomeTime: 'Time 1001', dataInscricao: new Date(),
+      competicao: { nome: 'POINT FFC - Rodada 42', rodadaInicio: 42, rodadaFim: 42, dataFim: null },
+    }]);
+    const list = await press('54321', button(receipt!, '📋 Minhas inscrições'));
+    expect(list?.text).toContain('POINT FFC - Rodada 42');
+    expect(list?.text).toContain('Time 1001 (#1001)');
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(1);
   });
 
   it('marks and unmarks an individual team and rejects an outdated callback nonce', async () => {
@@ -201,10 +260,10 @@ describe('TelegramSelectionService', () => {
     expect(summary?.text).toContain('Falcão (#102)');
     expect(summary!.text.indexOf('Trovão (#101)')).toBeLessThan(summary!.text.indexOf('Falcão (#102)'));
     expect(summary?.text).toContain('Os times foram selecionados, mas nenhuma inscrição foi realizada.');
-    expect(summary?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['✅ Confirmar inscrição', '↩️ Voltar à seleção', '❌ Cancelar']);
+    expect(summary?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['✅ Confirmar inscrição', '↩️ Voltar', '❌ Cancelar', '🏠 Menu principal']);
     expect(button(summary!, '✅ Confirmar inscrição').length).toBeLessThanOrEqual(64);
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
-    expect(Object.keys(inscriptions)).toEqual(['minhas']);
+    expect(Object.keys(inscriptions)).toEqual(['minhas', 'minhasDoUsuario']);
 
     const result = await press('54321', button(summary!, '✅ Confirmar inscrição'));
     expect(result?.text).toContain('🏆 Inscrição realizada com sucesso!');
@@ -256,6 +315,8 @@ describe('TelegramSelectionService', () => {
     ]);
     expect(first?.text).toContain('🏆 Inscrição realizada com sucesso!');
     expect(repeated?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(first?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['📋 Minhas inscrições', '🏠 Menu principal']);
+    expect(first?.inlineKeyboard?.flat().some(item => item.text === '❌ Cancelar')).toBe(false);
     expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(2);
     expect(enrollmentBatches.consultarResultadoFreeConfirmado).toHaveBeenCalledWith(7, key);
   });

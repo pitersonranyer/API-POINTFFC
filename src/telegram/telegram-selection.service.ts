@@ -13,6 +13,7 @@ const MAX_SESSIONS = 1000;
 const PAGE_SIZE = 8;
 const MAX_BATCH_TEAMS = 50;
 const CANCEL_BUTTON = '❌ Cancelar';
+const BACK_BUTTON = '↩️ Voltar';
 const PREVIOUS_BUTTON = '⬅️ Anterior';
 const MORE_BUTTON = '➡️ Mais opções';
 const LINK_URL = 'https://pointffc.com.br/conectar-telegram/';
@@ -20,9 +21,12 @@ const CALLBACK_PREFIX = 'pfc';
 const SELECT_ALL_BUTTON = '☑️ Selecionar todos';
 const DESELECT_ALL_BUTTON = '⬜ Desmarcar todos';
 const CLEAR_SELECTION_BUTTON = '🗑️ Limpar seleção';
+const HOME_BUTTON = '🏠 Menu principal';
+const MY_REGISTRATIONS_BUTTON = '📋 Minhas inscrições';
 
-type SelectionStage = 'competitions' | 'teams' | 'summary';
+type SelectionStage = 'competitions' | 'teams' | 'summary' | 'receipt' | 'registrations';
 interface Option<T> { button: string; value: T }
+type TelegramRegistration = { id: number; timeIdCartola: number; nomeTime: string; competitionName: string; round: string; competitionEnd: string | null };
 interface EligibilitySnapshot {
   competition: CompeticaoCardDto | null;
   registrations: MinhaInscricaoDto[];
@@ -52,6 +56,9 @@ interface SelectionSession {
   confirmationKey?: string;
   chatId?: string;
   inlineMessageId?: number;
+  myRegistrations?: TelegramRegistration[];
+  completedConfirmationCallback?: string;
+  linkedUsuarioId?: number;
 }
 
 export interface TelegramSelectionResponse {
@@ -63,6 +70,7 @@ export interface TelegramSelectionResponse {
   clearSession?: boolean;
   answerText?: string;
   followUpMessages?: string[];
+  showMainMenu?: boolean;
 }
 
 export interface TelegramSelectionCallback {
@@ -111,7 +119,30 @@ export class TelegramSelectionService {
       callbackNonce: '',
     };
     this.saveSession(session);
-    return this.competitionsPage(session);
+    return this.renderCompetitionPage(session);
+  }
+
+  async startMyRegistrations(telegramUserId: string): Promise<TelegramSelectionResponse> {
+    this.sessions.delete(telegramUserId);
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(telegramUserId); } catch {
+      return this.main('Não foi possível verificar seu vínculo agora. Tente novamente em instantes.');
+    }
+    if (usuarioId === null) return this.main('Para consultar suas inscrições, conecte sua conta POINT FFC primeiro:\nhttps://pointffc.com.br/conectar-telegram/');
+    try {
+      const rows = await this.inscriptions.minhasDoUsuario(usuarioId);
+      const registrations = this.mapTelegramRegistrations(rows);
+      const session: SelectionSession = {
+        telegramUserId, stage: 'registrations', expiresAt: Date.now() + SESSION_TTL_MS,
+        competitions: [], page: 0, competitionOptions: [], allTeams: [], selectedTeamIds: [], maxSelectableTeams: 0,
+        sessionToken: randomBytes(12).toString('base64url'), callbackNonce: randomBytes(6).toString('base64url'),
+        myRegistrations: registrations, linkedUsuarioId: usuarioId,
+      };
+      this.saveSession(session);
+      return this.renderMyRegistrations(session);
+    } catch {
+      return this.main('Não foi possível consultar suas inscrições agora. Tente novamente em instantes.');
+    }
   }
 
   clear(telegramUserId: string): void {
@@ -126,7 +157,7 @@ export class TelegramSelectionService {
 
   attachInlineMessage(telegramUserId: string, sessionToken: string, chatId: string, messageId: number): boolean {
     const session = this.sessions.get(telegramUserId);
-    if (!session || session.sessionToken !== sessionToken || session.stage !== 'teams') return false;
+    if (!session || session.sessionToken !== sessionToken) return false;
     session.chatId = chatId;
     session.inlineMessageId = messageId;
     this.refresh(session);
@@ -141,13 +172,16 @@ export class TelegramSelectionService {
     return this.serializeUser(callback.telegramUserId, async () => {
       const session = this.sessions.get(callback.telegramUserId);
       if (!session) return this.recoverConfirmedEnrollment(callback);
+      if (session.stage === 'receipt' && session.completedConfirmationCallback === callback.data
+        && session.chatId === callback.chatId && session.inlineMessageId === callback.messageId) {
+        return this.recoverConfirmedEnrollment(callback);
+      }
       if (!this.isCurrentCallback(session, callback)) return null;
       if (session.expiresAt <= Date.now()) {
         const action = this.callbackAction(session, callback.data);
         if (action?.startsWith('confirm:')) {
           const recovered = await this.recoverConfirmedEnrollment(callback);
           if (recovered?.text.startsWith('🏆 Inscrição realizada')) {
-            this.sessions.delete(callback.telegramUserId);
             return recovered;
           }
         }
@@ -161,19 +195,58 @@ export class TelegramSelectionService {
           answerText: 'Seleção expirada. Inicie novamente pelo menu.',
         };
       }
-      if (session.stage !== 'teams' && session.stage !== 'summary') return null;
       const action = this.callbackAction(session, callback.data);
       if (!action) return null;
+      if (action === 'main-menu') return this.endJourney(session, 'Menu principal');
+      if (session.stage === 'competitions') {
+        if (action === 'cancel') return this.endJourney(session, 'Jornada cancelada.');
+        if (action === 'previous' || action === 'next') {
+          const lastPage = Math.max(0, Math.ceil(session.competitions.length / PAGE_SIZE) - 1);
+          session.page = Math.max(0, Math.min(lastPage, session.page + (action === 'previous' ? -1 : 1)));
+          this.refresh(session);
+          return { ...this.renderCompetitionPage(session), editMessage: true };
+        }
+        if (action.startsWith('select-competition:')) {
+          const competitionId = Number.parseInt(action.slice('select-competition:'.length), 36);
+          if (!session.competitionOptions.some(option => option.value === competitionId)) return null;
+          return this.selectCompetition(session, competitionId);
+        }
+        return null;
+      }
+      if (session.stage === 'receipt') {
+        if (action === 'my-inscriptions') return this.openMyRegistrations(session);
+        return null;
+      }
+      if (session.stage === 'registrations') {
+        if (action === 'previous' || action === 'next') {
+          let activeUsuarioId: number | null;
+          try { activeUsuarioId = await this.resolveUser(session.telegramUserId); } catch {
+            return { text: 'Não foi possível verificar seu vínculo agora. Tente novamente.', buttons: [], answerText: 'Tente novamente.' };
+          }
+          if (activeUsuarioId === null || activeUsuarioId !== session.linkedUsuarioId) {
+            return this.endJourney(session, 'Seu vínculo não está ativo. Conecte sua conta POINT FFC para consultar suas inscrições.');
+          }
+          const lastPage = Math.max(0, Math.ceil((session.myRegistrations?.length ?? 0) / PAGE_SIZE) - 1);
+          session.page = Math.max(0, Math.min(lastPage, session.page + (action === 'previous' ? -1 : 1)));
+          this.refresh(session);
+          return { ...this.renderMyRegistrations(session), editMessage: true };
+        }
+        return action === 'cancel' ? this.endJourney(session, 'Consulta encerrada.') : null;
+      }
+      if (session.stage !== 'teams' && session.stage !== 'summary') return null;
       if (action === 'cancel') {
-        const { sessionToken } = session;
-        this.sessions.delete(session.telegramUserId);
-        return { text: 'Jornada cancelada.', buttons: [], sessionToken, inlineKeyboard: [], editMessage: true };
+        return this.endJourney(session, 'Jornada cancelada.');
       }
       if (action.startsWith('confirm:')) {
         if (session.stage !== 'summary' || session.confirmationKey !== action.slice('confirm:'.length)) return null;
         return this.confirmEnrollment(session, session.confirmationKey);
       }
       if (action === 'continue') return this.continueSelection(session);
+      if (action === 'back-competitions' && session.stage === 'teams') {
+        session.stage = 'competitions'; session.competitionId = undefined; session.allTeams = [];
+        session.selectedTeamIds = []; session.page = 0; this.refresh(session);
+        return { ...this.renderCompetitionPage(session), editMessage: true };
+      }
       if (action === 'edit-selection') {
         session.stage = 'teams';
         session.confirmationKey = undefined;
@@ -280,6 +353,76 @@ export class TelegramSelectionService {
     return { ...this.renderSummary(session, eligibility.competition), editMessage: true };
   }
 
+  private async selectCompetition(session: SelectionSession, competitionId: number): Promise<TelegramSelectionResponse> {
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      return { ...this.renderCompetitionPage(session, 'Não foi possível verificar seu vínculo agora.'), editMessage: true };
+    }
+    if (usuarioId === null) return this.endJourney(session, `Para participar, conecte sua conta POINT FFC primeiro:\n${LINK_URL}`);
+    try { return { ...await this.showTeams(session, competitionId, usuarioId), editMessage: true }; } catch {
+      return { ...this.renderCompetitionPage(session, 'Não foi possível consultar seus times agora.'), editMessage: true };
+    }
+  }
+
+  private async openMyRegistrations(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      return { text: 'Não foi possível verificar seu vínculo agora. Tente novamente.', buttons: [], answerText: 'Tente novamente.' };
+    }
+    if (usuarioId === null) return this.endJourney(session, 'Seu vínculo não está ativo. Conecte sua conta POINT FFC para consultar suas inscrições.');
+    try {
+      const rows = await this.inscriptions.minhasDoUsuario(usuarioId);
+      session.myRegistrations = this.mapTelegramRegistrations(rows);
+      session.linkedUsuarioId = usuarioId;
+      session.stage = 'registrations'; session.page = 0; this.refresh(session);
+      return { ...this.renderMyRegistrations(session), editMessage: true };
+    } catch {
+      return { text: 'Não foi possível consultar suas inscrições agora. Tente novamente.', buttons: [], answerText: 'Tente novamente.' };
+    }
+  }
+
+  private renderMyRegistrations(session: SelectionSession): TelegramSelectionResponse {
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    const rows = session.myRegistrations ?? [];
+    const start = session.page * PAGE_SIZE;
+    const page = rows.slice(start, start + PAGE_SIZE);
+    const pageCount = Math.ceil(rows.length / PAGE_SIZE);
+    const keyboard: TelegramInlineButton[][] = [];
+    const navigation: TelegramInlineButton[] = [];
+    if (session.page > 0) navigation.push({ text: '⬅️ Anterior', callback_data: this.callbackData(session, 'previous') });
+    if (start + PAGE_SIZE < rows.length) navigation.push({ text: '➡️ Próxima', callback_data: this.callbackData(session, 'next') });
+    if (navigation.length) keyboard.push(navigation);
+    keyboard.push([{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }]);
+    keyboard.push([{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }]);
+    const text = rows.length === 0 ? '📋 Você ainda não tem inscrições registradas.'
+      : `📋 Minhas inscrições${pageCount > 1 ? ` — página ${session.page + 1} de ${pageCount}` : ''}\n\n${page.map(item => `🏆 ${this.truncate(item.competitionName, 120)} (Rodada ${item.round})\n⚽ ${this.truncate(item.nomeTime, 120)} (#${item.timeIdCartola})`).join('\n\n')}`;
+    return { text, buttons: [], inlineKeyboard: keyboard, sessionToken: session.sessionToken };
+  }
+
+  private endJourney(session: SelectionSession, text: string): TelegramSelectionResponse {
+    this.sessions.delete(session.telegramUserId);
+    return { text, buttons: [], inlineKeyboard: [], editMessage: true, showMainMenu: true };
+  }
+
+  private mapTelegramRegistrations(rows: Awaited<ReturnType<InscricoesCompeticaoService['minhasDoUsuario']>>): TelegramRegistration[] {
+    const now = Date.now();
+    return rows.map(row => ({
+      id: row.id, timeIdCartola: row.timeIdCartola, nomeTime: row.nomeTime,
+      competitionName: row.competicao.nome,
+      round: row.competicao.rodadaInicio === null ? '—'
+        : row.competicao.rodadaFim !== null && row.competicao.rodadaFim !== row.competicao.rodadaInicio
+          ? `${row.competicao.rodadaInicio}–${row.competicao.rodadaFim}` : `${row.competicao.rodadaInicio}`,
+      competitionEnd: row.competicao.dataFim?.toISOString() ?? null,
+      currentOrFuture: (row.competicao.dataInicio?.getTime() ?? 0) >= now
+        || (row.competicao.dataFim?.getTime() ?? 0) >= now
+        || (!row.competicao.dataInicio && !row.competicao.dataFim
+          && row.competicao.status !== 'ENCERRADA' && row.competicao.status !== 'CANCELADA'),
+    })).sort((a, b) => Number(b.currentOrFuture) - Number(a.currentOrFuture)
+      || (a.competitionEnd ?? '').localeCompare(b.competitionEnd ?? '')
+      || a.competitionName.localeCompare(b.competitionName) || a.id - b.id)
+      .map(({ currentOrFuture: _currentOrFuture, ...row }) => row);
+  }
+
   private async confirmEnrollment(session: SelectionSession, idempotencyKey: string): Promise<TelegramSelectionResponse> {
     const competition = session.competitions.find(item => item.id === session.competitionId);
     if (!competition || competition.tipoAcesso !== 'FREE' || !session.competitionId) {
@@ -316,8 +459,7 @@ export class TelegramSelectionService {
         return this.renderConfirmationFailure(session, competition,
           'Não foi possível confirmar o resultado persistido. Toque novamente em Confirmar inscrição para consultar esta mesma operação sem duplicá-la.');
       }
-      this.sessions.delete(session.telegramUserId);
-      return this.renderEnrollmentSuccess(confirmed, session.sessionToken);
+      return this.renderEnrollmentSuccess(confirmed, this.keepReceiptSession(session, idempotencyKey));
     } catch (error) {
       const businessMessage = this.businessEnrollmentFailure(error);
       if (businessMessage) {
@@ -337,9 +479,10 @@ export class TelegramSelectionService {
       const usuarioId = await this.resolveUser(callback.telegramUserId);
       if (usuarioId === null) return null;
       const confirmed = await this.enrollmentBatches.consultarResultadoFreeConfirmado(usuarioId, idempotencyKey);
-      return confirmed ? this.renderEnrollmentSuccess(confirmed) : {
+      if (!confirmed) return {
         text: '', buttons: [], answerText: 'Ainda não foi possível localizar uma inscrição confirmada para esta ação. Tente novamente em instantes ou inicie uma nova seleção pelo menu.',
       };
+      return this.renderEnrollmentSuccess(confirmed, this.createReceiptSession(callback));
     } catch {
       return { text: '', buttons: [], answerText: 'Não foi possível consultar o resultado agora. Tente novamente em instantes.' };
     }
@@ -408,7 +551,7 @@ export class TelegramSelectionService {
 
   private renderEnrollmentSuccess(
     confirmed: ConfirmedFreeEnrollment,
-    sessionToken?: string,
+    session: SelectionSession,
   ): TelegramSelectionResponse {
     const header = `🏆 Inscrição realizada com sucesso!\n\nCompetição: ${this.truncate(confirmed.competenciaNome, 180)}\n\nTimes inscritos:\n`;
     const footer = `\n\nTotal: ${confirmed.resposta.quantidade} ${confirmed.resposta.quantidade === 1 ? 'time' : 'times'}\nValor: R$ 0,00`;
@@ -431,7 +574,9 @@ export class TelegramSelectionService {
     if (current.trim() !== 'Continuação dos times inscritos:') followUpMessages.push(current.trim());
     return {
       text: `${header}${visible.join('\n')}${footer}`,
-      buttons: [], inlineKeyboard: [], sessionToken, editMessage: true,
+      buttons: [], inlineKeyboard: [[
+        { text: MY_REGISTRATIONS_BUTTON, callback_data: this.callbackData(session, 'my-inscriptions') },
+      ], [{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }]], sessionToken: session.sessionToken, editMessage: true,
       ...(followUpMessages.length ? { followUpMessages } : {}),
     };
   }
@@ -520,22 +665,7 @@ export class TelegramSelectionService {
   }
 
   private competitionsPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
-    session.page = this.validPage(session.page, session.competitions.length);
-    const start = session.page * PAGE_SIZE;
-    const pageItems = session.competitions.slice(start, start + PAGE_SIZE);
-    session.competitionOptions = pageItems.map((competition, index) => ({
-      button: `${start + index + 1}. ${this.truncate(competition.nome, 38)} (R${competition.rodadaInicio ?? '—'}, #${competition.id})`,
-      value: competition.id,
-    }));
-    const lines = pageItems.map((competition, index) => `${index + 1}. ${this.formatCompetition(competition)}`);
-    const buttons = this.rows(session.competitionOptions.map(option => option.button));
-    if (start > 0) buttons.push([PREVIOUS_BUTTON]);
-    if (start + PAGE_SIZE < session.competitions.length) buttons.push([MORE_BUTTON]);
-    buttons.push([CANCEL_BUTTON]);
-    return {
-      text: `${prefix ? `${prefix}\n\n` : ''}⚽ Competições gratuitas abertas — escolha uma opção:\n\n${lines.join('\n\n')}`,
-      buttons,
-    };
+    return this.renderCompetitionPage(session, prefix);
   }
 
   private async loadEligibility(session: SelectionSession, usuarioId: number): Promise<EligibilitySnapshot> {
@@ -607,6 +737,8 @@ export class TelegramSelectionService {
         callback_data: this.callbackData(session, 'continue'),
       }]);
     }
+    keyboard.push([{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }]);
+    keyboard.push([{ text: BACK_BUTTON, callback_data: this.callbackData(session, 'back-competitions') }]);
     keyboard.push([{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }]);
 
     const competition = session.competitions.find(item => item.id === session.competitionId);
@@ -672,8 +804,9 @@ export class TelegramSelectionService {
           text: '✅ Confirmar inscrição',
           callback_data: this.callbackData(session, `confirm:${session.confirmationKey}`),
         }]] : []),
-        [{ text: '↩️ Voltar à seleção', callback_data: this.callbackData(session, 'edit-selection') }],
+        [{ text: '↩️ Voltar', callback_data: this.callbackData(session, 'edit-selection') }],
         [{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }],
+        [{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }],
       ],
     };
   }
@@ -693,7 +826,8 @@ export class TelegramSelectionService {
     const prefix = `${CALLBACK_PREFIX}:${session.sessionToken}:${session.callbackNonce}:`;
     if (!data.startsWith(prefix) || Buffer.byteLength(data, 'utf8') > 64) return null;
     const action = data.slice(prefix.length);
-    if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel'].includes(action)) return action;
+    if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel', 'back-competitions', 'main-menu', 'my-inscriptions'].includes(action)) return action;
+    if (session.stage === 'competitions' && /^select-competition:[0-9a-z]{1,8}$/.test(action)) return action;
     const confirm = /^confirm:([A-Za-z0-9_-]{24})$/.exec(action);
     if (confirm && confirm[1] === session.confirmationKey) return action;
     const match = /^toggle-team:([0-9a-z]{1,8})$/.exec(action);
@@ -723,13 +857,68 @@ export class TelegramSelectionService {
     return `🏆 ${this.truncate(competition.nome, 150)}\nRodada: ${round}\nValor: R$ 0,00${deadline}`;
   }
 
+  private renderCompetitionPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
+    session.page = this.validPage(session.page, session.competitions.length);
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    const start = session.page * PAGE_SIZE;
+    const pageItems = session.competitions.slice(start, start + PAGE_SIZE);
+    session.competitionOptions = pageItems.map((competition, index) => ({
+      button: `${start + index + 1}. ${this.truncate(competition.nome, 38)} (R${competition.rodadaInicio ?? '—'}, #${competition.id})`,
+      value: competition.id,
+    }));
+    const keyboard: TelegramInlineButton[][] = pageItems.map((competition, index) => [{
+      text: `${start + index + 1}. ${this.truncate(competition.nome, 28)} (R${competition.rodadaInicio ?? '—'})`,
+      callback_data: this.callbackData(session, `select-competition:${competition.id.toString(36)}`),
+    }]);
+    const navigation: TelegramInlineButton[] = [];
+    if (session.page > 0) navigation.push({ text: PREVIOUS_BUTTON, callback_data: this.callbackData(session, 'previous') });
+    if (start + PAGE_SIZE < session.competitions.length) navigation.push({ text: '➡️ Próxima', callback_data: this.callbackData(session, 'next') });
+    if (navigation.length) keyboard.push(navigation);
+    keyboard.push([{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }]);
+    keyboard.push([{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }]);
+    return {
+      text: `${prefix ? `${prefix}\n\n` : ''}⚽ Competições gratuitas abertas — escolha uma opção:\n\n${pageItems.map(item => this.formatCompetition(item)).join('\n\n')}`,
+      buttons: this.legacyCompetitionButtons(session, start), inlineKeyboard: keyboard, sessionToken: session.sessionToken,
+    };
+  }
+
+  private legacyCompetitionButtons(session: SelectionSession, start: number): string[][] {
+    const buttons = session.competitionOptions.map(option => option.button);
+    if (start > 0) buttons.push(PREVIOUS_BUTTON);
+    if (start + PAGE_SIZE < session.competitions.length) buttons.push(MORE_BUTTON);
+    buttons.push(CANCEL_BUTTON);
+    return this.rows(buttons);
+  }
+
+  private keepReceiptSession(session: SelectionSession, idempotencyKey: string): SelectionSession {
+    session.completedConfirmationCallback = this.callbackData(session, `confirm:${idempotencyKey}`);
+    session.stage = 'receipt';
+    session.confirmationKey = undefined;
+    session.selectedTeamIds = [];
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    this.refresh(session);
+    return session;
+  }
+
+  private createReceiptSession(callback: TelegramSelectionCallback): SelectionSession {
+    const session: SelectionSession = {
+      telegramUserId: callback.telegramUserId, stage: 'receipt', expiresAt: Date.now() + SESSION_TTL_MS,
+      competitions: [], page: 0, competitionOptions: [], allTeams: [], selectedTeamIds: [], maxSelectableTeams: 0,
+      sessionToken: randomBytes(12).toString('base64url'), callbackNonce: randomBytes(6).toString('base64url'),
+      chatId: callback.chatId, inlineMessageId: callback.messageId,
+      completedConfirmationCallback: callback.data,
+    };
+    this.saveSession(session);
+    return session;
+  }
+
   private rows(buttons: string[]): string[][] {
     const rows: string[][] = [];
     for (let index = 0; index < buttons.length; index += 2) rows.push(buttons.slice(index, index + 2));
     return rows;
   }
 
-  private main(text: string, buttons = [['🏆 Ver competições'], ['🔗 Conectar minha conta'], ['⚽ Participar grátis']]): TelegramSelectionResponse {
+  private main(text: string, buttons = [['🏆 Competições', '⚽ Participar grátis'], ['📋 Minhas inscrições', '🔗 Minha conta']]): TelegramSelectionResponse {
     return { text, buttons };
   }
 
