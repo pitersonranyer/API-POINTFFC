@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { CompeticaoCardDto } from '../ligas-competicoes/dto/ligas-competicoes-response.dto';
 import { MinhaInscricaoDto } from '../ligas-competicoes/dto/inscricoes-competicao.dto';
 import { InscricoesCompeticaoService } from '../ligas-competicoes/inscricoes-competicao.service';
-import { TimeUsuarioResponseDto } from '../meus-times/dto/time-usuario-response.dto';
 import { MeusTimesService } from '../meus-times/meus-times.service';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
@@ -13,12 +13,25 @@ const PAGE_SIZE = 8;
 const CANCEL_BUTTON = '❌ Cancelar';
 const PREVIOUS_BUTTON = '⬅️ Anterior';
 const MORE_BUTTON = '➡️ Mais opções';
-const BACK_TO_COMPETITIONS_BUTTON = '🏆 Voltar às competições';
-const BACK_TO_TIMES_BUTTON = '🔄 Escolher outro time';
 const LINK_URL = 'https://pointffc.com.br/conectar-telegram/';
+const CALLBACK_PREFIX = 'pfc';
+const SELECT_ALL_BUTTON = '☑️ Selecionar todos';
+const DESELECT_ALL_BUTTON = '⬜ Desmarcar todos';
+const CLEAR_SELECTION_BUTTON = '🗑️ Limpar seleção';
 
 type SelectionStage = 'competitions' | 'teams' | 'summary';
 interface Option<T> { button: string; value: T }
+interface EligibilitySnapshot {
+  competition: CompeticaoCardDto | null;
+  registrations: MinhaInscricaoDto[];
+  teams: Array<{ timeId: number; nome: string }>;
+  activeParticipants: number;
+}
+
+export interface TelegramInlineButton {
+  text: string;
+  callback_data: string;
+}
 
 interface SelectionSession {
   telegramUserId: string;
@@ -26,16 +39,33 @@ interface SelectionSession {
   expiresAt: number;
   competitions: CompeticaoCardDto[];
   competitionId?: number;
-  teamId?: number;
   page: number;
   competitionOptions: Option<number>[];
-  teamOptions: Option<number>[];
   allTeams: Array<{ id: number; name: string }>;
+  selectedTeamIds: number[];
+  maxSelectableTeams: number;
+  sessionToken: string;
+  callbackNonce: string;
+  chatId?: string;
+  inlineMessageId?: number;
 }
 
 export interface TelegramSelectionResponse {
   text: string;
   buttons: string[][];
+  inlineKeyboard?: TelegramInlineButton[][];
+  sessionToken?: string;
+  editMessage?: boolean;
+  clearSession?: boolean;
+  answerText?: string;
+  followUpMessages?: string[];
+}
+
+export interface TelegramSelectionCallback {
+  telegramUserId: string;
+  chatId: string;
+  messageId: number;
+  data: string;
 }
 
 @Injectable()
@@ -69,8 +99,11 @@ export class TelegramSelectionService {
       competitions,
       page: 0,
       competitionOptions: [],
-      teamOptions: [],
       allTeams: [],
+      selectedTeamIds: [],
+      maxSelectableTeams: 0,
+      sessionToken: randomBytes(12).toString('base64url'),
+      callbackNonce: '',
     };
     this.saveSession(session);
     return this.competitionsPage(session);
@@ -80,14 +113,144 @@ export class TelegramSelectionService {
     this.sessions.delete(telegramUserId);
   }
 
+  clearIfSession(telegramUserId: string, sessionToken?: string): void {
+    if (!sessionToken || this.sessions.get(telegramUserId)?.sessionToken === sessionToken) {
+      this.sessions.delete(telegramUserId);
+    }
+  }
+
+  attachInlineMessage(telegramUserId: string, sessionToken: string, chatId: string, messageId: number): boolean {
+    const session = this.sessions.get(telegramUserId);
+    if (!session || session.sessionToken !== sessionToken || session.stage !== 'teams') return false;
+    session.chatId = chatId;
+    session.inlineMessageId = messageId;
+    this.refresh(session);
+    return true;
+  }
+
   async handle(telegramUserId: string, text: string): Promise<TelegramSelectionResponse | null> {
+    return this.serializeUser(telegramUserId, () => this.handleSequentially(telegramUserId, text));
+  }
+
+  async handleCallback(callback: TelegramSelectionCallback): Promise<TelegramSelectionResponse | null> {
+    return this.serializeUser(callback.telegramUserId, async () => {
+      const session = this.sessions.get(callback.telegramUserId);
+      if (!session || !this.isCurrentCallback(session, callback)) return null;
+      if (session.expiresAt <= Date.now()) {
+        this.sessions.delete(callback.telegramUserId);
+        return {
+          text: 'Sua seleção expirou. Toque em “⚽ Participar grátis” para começar novamente.',
+          buttons: [],
+          sessionToken: session.sessionToken,
+          inlineKeyboard: [],
+          editMessage: true,
+          answerText: 'Seleção expirada. Inicie novamente pelo menu.',
+        };
+      }
+      if (session.stage !== 'teams' && session.stage !== 'summary') return null;
+      const action = this.callbackAction(session, callback.data);
+      if (!action) return null;
+      if (action === 'cancel') {
+        const { sessionToken } = session;
+        this.sessions.delete(session.telegramUserId);
+        return { text: 'Jornada cancelada.', buttons: [], sessionToken, inlineKeyboard: [], editMessage: true };
+      }
+
+      let usuarioId: number | null;
+      try {
+        usuarioId = await this.resolveUser(session.telegramUserId);
+      } catch {
+        return { text: '', buttons: [], answerText: 'Não foi possível verificar seu vínculo. Tente novamente.' };
+      }
+      if (usuarioId === null) {
+        this.sessions.delete(session.telegramUserId);
+        return {
+          text: `Não foi possível confirmar seu vínculo ativo. Conecte sua conta POINT FFC:\n${LINK_URL}`,
+          buttons: [],
+          sessionToken: session.sessionToken,
+          inlineKeyboard: [],
+          editMessage: true,
+          answerText: 'Vínculo não disponível. Conecte sua conta POINT FFC.',
+        };
+      }
+
+      let eligibility: EligibilitySnapshot;
+      try {
+        eligibility = await this.loadEligibility(session, usuarioId);
+      } catch {
+        return { text: '', buttons: [], answerText: 'Não foi possível atualizar a elegibilidade. Tente novamente.' };
+      }
+      if (!eligibility.competition) {
+        this.sessions.delete(session.telegramUserId);
+        return {
+          text: 'A competição deixou de estar disponível para participação gratuita. Toque em “⚽ Participar grátis” para consultar novamente.',
+          buttons: [],
+          sessionToken: session.sessionToken,
+          inlineKeyboard: [],
+          editMessage: true,
+          answerText: 'Competição indisponível. Consulte novamente pelo menu.',
+        };
+      }
+
+      const priorEligibleIds = session.allTeams.map(team => team.id);
+      const priorCapacity = session.maxSelectableTeams;
+      const dropped = this.applyEligibility(session, eligibility);
+      const eligibilityChanged = priorCapacity !== session.maxSelectableTeams
+        || priorEligibleIds.toString() !== session.allTeams.map(team => team.id).toString();
+      let notice = dropped > 0
+        ? 'Alguns times foram removidos da seleção porque sua elegibilidade mudou.'
+        : eligibilityChanged ? 'A elegibilidade dos times foi atualizada.' : '';
+      if (action === 'previous' || action === 'next') {
+        const lastPage = Math.max(0, Math.ceil(session.allTeams.length / PAGE_SIZE) - 1);
+        const nextPage = action === 'previous' ? session.page - 1 : session.page + 1;
+        if (nextPage >= 0 && nextPage <= lastPage) session.page = nextPage;
+      } else if (action === 'toggle-all') {
+        const allSelected = this.isAllSelected(session);
+        if (allSelected) {
+          session.selectedTeamIds = [];
+        } else {
+          session.selectedTeamIds = session.allTeams.slice(0, session.maxSelectableTeams).map(team => team.id);
+          if (session.maxSelectableTeams < session.allTeams.length) {
+            notice = `Selecionamos ${session.maxSelectableTeams} times. O limite disponível para esta competição é de ${session.maxSelectableTeams}.`;
+          }
+        }
+      } else if (action === 'clear') {
+        session.selectedTeamIds = [];
+      } else if (action === 'continue') {
+        if (session.selectedTeamIds.length === 0) {
+          this.refresh(session);
+          return { ...this.renderTeams(session, 'Selecione pelo menos um time para continuar.'), editMessage: true };
+        }
+        session.stage = 'summary';
+      } else if (action === 'edit-selection') {
+        session.stage = 'teams';
+      } else if (action.startsWith('toggle-team:')) {
+        const teamId = Number(action.slice('toggle-team:'.length));
+        if (!session.allTeams.some(team => team.id === teamId)) {
+          notice = 'Esse time não está mais elegível para seleção.';
+        } else if (session.selectedTeamIds.includes(teamId)) {
+          session.selectedTeamIds = session.selectedTeamIds.filter(id => id !== teamId);
+        } else if (session.selectedTeamIds.length >= session.maxSelectableTeams) {
+          notice = `O limite disponível para esta competição é de ${session.maxSelectableTeams} time(s).`;
+        } else {
+          session.selectedTeamIds = [...session.selectedTeamIds, teamId].sort((a, b) => a - b);
+        }
+      }
+
+      this.refresh(session);
+      if (session.stage === 'summary') return { ...this.renderSummary(session, eligibility.competition, notice), editMessage: true };
+      return { ...this.renderTeams(session, notice), editMessage: true };
+    });
+  }
+
+  private async serializeUser<T>(telegramUserId: string, action: () => Promise<T>): Promise<T> {
     const previous = this.userQueues.get(telegramUserId) ?? Promise.resolve();
     let release!: () => void;
     const current = new Promise<void>(resolve => { release = resolve; });
     this.userQueues.set(telegramUserId, current);
     await previous.catch(() => undefined);
     try {
-      return await this.handleSequentially(telegramUserId, text);
+      return await action();
     } finally {
       release();
       if (this.userQueues.get(telegramUserId) === current) this.userQueues.delete(telegramUserId);
@@ -113,8 +276,7 @@ export class TelegramSelectionService {
     }
 
     if (session.stage === 'competitions') return this.handleCompetitionStep(session, input);
-    if (session.stage === 'teams') return this.handleTeamStep(session, input);
-    return this.handleSummaryStep(session, input);
+    return null;
   }
 
   private async handleCompetitionStep(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
@@ -157,149 +319,25 @@ export class TelegramSelectionService {
     }
 
     try {
-      const registrations = await this.inscriptions.minhas(competition.id, usuarioId);
-      const activeCount = registrations.filter(registration => registration.statusInscricao === 'ATIVA').length;
-      const limit = competition.limiteTimesUsuario;
-      if (limit !== null && activeCount >= limit) {
-        session.stage = 'teams';
-        session.competitionId = competition.id;
-        session.competitions[session.competitions.findIndex(item => item.id === competition.id)] = competition;
-        session.teamOptions = [];
-        this.refresh(session);
-        return {
-          text: `O limite de ${limit} time(s) por usuário nesta competição já foi atingido.\n\n${this.formatCompetition(competition)}`,
-          buttons: [[BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON]],
-        };
-      }
-      return await this.showTeams(session, competition, usuarioId, registrations);
+      return await this.showTeams(session, competition.id, usuarioId);
     } catch {
       return this.main('Não foi possível consultar seus times agora. Tente iniciar a jornada novamente em instantes.');
     }
   }
 
-  private async handleTeamStep(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
-    if (input === BACK_TO_COMPETITIONS_BUTTON) return this.start(session.telegramUserId);
-    if (input === PREVIOUS_BUTTON && session.page > 0) {
-      session.page -= 1;
-      this.refresh(session);
-      return this.teamsPage(session);
-    }
-    if (input === MORE_BUTTON && (session.page + 1) * PAGE_SIZE < session.allTeams.length) {
-      session.page += 1;
-      this.refresh(session);
-      return this.teamsPage(session);
-    }
-    const option = session.teamOptions.find(item => item.button === input);
-    if (!option) return this.teamsPage(session, 'Escolha um dos seus times pelos botões abaixo.');
-
-    let usuarioId: number | null;
-    try {
-      usuarioId = await this.resolveUser(session.telegramUserId);
-    } catch {
-      return this.main('Não foi possível verificar seu vínculo agora. Tente novamente em instantes.');
-    }
-    if (usuarioId === null) {
-      this.sessions.delete(session.telegramUserId);
-      return this.main(`Não foi possível confirmar seu vínculo ativo. Conecte sua conta POINT FFC e inicie novamente:\n${LINK_URL}`);
-    }
-    let competition: CompeticaoCardDto | null;
-    try {
-      competition = await this.getCurrentCompetition(session);
-    } catch {
-      return this.main('Não foi possível revalidar essa competição agora. Tente novamente em instantes.');
-    }
-    if (!competition) {
-      this.sessions.delete(session.telegramUserId);
-      return this.main('A competição não está mais disponível. Toque em “⚽ Participar grátis” para consultar novamente.');
-    }
-
-    try {
-      const [registrations, teams] = await Promise.all([
-        this.inscriptions.minhas(competition.id, usuarioId),
-        this.teams.listarTimesDoUsuario(usuarioId),
-      ]);
-      const registeredIds = new Set(registrations.map(registration => registration.timeIdCartola));
-      const selectedTeam = teams.find(team => team.timeId === option.value);
-      if (!selectedTeam || registeredIds.has(option.value)) {
-        return await this.showTeams(session, competition, usuarioId, registrations, 'Esse time não está mais disponível para esta competição.');
-      }
-      const activeCount = registrations.filter(registration => registration.statusInscricao === 'ATIVA').length;
-      if (competition.limiteTimesUsuario !== null && activeCount >= competition.limiteTimesUsuario) {
-        return {
-          text: `O limite de ${competition.limiteTimesUsuario} time(s) por usuário nesta competição já foi atingido.`,
-          buttons: [[BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON]],
-        };
-      }
-      session.stage = 'summary';
-      session.competitionId = competition.id;
-      session.teamId = selectedTeam.timeId;
-      session.teamOptions = [];
-      this.refresh(session);
-      return this.summary(session, competition, selectedTeam);
-    } catch {
-      return this.main('Não foi possível validar a seleção agora. Inicie novamente em alguns instantes.');
-    }
-  }
-
-  private async handleSummaryStep(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
-    if (input === BACK_TO_COMPETITIONS_BUTTON) return this.start(session.telegramUserId);
-    if (input === BACK_TO_TIMES_BUTTON) {
-      let usuarioId: number | null;
-      try {
-        usuarioId = await this.resolveUser(session.telegramUserId);
-      } catch {
-        return this.main('Não foi possível verificar seu vínculo agora. Tente novamente em instantes.');
-      }
-      if (usuarioId === null) {
-        this.sessions.delete(session.telegramUserId);
-        return this.main(`Não foi possível confirmar seu vínculo ativo. Conecte sua conta POINT FFC e inicie novamente:\n${LINK_URL}`);
-      }
-      let competition: CompeticaoCardDto | null;
-      try {
-        competition = await this.getCurrentCompetition(session);
-      } catch {
-        return this.main('Não foi possível revalidar essa competição agora. Tente novamente em instantes.');
-      }
-      if (!competition) {
-        this.sessions.delete(session.telegramUserId);
-        return this.main('A competição não está mais disponível. Toque em “⚽ Participar grátis” para consultar novamente.');
-      }
-      try {
-        const registrations = await this.inscriptions.minhas(competition.id, usuarioId);
-        return this.showTeams(session, competition, usuarioId, registrations);
-      } catch {
-        return this.main('Não foi possível consultar seus times agora. Tente novamente mais tarde.');
-      }
-    }
-    return this.main('Seu time foi selecionado. A inscrição ainda não foi realizada.', [
-      [BACK_TO_TIMES_BUTTON], [BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON],
-    ]);
-  }
-
-  private async showTeams(
-    session: SelectionSession,
-    competition: CompeticaoCardDto,
-    usuarioId: number,
-    registrations: MinhaInscricaoDto[],
-    prefix = '',
-  ): Promise<TelegramSelectionResponse> {
-    const teams = await this.teams.listarTimesDoUsuario(usuarioId);
-    const registeredIds = new Set(registrations.map(registration => registration.timeIdCartola));
-    const available = teams.filter(team => !registeredIds.has(team.timeId));
+  private async showTeams(session: SelectionSession, competitionId: number, usuarioId: number): Promise<TelegramSelectionResponse> {
     session.stage = 'teams';
-    session.competitionId = competition.id;
-    session.competitions[session.competitions.findIndex(item => item.id === competition.id)] = competition;
-    session.allTeams = available.map(team => ({ id: team.timeId, name: team.nome }));
-    session.teamOptions = [];
+    session.competitionId = competitionId;
     session.page = 0;
-    this.refresh(session);
-    if (available.length === 0) {
-      return {
-        text: `${prefix ? `${prefix}\n\n` : ''}Não há times disponíveis para seleção nesta competição.\n\n${this.formatCompetition(competition)}`,
-        buttons: [[BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON]],
-      };
+    const eligibility = await this.loadEligibility(session, usuarioId);
+    if (!eligibility.competition) {
+      session.stage = 'competitions';
+      this.sessions.delete(session.telegramUserId);
+      return this.main('A competição deixou de estar disponível para participação gratuita. Consulte novamente pelo menu.');
     }
-    return this.teamsPage(session, prefix);
+    this.applyEligibility(session, eligibility);
+    this.refresh(session);
+    return this.renderTeams(session);
   }
 
   private competitionsPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
@@ -321,35 +359,165 @@ export class TelegramSelectionService {
     };
   }
 
-  private teamsPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
+  private async loadEligibility(session: SelectionSession, usuarioId: number): Promise<EligibilitySnapshot> {
+    if (!session.competitionId) return { competition: null, registrations: [], teams: [], activeParticipants: 0 };
+    const competition = await this.competitions.buscarGratuitaElegivel(session.competitionId);
+    if (!competition) return { competition: null, registrations: [], teams: [], activeParticipants: 0 };
+    const [registrations, ownedTeams, activeParticipants] = await Promise.all([
+      this.inscriptions.minhas(competition.id, usuarioId),
+      this.teams.listarTimesDoUsuario(usuarioId),
+      this.competitions.contarParticipantesAtivos(competition.id),
+    ]);
+    return { competition, registrations, teams: ownedTeams, activeParticipants };
+  }
+
+  private applyEligibility(session: SelectionSession, snapshot: EligibilitySnapshot): number {
+    if (!snapshot.competition) return session.selectedTeamIds.length;
+    const competitionIndex = session.competitions.findIndex(item => item.id === snapshot.competition?.id);
+    if (competitionIndex >= 0) session.competitions[competitionIndex] = snapshot.competition;
+    const registeredIds = new Set(snapshot.registrations.map(registration => registration.timeIdCartola));
+    session.allTeams = snapshot.teams
+      .filter(team => !registeredIds.has(team.timeId))
+      .map(team => ({ id: team.timeId, name: team.nome }))
+      .sort((left, right) => left.id - right.id);
+
+    const activeUserCount = snapshot.registrations
+      .filter(registration => registration.statusInscricao === 'ATIVA').length;
+    const userSlots = snapshot.competition.limiteTimesUsuario === null
+      ? session.allTeams.length
+      : Math.max(0, snapshot.competition.limiteTimesUsuario - activeUserCount);
+    const participantSlots = snapshot.competition.limiteParticipantes === null
+      ? session.allTeams.length
+      : Math.max(0, snapshot.competition.limiteParticipantes - snapshot.activeParticipants);
+    session.maxSelectableTeams = Math.max(0, Math.min(session.allTeams.length, userSlots, participantSlots));
+
+    const before = session.selectedTeamIds.length;
+    const eligibleIds = new Set(session.allTeams.map(team => team.id));
+    session.selectedTeamIds = session.selectedTeamIds
+      .filter(id => eligibleIds.has(id))
+      .sort((left, right) => left - right)
+      .slice(0, session.maxSelectableTeams);
     session.page = this.validPage(session.page, session.allTeams.length);
+    return before - session.selectedTeamIds.length;
+  }
+
+  private renderTeams(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
+    session.stage = 'teams';
+    session.page = this.validPage(session.page, session.allTeams.length);
+    session.callbackNonce = randomBytes(6).toString('base64url');
     const start = session.page * PAGE_SIZE;
-    const teamOptions = session.allTeams.slice(start, start + PAGE_SIZE).map((team, index) => {
-      const ordinal = start + index + 1;
-      return { button: `${ordinal}. ${this.truncate(team.name, 32)} (#${team.id})`, value: team.id };
-    });
-    session.teamOptions = teamOptions;
+    const pageItems = session.allTeams.slice(start, start + PAGE_SIZE);
+    const selected = new Set(session.selectedTeamIds);
+    const keyboard: TelegramInlineButton[][] = pageItems.map(team => [{
+      text: `${selected.has(team.id) ? '✅' : '⬜'} ${this.truncate(team.name, 32)} (#${team.id})`,
+      callback_data: this.callbackData(session, `toggle-team:${team.id.toString(36)}`),
+    }]);
+    const navigation: TelegramInlineButton[] = [];
+    if (start > 0) navigation.push({ text: PREVIOUS_BUTTON, callback_data: this.callbackData(session, 'previous') });
+    if (start + PAGE_SIZE < session.allTeams.length) navigation.push({ text: '➡️ Próxima', callback_data: this.callbackData(session, 'next') });
+    if (navigation.length) keyboard.push(navigation);
+    const allSelected = this.isAllSelected(session);
+    keyboard.push([{
+      text: allSelected ? DESELECT_ALL_BUTTON : SELECT_ALL_BUTTON,
+      callback_data: this.callbackData(session, 'toggle-all'),
+    }]);
+    keyboard.push([{ text: CLEAR_SELECTION_BUTTON, callback_data: this.callbackData(session, 'clear') }]);
+    if (session.selectedTeamIds.length > 0) {
+      keyboard.push([{
+        text: `✅ Continuar (${session.selectedTeamIds.length})`,
+        callback_data: this.callbackData(session, 'continue'),
+      }]);
+    }
+    keyboard.push([{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }]);
+
     const competition = session.competitions.find(item => item.id === session.competitionId);
-    const buttons = this.rows(teamOptions.map(option => option.button));
-    if (start > 0) buttons.push([PREVIOUS_BUTTON]);
-    if (start + PAGE_SIZE < session.allTeams.length) buttons.push([MORE_BUTTON]);
-    buttons.push([BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON]);
+    const countText = `Times selecionados: ${session.selectedTeamIds.length}`;
+    const limitText = session.maxSelectableTeams < session.allTeams.length
+      ? `\nLimite disponível: ${session.maxSelectableTeams}` : '';
+    const pageText = session.allTeams.length > PAGE_SIZE
+      ? `\nPágina ${session.page + 1} de ${Math.ceil(session.allTeams.length / PAGE_SIZE)}` : '';
+    const emptyText = session.allTeams.length === 0 || session.maxSelectableTeams === 0
+      ? '\nNão há times elegíveis disponíveis nesta competição.' : '';
     return {
-      text: `${prefix ? `${prefix}\n\n` : ''}${competition ? `${this.formatCompetition(competition)}\n\n` : ''}Escolha um dos seus times:\n${teamOptions.map(option => option.button).join('\n')}`,
-      buttons,
+      text: `${prefix ? `${prefix}\n\n` : ''}${competition ? `${this.formatCompetition(competition)}\n\n` : ''}Escolha seus times pelos botões abaixo.\n${countText}${limitText}${pageText}${emptyText}`,
+      buttons: [],
+      inlineKeyboard: keyboard,
+      sessionToken: session.sessionToken,
     };
   }
 
-  private summary(session: SelectionSession, competition: CompeticaoCardDto, team: TimeUsuarioResponseDto): TelegramSelectionResponse {
+  private renderSummary(
+    session: SelectionSession,
+    competition: CompeticaoCardDto,
+    prefix = '',
+  ): TelegramSelectionResponse {
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    const selectedIds = new Set(session.selectedTeamIds);
+    const selectedTeams = session.allTeams.filter(team => selectedIds.has(team.id));
+    const teamLines = selectedTeams.map(team => `• ${this.truncate(team.name, 100)} (#${team.id})`);
+    const round = competition.rodadaInicio === null ? '—'
+      : competition.rodadaFim !== null && competition.rodadaFim !== competition.rodadaInicio
+        ? `${competition.rodadaInicio}–${competition.rodadaFim}` : `${competition.rodadaInicio}`;
+    const heading = `${prefix ? `${prefix}\n\n` : ''}Resumo da seleção\n\nCompetição: ${this.truncate(competition.nome, 180)}\nRodada: ${round}\nTimes selecionados: ${selectedTeams.length}\nValor total: R$ 0,00\n\n`;
+    const footer = '\n\nOs times foram selecionados, mas nenhuma inscrição foi realizada.';
+    const primaryLines: string[] = [];
+    const overflowLines: string[] = [];
+    for (const line of teamLines) {
+      const candidate = `${heading}${[...primaryLines, line].join('\n')}${footer}`;
+      if (candidate.length <= 3900) primaryLines.push(line);
+      else overflowLines.push(line);
+    }
+    const followUpMessages: string[] = [];
+    let current = 'Continuação dos times selecionados:\n';
+    for (const line of overflowLines) {
+      if (current.length + line.length + 1 > 3900) {
+        followUpMessages.push(current.trim());
+        current = 'Continuação dos times selecionados:\n';
+      }
+      current += `${line}\n`;
+    }
+    if (current.trim() !== 'Continuação dos times selecionados:') followUpMessages.push(current.trim());
+    const text = `${heading}${primaryLines.join('\n')}${footer}`;
     return {
-      text: `Resumo da seleção\n\nCompetição: ${this.truncate(competition.nome, 180)}\nRodada: ${competition.rodadaInicio ?? '—'}${competition.rodadaFim && competition.rodadaFim !== competition.rodadaInicio ? `–${competition.rodadaFim}` : ''}\nTime: ${this.truncate(team.nome, 140)} (#${team.timeId})\nValor: R$ 0,00\n\nSeu time foi selecionado. A inscrição ainda não foi realizada.`,
-      buttons: [[BACK_TO_TIMES_BUTTON], [BACK_TO_COMPETITIONS_BUTTON], [CANCEL_BUTTON]],
+      text,
+      buttons: [],
+      sessionToken: session.sessionToken,
+      ...(followUpMessages.length ? { followUpMessages } : {}),
+      inlineKeyboard: [[
+        { text: '🔄 Alterar seleção', callback_data: this.callbackData(session, 'edit-selection') },
+      ], [
+        { text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') },
+      ]],
     };
   }
 
-  private async getCurrentCompetition(session: SelectionSession): Promise<CompeticaoCardDto | null> {
-    if (!session.competitionId) return null;
-    return this.competitions.buscarGratuitaElegivel(session.competitionId);
+  private callbackData(session: SelectionSession, action: string): string {
+    return `${CALLBACK_PREFIX}:${session.sessionToken}:${session.callbackNonce}:${action}`;
+  }
+
+  private isAllSelected(session: SelectionSession): boolean {
+    if (session.maxSelectableTeams === 0) return false;
+    const expected = session.allTeams.slice(0, session.maxSelectableTeams).map(team => team.id);
+    return expected.length === session.selectedTeamIds.length
+      && expected.every((id, index) => id === session.selectedTeamIds[index]);
+  }
+
+  private callbackAction(session: SelectionSession, data: string): string | null {
+    const prefix = `${CALLBACK_PREFIX}:${session.sessionToken}:${session.callbackNonce}:`;
+    if (!data.startsWith(prefix) || Buffer.byteLength(data, 'utf8') > 64) return null;
+    const action = data.slice(prefix.length);
+    if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel'].includes(action)) return action;
+    const match = /^toggle-team:([0-9a-z]{1,8})$/.exec(action);
+    if (!match) return null;
+    const teamId = Number.parseInt(match[1], 36);
+    return Number.isSafeInteger(teamId) && teamId > 0 ? `toggle-team:${teamId}` : null;
+  }
+
+  private isCurrentCallback(session: SelectionSession, callback: TelegramSelectionCallback): boolean {
+    return session.sessionToken.length > 0
+      && session.chatId === callback.chatId
+      && session.inlineMessageId === callback.messageId
+      && this.callbackAction(session, callback.data) !== null;
   }
 
   private async resolveUser(telegramUserId: string): Promise<number | null> {
@@ -382,7 +550,6 @@ export class TelegramSelectionService {
 
   private isSelectionInput(text: string): boolean {
     return text === CANCEL_BUTTON || text === PREVIOUS_BUTTON || text === MORE_BUTTON
-      || text === BACK_TO_COMPETITIONS_BUTTON || text === BACK_TO_TIMES_BUTTON
       || /^\d+\. .+\(R[^,]+, #\d+\)$/.test(text)
       || /^\d+\. .+\(#\d+\)$/.test(text);
   }

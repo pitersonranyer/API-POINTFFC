@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'crypto';
 import { CompeticaoCardDto } from '../ligas-competicoes/dto/ligas-competicoes-response.dto';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
-import { TelegramSelectionService, TelegramSelectionResponse } from './telegram-selection.service';
+import { TelegramSelectionCallback, TelegramSelectionService, TelegramSelectionResponse } from './telegram-selection.service';
 
 const COMPETITIONS_BUTTON = '🏆 Ver competições';
 const CONNECT_ACCOUNT_BUTTON = '🔗 Conectar minha conta';
@@ -30,7 +30,21 @@ const MAX_REMEMBERED_UPDATES = 1000;
 
 type TelegramReplyMarkup =
   | { keyboard: Array<Array<{ text: string }>>; resize_keyboard: true; is_persistent: true }
-  | { inline_keyboard: Array<Array<{ text: string; url: string }>> };
+  | { inline_keyboard: Array<Array<{ text: string; url?: string; callback_data?: string }>> };
+
+interface TelegramCallbackQuery {
+  id: string;
+  fromId?: string;
+  chatId?: number | string;
+  chatType?: string;
+  messageId?: number;
+  data?: string;
+}
+
+interface TelegramMessageSendResult {
+  accepted: boolean;
+  messageId?: number;
+}
 
 const MAIN_REPLY_KEYBOARD: TelegramReplyMarkup = {
   keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }], [{ text: PARTICIPATE_FREE_BUTTON }]],
@@ -76,16 +90,22 @@ export class TelegramService {
     }
 
     const message = this.getSupportedPrivateTextMessage(update);
-    if (!message) return;
+    const callback = this.getCallbackQuery(update);
+    if (!message && !callback) return;
 
     const updateId = this.getUpdateId(update);
-    if (updateId !== undefined && this.completedUpdates.has(updateId)) return;
+    if (updateId !== undefined && this.completedUpdates.has(updateId)) {
+      if (callback) {
+        try { await this.answerCallbackQuery(callback.id, 'Esta ação já foi processada.'); } catch { /* duplicate callbacks are not replayed */ }
+      }
+      return;
+    }
     if (updateId !== undefined) {
       const inFlight = this.inFlightUpdates.get(updateId);
       if (inFlight) return inFlight;
     }
 
-    const processing = this.processMessage(message);
+    const processing = callback ? this.processCallback(callback) : this.processMessage(message!);
     if (updateId === undefined) return processing;
 
     this.inFlightUpdates.set(updateId, processing);
@@ -123,14 +143,14 @@ export class TelegramService {
         return;
       }
       const response = await this.selectionService.start(String(message.from.id));
-      await this.sendSelectionResponse(message.chat.id, response);
+      await this.sendSelectionResponse(message.chat.id, response, String(message.from.id));
       return;
     }
 
     if (message.from) {
       const response = await this.selectionService.handle(String(message.from.id), text);
       if (response) {
-        await this.sendSelectionResponse(message.chat.id, response);
+        await this.sendSelectionResponse(message.chat.id, response, String(message.from.id));
         return;
       }
     }
@@ -138,13 +158,60 @@ export class TelegramService {
     await this.sendOrFail(message.chat.id, UNKNOWN_MESSAGE);
   }
 
-  private async sendSelectionResponse(chatId: number | string, response: TelegramSelectionResponse): Promise<void> {
-    const replyMarkup: TelegramReplyMarkup = {
-      keyboard: response.buttons.map(row => row.map(text => ({ text }))),
-      resize_keyboard: true,
-      is_persistent: true,
+  private async processCallback(callback: TelegramCallbackQuery): Promise<void> {
+    if (!callback.fromId || !this.isValidTelegramUserId(callback.fromId)
+      || !callback.chatId || !this.isValidChatId(callback.chatId)
+      || callback.chatType !== 'private' || !Number.isSafeInteger(callback.messageId)
+      || !callback.data) {
+      await this.answerCallbackQuery(callback.id, 'Esta seleção não é válida. Inicie novamente pelo menu.');
+      return;
+    }
+
+    const input: TelegramSelectionCallback = {
+      telegramUserId: callback.fromId,
+      chatId: String(callback.chatId),
+      messageId: callback.messageId!,
+      data: callback.data,
     };
-    await this.sendOrFail(chatId, response.text, undefined, replyMarkup);
+    const response = await this.selectionService.handleCallback(input);
+    if (response?.editMessage) {
+      const edited = await this.editMessageText(callback.chatId, callback.messageId!, response);
+      if (!edited) {
+        this.logger.warn('Mensagem interativa Telegram não atualizada; a sessão foi encerrada para evitar seleção divergente.');
+        this.selectionService.clearIfSession(callback.fromId, response.sessionToken);
+        await this.answerCallbackQuery(callback.id, 'Não foi possível atualizar a seleção. Inicie novamente pelo menu.');
+        return;
+      }
+    }
+    await this.answerCallbackQuery(
+      callback.id,
+      response?.answerText ?? (response ? undefined : 'Esta seleção expirou ou foi substituída. Inicie novamente pelo menu.'),
+    );
+    for (const text of response?.followUpMessages ?? []) {
+      const sent = await this.sendMessage(callback.chatId, text, undefined, null);
+      if (!sent.accepted) this.logger.warn('Continuação do resumo de seleção Telegram não enviada.');
+    }
+  }
+
+  private async sendSelectionResponse(chatId: number | string, response: TelegramSelectionResponse, telegramUserId?: string): Promise<void> {
+    const replyMarkup: TelegramReplyMarkup = response.inlineKeyboard
+      ? { inline_keyboard: response.inlineKeyboard }
+      : {
+        keyboard: (response.buttons ?? []).map(row => row.map(text => ({ text }))),
+        resize_keyboard: true,
+        is_persistent: true,
+      };
+    const result = await this.sendMessage(chatId, response.text, undefined, replyMarkup);
+    if (!result.accepted) throw new ServiceUnavailableException('Resposta Telegram não enviada.');
+    if (response.sessionToken) {
+      const attached = result.messageId !== undefined && telegramUserId
+        && this.selectionService.attachInlineMessage(telegramUserId, response.sessionToken, String(chatId), result.messageId);
+      if (!attached) {
+        this.selectionService.clearIfSession(telegramUserId ?? '', response.sessionToken);
+        this.logger.warn('Mensagem de seleção Telegram sem vínculo válido com a sessão.');
+        throw new ServiceUnavailableException('Resposta Telegram não enviada.');
+      }
+    }
   }
 
   private async createLinkRequest(message: TelegramMessage): Promise<void> {
@@ -198,7 +265,7 @@ export class TelegramService {
     entities?: Array<{ type: 'code'; offset: number; length: number }>,
     replyMarkup: TelegramReplyMarkup | null = MAIN_REPLY_KEYBOARD,
   ): Promise<void> {
-    if (!await this.sendMessage(chatId, text, entities, replyMarkup)) {
+    if (!(await this.sendMessage(chatId, text, entities, replyMarkup)).accepted) {
       throw new ServiceUnavailableException('Resposta Telegram não enviada.');
     }
   }
@@ -206,7 +273,7 @@ export class TelegramService {
   private async sendLinkCompletion(chatId: number | string): Promise<void> {
     try {
       const sent = await this.sendMessage(chatId, LINK_COMPLETION_MESSAGE, undefined, LINK_WEBSITE_KEYBOARD);
-      if (!sent) {
+      if (!sent.accepted) {
         this.logger.warn('Botão de navegação Telegram não enviado; o código já emitido permanece válido.');
       }
     } catch {
@@ -295,6 +362,25 @@ export class TelegramService {
     return { chat: { id: chatId, type: 'private' }, from, text: message.text };
   }
 
+  private getCallbackQuery(update: unknown): TelegramCallbackQuery | undefined {
+    if (!this.isRecord(update) || !this.isRecord(update.callback_query)) return undefined;
+    const query = update.callback_query;
+    if (typeof query.id !== 'string' || query.id.length === 0) return undefined;
+    const fromId = this.isRecord(query.from) && this.isValidTelegramUserId(query.from.id)
+      ? String(query.from.id) : undefined;
+    const message = this.isRecord(query.message) ? query.message : undefined;
+    const chat = message && this.isRecord(message.chat) ? message.chat : undefined;
+    return {
+      id: query.id,
+      fromId,
+      chatId: chat && this.isValidChatId(chat.id) ? chat.id : undefined,
+      chatType: typeof chat?.type === 'string' ? chat.type : undefined,
+      messageId: message && typeof message.message_id === 'number' && Number.isSafeInteger(message.message_id)
+        ? message.message_id : undefined,
+      data: typeof query.data === 'string' ? query.data : undefined,
+    };
+  }
+
   private getUpdateId(update: unknown): number | undefined {
     if (!this.isRecord(update) || typeof update.update_id !== 'number' || !Number.isSafeInteger(update.update_id)) {
       return undefined;
@@ -347,11 +433,11 @@ export class TelegramService {
     text: string,
     entities?: Array<{ type: 'code'; offset: number; length: number }>,
     replyMarkup: TelegramReplyMarkup | null = MAIN_REPLY_KEYBOARD,
-  ): Promise<boolean> {
+  ): Promise<TelegramMessageSendResult> {
     const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!botToken?.trim()) {
       this.logger.warn('Resposta Telegram não enviada: configuração do bot ausente.');
-      return false;
+      return { accepted: false };
     }
 
     const controller = new AbortController();
@@ -374,19 +460,105 @@ export class TelegramService {
       );
 
       let telegramAccepted = false;
+      let messageId: number | undefined;
       if (response.ok) {
         try {
           const result: unknown = await response.json();
-          telegramAccepted = this.isRecord(result) && result.ok === true;
+          if (this.isRecord(result) && result.ok === true) {
+            telegramAccepted = true;
+            if (this.isRecord(result.result) && Number.isSafeInteger(result.result.message_id)) {
+              messageId = result.result.message_id as number;
+            }
+          }
         } catch {
           telegramAccepted = false;
         }
       }
       if (!telegramAccepted) this.logger.warn('Resposta Telegram não enviada: API retornou erro.');
-      return telegramAccepted;
+      return { accepted: telegramAccepted, messageId };
     } catch {
       this.logger.warn('Resposta Telegram não enviada: falha de comunicação.');
+      return { accepted: false };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async editMessageText(
+    chatId: number | string,
+    messageId: number,
+    response: TelegramSelectionResponse,
+  ): Promise<boolean> {
+    const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!botToken?.trim()) {
+      this.logger.warn('Edição de mensagem Telegram não realizada: configuração do bot ausente.');
       return false;
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TELEGRAM_API_TIMEOUT_MS);
+    try {
+      const result = await fetch('https://api.telegram.org/bot' + botToken + '/editMessageText', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          message_id: messageId,
+          text: response.text,
+          reply_markup: { inline_keyboard: response.inlineKeyboard ?? [] },
+        }),
+        signal: controller.signal,
+      });
+      let accepted = false;
+      if (result.ok) {
+        try {
+          const payload: unknown = await result.json();
+          accepted = this.isRecord(payload) && payload.ok === true;
+        } catch {
+          accepted = false;
+        }
+      }
+      if (!accepted) this.logger.warn('Edição de mensagem Telegram rejeitada pela API.');
+      return accepted;
+    } catch {
+      this.logger.warn('Edição de mensagem Telegram falhou por erro de comunicação.');
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+    const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!botToken?.trim()) {
+      this.logger.warn('Callback Telegram não respondido: configuração do bot ausente.');
+      throw new ServiceUnavailableException('Resposta Telegram indisponível.');
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TELEGRAM_API_TIMEOUT_MS);
+    try {
+      const response = await fetch('https://api.telegram.org/bot' + botToken + '/answerCallbackQuery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: callbackQueryId, ...(text ? { text } : {}) }),
+        signal: controller.signal,
+      });
+      let accepted = false;
+      if (response.ok) {
+        try {
+          const payload: unknown = await response.json();
+          accepted = this.isRecord(payload) && payload.ok === true;
+        } catch {
+          accepted = false;
+        }
+      }
+      if (!accepted) {
+        this.logger.warn('Callback Telegram não confirmado pela API.');
+        throw new ServiceUnavailableException('Resposta Telegram indisponível.');
+      }
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      this.logger.warn('Callback Telegram não respondido por falha de comunicação.');
+      throw new ServiceUnavailableException('Resposta Telegram indisponível.');
     } finally {
       clearTimeout(timeout);
     }

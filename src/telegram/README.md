@@ -1,11 +1,11 @@
 # POINT FFC Connect: webhook
 
-The menu uses a Telegram reply keyboard. Selecting **🏆 Ver competições**, **🔗 Conectar minha conta** or **⚽ Participar grátis** arrives as a regular private `message`, so this integration does not require `callback_query` in the webhook's `allowed_updates` list. The public competition list remains unchanged; the separate free participation flow filters FREE competitions, verifies the active Telegram link, and lets the user select an owned team for a preview only. It does not create an inscription or call wallet services.
+The menu uses a Telegram reply keyboard. Selecting **🏆 Ver competições**, **🔗 Conectar minha conta** or **⚽ Participar grátis** arrives as a regular private `message`. The free participation flow then uses inline keyboard callbacks to select multiple owned teams, paginate, select or clear all, and preview the selection. It verifies the active Telegram link and current competition/team eligibility before applying each callback. This remains a preview only: it does not create an inscription or call wallet services. Public FREE and PAGO competition disclosure remains unchanged.
 
-If Telegram's current webhook has a custom `allowed_updates` list that omits `message`, update it through the deployment's approved secret-management tooling. Keep the existing webhook URL and configured secret header value, and include `message` in `allowed_updates`, for example:
+When publishing this version, the Telegram webhook must include both `message` and `callback_query` in `allowed_updates`. Reconfigure it through the deployment's approved secret-management tooling; preserve the existing webhook URL and secret header configuration. This change does not call Telegram's `setWebhook` or modify external webhook settings. Use:
 
 ```json
-{"allowed_updates":["message"]}
+{"allowed_updates":["message","callback_query"]}
 ```
 
 Do not put the bot token or webhook secret in source control, logs, shell history, or shared documentation. The configured webhook endpoint remains:
@@ -22,7 +22,7 @@ Only fully processed `update_id` values are deduplicated. The process keeps at m
 
 In a private chat, select **🔗 Conectar minha conta** or send `/vincular` to receive a 48-character random hexadecimal code. The bot sends an instruction message, the code by itself in a `code` entity for easier copying, then a final message with an inline URL button to `https://pointffc.com.br/conectar-telegram/`. The main reply keyboard is marked persistent and remains available alongside the inline button. The code expires in 10 minutes and can be used once. The Telegram user ID comes from the authenticated Telegram webhook update; it is not accepted from the browser. The raw code is sent only to that private chat and is never stored or logged. The database stores its SHA-256 hash.
 
-The free participation selection is kept in process memory, scoped by Telegram user ID, expires after 10 minutes, and is capped at 1,000 sessions. A process restart or eviction clears the selection; the user must start again. Each interaction re-resolves the active linked POINT FFC account, competition and team ownership. This temporary session is not authorization to enroll, and the flow currently stops at the selection summary.
+The free participation selection is kept in process memory, scoped by Telegram user ID, expires 10 minutes after the last interaction, and is capped at 1,000 sessions. A random session token and one-use keyboard nonce bind each callback to the current session; callback data stays below Telegram's 64-byte limit. Telegram user ID, private chat ID, and inline message ID must all match. A process restart or eviction clears the selection; the user must start again. Each callback re-resolves the active linked POINT FFC account, FREE competition, owned teams, existing registrations, per-user limit, and active participant capacity. Selections are sorted by Cartola team ID for deterministic summaries. This temporary state is not authorization to enroll; the flow stops at a summary that explicitly says no inscription was made. No external webhook configuration is changed by this release.
 
 The final navigation-button message is best effort. If that send fails after the code was delivered, the webhook acknowledges the update and records it as completed, so Telegram redelivery does not create a replacement code or invalidate the delivered code. A safe warning is logged without code contents.
 
