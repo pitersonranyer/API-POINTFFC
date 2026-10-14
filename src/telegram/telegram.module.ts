@@ -6,10 +6,11 @@ import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramLinkModule } from '../telegram-link/telegram-link.module';
 import { MeusTimesModule } from '../meus-times/meus-times.module';
 import { TelegramSelectionService } from './telegram-selection.service';
+import { TelegramWebhookSyncService } from './telegram-webhook-sync.service';
 
 @Module({
   imports: [LigasCompeticoesModule, TelegramLinkModule, MeusTimesModule],
   controllers: [TelegramWebhookController],
-  providers: [TelegramService, TelegramCompetitionsService, TelegramSelectionService],
+  providers: [TelegramService, TelegramCompetitionsService, TelegramSelectionService, TelegramWebhookSyncService],
 })
 export class TelegramModule {}
