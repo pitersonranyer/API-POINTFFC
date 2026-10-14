@@ -177,6 +177,20 @@ export class TelegramService {
     if (response?.editMessage) {
       const edited = await this.editMessageText(callback.chatId, callback.messageId!, response);
       if (!edited) {
+        if (response.text.startsWith('🏆 Inscrição realizada com sucesso!')) {
+          const receipt = await this.sendMessage(callback.chatId, response.text, undefined, null);
+          for (const text of response.followUpMessages ?? []) {
+            const sent = await this.sendMessage(callback.chatId, text, undefined, null);
+            if (!sent.accepted) this.logger.warn('Continuação do comprovante de inscrição Telegram não enviada.');
+          }
+          this.logger.warn(receipt.accepted
+            ? 'Comprovante de inscrição Telegram enviado em uma nova mensagem.'
+            : 'Comprovante de inscrição Telegram não enviado; o resultado permanece recuperável pela chave da operação.');
+          await this.answerCallbackQuery(callback.id, receipt.accepted
+            ? 'Inscrição confirmada.'
+            : 'Inscrição confirmada, mas o comprovante não foi enviado. Toque novamente neste botão para recuperar o resultado.');
+          return;
+        }
         this.logger.warn('Mensagem interativa Telegram não atualizada; a sessão foi encerrada para evitar seleção divergente.');
         this.selectionService.clearIfSession(callback.fromId, response.sessionToken);
         await this.answerCallbackQuery(callback.id, 'Não foi possível atualizar a seleção. Inicie novamente pelo menu.');
