@@ -20,7 +20,9 @@ Only fully processed `update_id` values are deduplicated. The process keeps at m
 
 ## Telegram account linking
 
-In a private chat, select **🔗 Conectar minha conta** or send `/vincular` to receive a 48-character random hexadecimal code. The bot sends the instructions and code in separate messages; the code is the only visible text in the second message and is marked with Telegram's `code` entity for easier copying. It expires in 10 minutes and can be used once. The Telegram user ID comes from the authenticated Telegram webhook update; it is not accepted from the browser. The raw code is sent only to that private chat and is never stored or logged. The database stores its SHA-256 hash.
+In a private chat, select **🔗 Conectar minha conta** or send `/vincular` to receive a 48-character random hexadecimal code. The bot sends an instruction message, the code by itself in a `code` entity for easier copying, then a final message with an inline URL button to `https://pointffc.com.br/conectar-telegram/`. The main reply keyboard is marked persistent and remains available alongside the inline button. The code expires in 10 minutes and can be used once. The Telegram user ID comes from the authenticated Telegram webhook update; it is not accepted from the browser. The raw code is sent only to that private chat and is never stored or logged. The database stores its SHA-256 hash.
+
+The final navigation-button message is best effort. If that send fails after the code was delivered, the webhook acknowledges the update and records it as completed, so Telegram redelivery does not create a replacement code or invalidate the delivered code. A safe warning is logged without code contents.
 
 All API routes below require `Authorization: Bearer <POINT_FFC_JWT>`. The server derives `usuarioId` from the JWT's authenticated `Usuario`; callers cannot choose an account ID.
 

@@ -7,6 +7,9 @@ import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 
 const COMPETITIONS_BUTTON = '🏆 Ver competições';
 const CONNECT_ACCOUNT_BUTTON = '🔗 Conectar minha conta';
+const LINK_WEBSITE_BUTTON = '🌐 Vincular no POINT FFC';
+const LINK_WEBSITE_URL = 'https://pointffc.com.br/conectar-telegram/';
+const LINK_COMPLETION_MESSAGE = 'Agora é só concluir sua vinculação no POINT FFC! ⚽\n\nToque no botão abaixo, faça login se necessário e informe o código que você acabou de receber.';
 const WELCOME_MESSAGE = `⚽ Bem-vindo ao POINT FFC Connect!
 
 Consulte as competições públicas ou conecte sua conta POINT FFC pelos botões abaixo.
@@ -22,6 +25,20 @@ const TELEGRAM_API_TIMEOUT_MS = 5000;
 const TELEGRAM_MESSAGE_LIMIT = 4096;
 const TELEGRAM_SAFE_MESSAGE_LIMIT = 3900;
 const MAX_REMEMBERED_UPDATES = 1000;
+
+type TelegramReplyMarkup =
+  | { keyboard: Array<Array<{ text: string }>>; resize_keyboard: true; is_persistent: true }
+  | { inline_keyboard: Array<Array<{ text: string; url: string }>> };
+
+const MAIN_REPLY_KEYBOARD: TelegramReplyMarkup = {
+  keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }]],
+  resize_keyboard: true,
+  is_persistent: true,
+};
+
+const LINK_WEBSITE_KEYBOARD: TelegramReplyMarkup = {
+  inline_keyboard: [[{ text: LINK_WEBSITE_BUTTON, url: LINK_WEBSITE_URL }]],
+};
 
 interface TelegramMessage {
   chat: {
@@ -111,7 +128,8 @@ export class TelegramService {
       );
       await this.sendOrFail(message.chat.id, request.code, [
         { type: 'code', offset: 0, length: request.code.length },
-      ]);
+      ], null);
+      await this.sendLinkCompletion(message.chat.id);
     } catch (error) {
       if (error instanceof HttpException && error.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
         await this.sendOrFail(message.chat.id, LINK_RATE_LIMIT_MESSAGE);
@@ -145,9 +163,21 @@ export class TelegramService {
     chatId: number | string,
     text: string,
     entities?: Array<{ type: 'code'; offset: number; length: number }>,
+    replyMarkup: TelegramReplyMarkup | null = MAIN_REPLY_KEYBOARD,
   ): Promise<void> {
-    if (!await this.sendMessage(chatId, text, entities)) {
+    if (!await this.sendMessage(chatId, text, entities, replyMarkup)) {
       throw new ServiceUnavailableException('Resposta Telegram não enviada.');
+    }
+  }
+
+  private async sendLinkCompletion(chatId: number | string): Promise<void> {
+    try {
+      const sent = await this.sendMessage(chatId, LINK_COMPLETION_MESSAGE, undefined, LINK_WEBSITE_KEYBOARD);
+      if (!sent) {
+        this.logger.warn('Botão de navegação Telegram não enviado; o código já emitido permanece válido.');
+      }
+    } catch {
+      this.logger.warn('Botão de navegação Telegram não enviado; o código já emitido permanece válido.');
     }
   }
 
@@ -283,6 +313,7 @@ export class TelegramService {
     chatId: number | string,
     text: string,
     entities?: Array<{ type: 'code'; offset: number; length: number }>,
+    replyMarkup: TelegramReplyMarkup | null = MAIN_REPLY_KEYBOARD,
   ): Promise<boolean> {
     const botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!botToken?.trim()) {
@@ -303,10 +334,7 @@ export class TelegramService {
             chat_id: chatId,
             text,
             ...(entities ? { entities } : {}),
-            reply_markup: {
-              keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }]],
-              resize_keyboard: true,
-            },
+            ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
           }),
           signal: controller.signal,
         },
