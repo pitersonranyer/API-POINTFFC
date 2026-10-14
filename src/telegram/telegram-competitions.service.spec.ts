@@ -57,4 +57,26 @@ describe('TelegramCompetitionsService', () => {
     expect(await service.listarDivulgaveis()).toEqual([]);
     expect(prisma.inscricaoTimeCompeticao.groupBy).not.toHaveBeenCalled();
   });
+
+  it('filters the existing public eligible list to FREE competitions for participation', async () => {
+    ligasService.listarCompeticoes.mockResolvedValueOnce([
+      openCompetition(10),
+      openCompetition(11, { tipoAcesso: 'PAGO', valorInscricao: 2 }),
+      openCompetition(12, { tipoAcesso: 'FREE', valorInscricao: 1 }),
+    ]);
+    prisma.inscricaoTimeCompeticao.groupBy.mockResolvedValueOnce([]);
+
+    await expect(service.listarGratuitasElegiveis(new Date('2026-09-15T12:00:00.000Z'))).resolves.toEqual([openCompetition(10)]);
+    expect(ligasService.listarCompeticoes).toHaveBeenCalledWith('point-ffc', { status: 'INSCRICOES_ABERTAS' });
+  });
+
+  it('revalidates a selected free competition against the current eligible list', async () => {
+    ligasService.listarCompeticoes.mockResolvedValueOnce([openCompetition(10)]);
+    prisma.inscricaoTimeCompeticao.groupBy.mockResolvedValueOnce([]);
+    await expect(service.buscarGratuitaElegivel(10, new Date('2026-09-15T12:00:00.000Z'))).resolves.toMatchObject({ id: 10, tipoAcesso: 'FREE' });
+
+    ligasService.listarCompeticoes.mockResolvedValueOnce([openCompetition(11)]);
+    prisma.inscricaoTimeCompeticao.groupBy.mockResolvedValueOnce([]);
+    await expect(service.buscarGratuitaElegivel(10, new Date('2026-09-15T12:00:00.000Z'))).resolves.toBeNull();
+  });
 });

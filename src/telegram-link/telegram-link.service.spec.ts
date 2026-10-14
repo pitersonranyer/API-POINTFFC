@@ -124,4 +124,20 @@ describe('TelegramLinkService', () => {
     await expect(service.disconnect(42)).resolves.toEqual({ linked: false });
     expect(prisma.telegramAccountLink.deleteMany).toHaveBeenCalledWith({ where: { usuarioId: 42 } });
   });
+
+  it('resolves only an actively linked POINT FFC account from the Telegram sender ID', async () => {
+    prisma.telegramAccountLink.findUnique.mockResolvedValueOnce({ usuarioId: 42, usuario: { status: 'ATIVO' } });
+    await expect(service.resolveActiveUserId('777000111')).resolves.toBe(42);
+    expect(prisma.telegramAccountLink.findUnique).toHaveBeenCalledWith({
+      where: { telegramUserId: '777000111' },
+      select: { usuarioId: true, usuario: { select: { status: true } } },
+    });
+
+    prisma.telegramAccountLink.findUnique.mockResolvedValueOnce({ usuarioId: 42, usuario: { status: 'BLOQUEADO' } });
+    await expect(service.resolveActiveUserId('777000111')).resolves.toBeNull();
+    prisma.telegramAccountLink.findUnique.mockResolvedValueOnce({ usuarioId: 42, usuario: { status: 'INATIVO' } });
+    await expect(service.resolveActiveUserId('777000111')).resolves.toBeNull();
+    prisma.telegramAccountLink.findUnique.mockResolvedValueOnce(null);
+    await expect(service.resolveActiveUserId('999')).resolves.toBeNull();
+  });
 });

@@ -4,15 +4,17 @@ import { timingSafeEqual } from 'crypto';
 import { CompeticaoCardDto } from '../ligas-competicoes/dto/ligas-competicoes-response.dto';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
+import { TelegramSelectionService, TelegramSelectionResponse } from './telegram-selection.service';
 
 const COMPETITIONS_BUTTON = '🏆 Ver competições';
 const CONNECT_ACCOUNT_BUTTON = '🔗 Conectar minha conta';
+const PARTICIPATE_FREE_BUTTON = '⚽ Participar grátis';
 const LINK_WEBSITE_BUTTON = '🌐 Vincular no POINT FFC';
 const LINK_WEBSITE_URL = 'https://pointffc.com.br/conectar-telegram/';
 const LINK_COMPLETION_MESSAGE = 'Agora é só concluir sua vinculação no POINT FFC! ⚽\n\nToque no botão abaixo, faça login se necessário e informe o código que você acabou de receber.';
 const WELCOME_MESSAGE = `⚽ Bem-vindo ao POINT FFC Connect!
 
-Consulte as competições públicas ou conecte sua conta POINT FFC pelos botões abaixo.
+Consulte as competições públicas, participe de competições gratuitas ou conecte sua conta POINT FFC pelos botões abaixo.
 
 🌐 https://pointffc.com.br`;
 const EMPTY_COMPETITIONS_MESSAGE = 'No momento, não há competições abertas para divulgação.';
@@ -31,7 +33,7 @@ type TelegramReplyMarkup =
   | { inline_keyboard: Array<Array<{ text: string; url: string }>> };
 
 const MAIN_REPLY_KEYBOARD: TelegramReplyMarkup = {
-  keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }]],
+  keyboard: [[{ text: COMPETITIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }], [{ text: PARTICIPATE_FREE_BUTTON }]],
   resize_keyboard: true,
   is_persistent: true,
 };
@@ -59,6 +61,7 @@ export class TelegramService {
     private readonly configService: ConfigService,
     private readonly competitionsService: TelegramCompetitionsService,
     private readonly telegramLinks: TelegramLinkService,
+    private readonly selectionService: TelegramSelectionService,
   ) {}
 
   async handleWebhook(secretToken: string | undefined, update: unknown): Promise<void> {
@@ -97,21 +100,51 @@ export class TelegramService {
   private async processMessage(message: TelegramMessage): Promise<void> {
     const text = message.text.trim();
     if (this.isStartCommand(text)) {
+      if (message.from) this.selectionService.clear(String(message.from.id));
       await this.sendOrFail(message.chat.id, WELCOME_MESSAGE);
       return;
     }
 
     if (this.isLinkCommand(text) || text === CONNECT_ACCOUNT_BUTTON) {
+      if (message.from) this.selectionService.clear(String(message.from.id));
       await this.createLinkRequest(message);
       return;
     }
 
     if (text === COMPETITIONS_BUTTON) {
+      if (message.from) this.selectionService.clear(String(message.from.id));
       await this.sendCompetitions(message.chat.id);
       return;
     }
 
+    if (text === PARTICIPATE_FREE_BUTTON) {
+      if (!message.from) {
+        await this.sendOrFail(message.chat.id, 'Não foi possível identificar sua conta Telegram. Toque no botão novamente no chat privado do bot.');
+        return;
+      }
+      const response = await this.selectionService.start(String(message.from.id));
+      await this.sendSelectionResponse(message.chat.id, response);
+      return;
+    }
+
+    if (message.from) {
+      const response = await this.selectionService.handle(String(message.from.id), text);
+      if (response) {
+        await this.sendSelectionResponse(message.chat.id, response);
+        return;
+      }
+    }
+
     await this.sendOrFail(message.chat.id, UNKNOWN_MESSAGE);
+  }
+
+  private async sendSelectionResponse(chatId: number | string, response: TelegramSelectionResponse): Promise<void> {
+    const replyMarkup: TelegramReplyMarkup = {
+      keyboard: response.buttons.map(row => row.map(text => ({ text }))),
+      resize_keyboard: true,
+      is_persistent: true,
+    };
+    await this.sendOrFail(chatId, response.text, undefined, replyMarkup);
   }
 
   private async createLinkRequest(message: TelegramMessage): Promise<void> {

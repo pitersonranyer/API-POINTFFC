@@ -46,4 +46,16 @@ export class TelegramCompetitionsService {
       timesUsuario: 0,
     }) === null);
   }
+
+  async listarGratuitasElegiveis(now = new Date()): Promise<CompeticaoCardDto[]> {
+    const competicoes = await this.listarDivulgaveis(now);
+    return competicoes.filter(competicao =>
+      competicao.tipoAcesso === 'FREE' && Number(competicao.valorInscricao) === 0,
+    );
+  }
+
+  async buscarGratuitaElegivel(id: number, now = new Date()): Promise<CompeticaoCardDto | null> {
+    const competicoes = await this.listarGratuitasElegiveis(now);
+    return competicoes.find(competicao => competicao.id === id) ?? null;
+  }
 }
