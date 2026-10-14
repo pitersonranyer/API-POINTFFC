@@ -97,9 +97,10 @@ describe('TelegramService', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { reply_markup: { keyboard: { text: string }[][] } };
     expect(requestBody.reply_markup.keyboard[0][0].text).toBe('🏆 Ver competições');
+    expect(requestBody.reply_markup.keyboard[1][0].text).toBe('🔗 Conectar minha conta');
   });
 
-  it('creates and sends a private one-time link code without logging it', async () => {
+  it('sends the link orientation and code separately without logging the code', async () => {
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
     const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
     await service.handleWebhook(webhookSecret, {
@@ -108,10 +109,33 @@ describe('TelegramService', () => {
     });
 
     expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
-    const messageText = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string).text as string;
-    expect(messageText).toContain('a'.repeat(48));
-    expect(messageText).toContain('10 minutos');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const orientation = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as { text: string };
+    const codeMessage = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string) as {
+      text: string;
+      entities: Array<{ type: string; offset: number; length: number }>;
+    };
+    expect(orientation.text).toBe('Seu código de vinculação está pronto! 🔐\n\nCopie o código da próxima mensagem e informe no site POINT FFC.\n\n⏱️ Validade: 10 minutos.');
+    expect(codeMessage.text).toMatch(/^[a-f0-9]{48}$/);
+    expect(codeMessage.text).toBe('a'.repeat(48));
+    expect(codeMessage.entities).toEqual([{ type: 'code', offset: 0, length: 48 }]);
     expect(logger).not.toHaveBeenCalled();
+  });
+
+  it('starts the same private linking flow when the menu button is selected', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 812,
+      message: {
+        chat: { id: 12345, type: 'private' },
+        from: { id: 54321 },
+        text: '🔗 Conectar minha conta',
+      },
+    });
+
+    expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string).text).toMatch(/^[a-f0-9]{48}$/);
   });
 
   it('does not create link requests without a validated private Telegram sender ID', async () => {
@@ -120,6 +144,55 @@ describe('TelegramService', () => {
       message: { chat: { id: 12345, type: 'private' }, text: '/vincular' },
     });
     expect(telegramLinks.createRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not issue a link code from a group chat even when the menu button is used', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 813,
+      message: {
+        chat: { id: -100, type: 'group' },
+        from: { id: 54321 },
+        text: '🔗 Conectar minha conta',
+      },
+    });
+    expect(telegramLinks.createRequest).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps /vincular working and does not send the code if the orientation fails', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    fetchSpy.mockRejectedValueOnce(new Error('network failure'));
+    const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+
+    await expect(service.handleWebhook(webhookSecret, {
+      update_id: 814,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '/vincular' },
+    })).rejects.toThrow(ServiceUnavailableException);
+
+    expect(telegramLinks.createRequest).toHaveBeenCalledWith('54321');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(logger.mock.calls)).not.toContain('a'.repeat(48));
+  });
+
+  it('leaves a failed code send retryable and never logs the code', async () => {
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    fetchSpy.mockResolvedValueOnce({ ok: false } as Response);
+    const logger = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+    const update = {
+      update_id: 815,
+      message: { chat: { id: 12345, type: 'private' }, from: { id: 54321 }, text: '🔗 Conectar minha conta' },
+    };
+
+    await expect(service.handleWebhook(webhookSecret, update)).rejects.toThrow(ServiceUnavailableException);
+    const attemptedCodeMessage = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string) as { text: string };
+    expect(attemptedCodeMessage.text).toMatch(/^[a-f0-9]{48}$/);
+    expect(JSON.stringify(logger.mock.calls)).not.toContain(attemptedCodeMessage.text);
+
+    fetchSpy.mockResolvedValue({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    await expect(service.handleWebhook(webhookSecret, update)).resolves.toBeUndefined();
+    expect(telegramLinks.createRequest).toHaveBeenCalledTimes(2);
   });
 
   it('responds with the preparation message to an unknown text message', async () => {
@@ -134,7 +207,7 @@ describe('TelegramService', () => {
     const requestBody = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string) as {
       text: string;
     };
-    expect(requestBody.text).toContain('Use o botão abaixo');
+    expect(requestBody.text).toContain('Use os botões abaixo');
     expect(requestBody.text).toContain('Envie /start');
   });
 
