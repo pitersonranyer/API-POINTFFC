@@ -17,9 +17,9 @@ const LINK_WEBSITE_URL = 'https://pointffc.com.br/conectar-telegram/';
 const LINK_COMPLETION_MESSAGE = 'Agora é só concluir sua vinculação no POINT FFC! ⚽\n\nToque no botão abaixo, faça login se necessário e informe o código que você acabou de receber.';
 const WELCOME_MESSAGE = `⚽ Bem-vindo ao POINT FFC Connect!
 
-Consulte as competições públicas, participe de competições gratuitas ou conecte sua conta POINT FFC pelos botões abaixo.
+Consulte competições, gerencie seus times e acompanhe suas inscrições.
 
-🌐 https://pointffc.com.br`;
+Escolha uma opção no menu abaixo.`;
 const EMPTY_COMPETITIONS_MESSAGE = 'No momento, não há competições abertas para divulgação.';
 const COMPETITIONS_ERROR_MESSAGE = 'Não foi possível consultar as competições agora. Tente novamente em instantes.';
 const UNKNOWN_MESSAGE = `⚽ Use os botões abaixo para consultar as competições ou conectar sua conta POINT FFC.
@@ -517,6 +517,7 @@ export class TelegramService {
           body: JSON.stringify({
             chat_id: chatId,
             text,
+            link_preview_options: { is_disabled: true },
             ...(entities ? { entities } : {}),
             ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
           }),
@@ -569,6 +570,7 @@ export class TelegramService {
           chat_id: chatId,
           message_id: messageId,
           text: response.text,
+          link_preview_options: { is_disabled: true },
           reply_markup: { inline_keyboard: response.inlineKeyboard ?? [] },
         }),
         signal: controller.signal,
