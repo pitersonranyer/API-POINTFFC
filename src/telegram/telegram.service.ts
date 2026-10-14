@@ -50,7 +50,7 @@ interface TelegramMessageSendResult {
 }
 
 const MAIN_REPLY_KEYBOARD: TelegramReplyMarkup = {
-  keyboard: [[{ text: COMPETITIONS_BUTTON }, { text: PARTICIPATE_FREE_BUTTON }], [{ text: MY_REGISTRATIONS_BUTTON }, { text: CONNECT_ACCOUNT_BUTTON }]],
+  keyboard: [[{ text: COMPETITIONS_BUTTON }, { text: MY_REGISTRATIONS_BUTTON }], [{ text: CONNECT_ACCOUNT_BUTTON }]],
   resize_keyboard: true,
   is_persistent: true,
 };
@@ -135,7 +135,7 @@ export class TelegramService {
 
     if (text === COMPETITIONS_BUTTON || text === LEGACY_COMPETITIONS_BUTTON) {
       if (message.from) this.selectionService.clear(String(message.from.id));
-      await this.sendCompetitions(message.chat.id);
+      await this.sendCompetitions(message.chat.id, message.from ? String(message.from.id) : undefined);
       return;
     }
 
@@ -300,7 +300,7 @@ export class TelegramService {
     }
   }
 
-  private async sendCompetitions(chatId: number | string): Promise<void> {
+  private async sendCompetitions(chatId: number | string, telegramUserId?: string): Promise<void> {
     let competitions: CompeticaoCardDto[];
     try {
       competitions = await this.competitionsService.listarDivulgaveis();
@@ -317,6 +317,10 @@ export class TelegramService {
 
     for (const text of this.formatCompetitionMessages(competitions)) {
       await this.sendOrFail(chatId, text);
+    }
+    if (telegramUserId) {
+      const participation = await this.selectionService.start(telegramUserId);
+      await this.sendSelectionResponse(chatId, participation, telegramUserId);
     }
   }
 

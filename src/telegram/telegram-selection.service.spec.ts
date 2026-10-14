@@ -108,9 +108,11 @@ describe('TelegramSelectionService', () => {
 
   const startTeams = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
     const competitionsPage = await service.start(telegramUserId);
-    const selected = await service.handle(telegramUserId, competitionsPage.buttons[0][0]);
-    if (!selected?.inlineKeyboard || !selected.sessionToken) throw new Error('expected inline team keyboard');
-    service.attachInlineMessage(telegramUserId, selected.sessionToken, telegramUserId, 900);
+    const offer = await service.handle(telegramUserId, competitionsPage.buttons[0][0]);
+    if (!offer?.inlineKeyboard || !offer.sessionToken) throw new Error('expected participation offer');
+    service.attachInlineMessage(telegramUserId, offer.sessionToken, telegramUserId, 900);
+    const selected = await press(telegramUserId, button(offer, '⚽ Participar'));
+    if (!selected?.inlineKeyboard) throw new Error('expected inline team keyboard');
     return selected;
   };
 
@@ -162,7 +164,11 @@ describe('TelegramSelectionService', () => {
   it('selects a competition through its inline button and keeps the same message context', async () => {
     const page = await service.start('54321');
     service.attachInlineMessage('54321', page.sessionToken!, '54321', 900);
-    const selected = await press('54321', button(page, '1. POINT FFC - Rodada 42 (R42)'));
+    const offer = await press('54321', button(page, '1. POINT FFC - Rodada 42 (R42)'));
+    expect(offer?.editMessage).toBe(true);
+    expect(offer?.text).toContain('Deseja participar desta competição?');
+    expect(offer?.inlineKeyboard?.flat().map(item => item.text)).toEqual(['⚽ Participar', '↩️ Voltar às competições']);
+    const selected = await press('54321', button(offer!, '⚽ Participar'));
     expect(selected?.editMessage).toBe(true);
     expect(selected?.text).toContain('Escolha seus times');
     expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
@@ -323,7 +329,7 @@ describe('TelegramSelectionService', () => {
     expect(result?.text).toContain('Adicionados: 2');
     expect(result?.text).toContain('Total de IDs distintos: 2');
     expect(result?.inlineKeyboard?.flat().map(item => item.text)).toEqual([
-      '⚽ Participar grátis', '🔗 Minha conta', '📋 Cadastrar mais times', '🏠 Menu principal',
+      '⚽ Participar', '🔗 Minha conta', '📋 Cadastrar mais times', '🏠 Menu principal',
     ]);
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
     expect(prompt.text).toContain('Cadastro de vários times');
@@ -454,7 +460,7 @@ describe('TelegramSelectionService', () => {
     const result = await press('54321', button(preview!, '✅ Confirmar cadastro'));
     competitions.buscarGratuitaElegivel.mockResolvedValueOnce(null);
     competitions.listarGratuitasElegiveis.mockResolvedValueOnce([]);
-    const returned = await press('54321', button(result!, '⚽ Participar grátis'));
+    const returned = await press('54321', button(result!, '⚽ Participar'));
     expect(returned?.text).toContain('A competição deixou de estar disponível');
     expect(returned?.text).toContain('Não há competições gratuitas abertas');
     expect(returned?.text).not.toContain('Time adicionado ao seu perfil');
@@ -1137,8 +1143,9 @@ describe('TelegramSelectionService', () => {
     const initial = await startTeams();
     const data = button(initial, '☑️ Selecionar todos');
     const otherCompetitions = await service.start('99999');
-    const other = await service.handle('99999', otherCompetitions.buttons[0][0]);
-    service.attachInlineMessage('99999', other!.sessionToken!, '99999', 901);
+    const offer = await service.handle('99999', otherCompetitions.buttons[0][0]);
+    service.attachInlineMessage('99999', offer!.sessionToken!, '99999', 901);
+    const other = await press('99999', button(offer!, '⚽ Participar'), 901);
     expect(await press('99999', data, 901)).toBeNull();
     expect(await press('54321', data, 901)).toBeNull();
     const otherSelection = await press('99999', button(other!, '☑️ Selecionar todos'), 901);
