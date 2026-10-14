@@ -15,6 +15,9 @@ const SESSION_TTL_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = 1000;
 const PAGE_SIZE = 8;
 const MAX_BATCH_TEAMS = 50;
+const MAX_TELEGRAM_TEAM_IDS = 30;
+const MAX_TEAM_ID_MESSAGE_LENGTH = 2000;
+const CARTOLA_LOOKUP_CONCURRENCY = 4;
 const CANCEL_BUTTON = '❌ Cancelar';
 const BACK_BUTTON = '↩️ Voltar';
 const PREVIOUS_BUTTON = '⬅️ Anterior';
@@ -28,7 +31,9 @@ const HOME_BUTTON = '🏠 Menu principal';
 const MY_REGISTRATIONS_BUTTON = '📋 Minhas inscrições';
 
 type SelectionStage = 'competitions' | 'teams' | 'summary' | 'receipt' | 'registrations'
-  | 'team-registration-input' | 'team-registration-preview' | 'team-registration-result';
+  | 'team-registration-input' | 'team-registration-preview' | 'team-registration-result'
+  | 'team-registration-bulk-input' | 'team-registration-bulk-preview'
+  | 'team-registration-bulk-processing' | 'team-registration-bulk-result';
 interface Option<T> { button: string; value: T }
 interface CartolaTeamRegistration {
   timeId: number;
@@ -38,6 +43,20 @@ interface CartolaTeamRegistration {
   urlEscudoPng?: string;
   fotoPerfil?: string;
   assinante?: boolean;
+}
+type BulkCandidateStatus = 'available' | 'own' | 'other' | 'not-found' | 'temporary';
+interface BulkTeamCandidate {
+  timeId: number;
+  status: BulkCandidateStatus;
+  team?: CartolaTeamRegistration;
+}
+interface BulkRegistrationSummary {
+  total: number;
+  added: number[];
+  alreadyOwn: number[];
+  unavailable: number[];
+  notFound: number[];
+  pending: number[];
 }
 type TelegramRegistration = { id: number; timeIdCartola: number; nomeTime: string; competitionName: string; round: string; competitionEnd: string | null };
 interface EligibilitySnapshot {
@@ -75,6 +94,8 @@ interface SelectionSession {
   linkedUsuarioId?: number;
   ownedTeamCount?: number;
   candidateTeam?: CartolaTeamRegistration;
+  bulkCandidates?: BulkTeamCandidate[];
+  bulkResult?: BulkRegistrationSummary;
 }
 
 export interface TelegramSelectionResponse {
@@ -262,6 +283,31 @@ export class TelegramSelectionService {
         }
         return null;
       }
+      if (session.stage === 'team-registration-bulk-input') {
+        if (action === 'registration-back') {
+          session.stage = 'teams';
+          session.bulkCandidates = undefined;
+          session.bulkResult = undefined;
+          this.refresh(session);
+          return { ...this.renderTeams(session), editMessage: true };
+        }
+        if (action === 'cancel') return this.endJourney(session, 'Jornada cancelada.');
+        return null;
+      }
+      if (session.stage === 'team-registration-bulk-preview') {
+        if (action === 'registration-bulk-edit') return this.beginBulkTeamRegistration(session);
+        if (action === 'registration-bulk-confirm') return this.confirmBulkTeamRegistration(session);
+        if (action === 'cancel') return this.endJourney(session, 'Jornada cancelada.');
+        return null;
+      }
+      if (session.stage === 'team-registration-bulk-result') {
+        if (action === 'registration-return' || action === 'registration-participate') {
+          return this.returnToCompetitionOrList(session);
+        }
+        if (action === 'registration-bulk-add-another') return this.beginBulkTeamRegistration(session);
+        return null;
+      }
+      if (session.stage === 'team-registration-bulk-processing') return null;
       if (session.stage === 'registrations') {
         if (action === 'previous' || action === 'next') {
           let activeUsuarioId: number | null;
@@ -283,6 +329,7 @@ export class TelegramSelectionService {
         return this.endJourney(session, 'Jornada cancelada.');
       }
       if (action === 'add-team' && session.stage === 'teams') return this.beginTeamRegistration(session);
+      if (action === 'add-bulk-teams' && session.stage === 'teams') return this.beginBulkTeamRegistration(session);
       if (action.startsWith('confirm:')) {
         if (session.stage !== 'summary' || session.confirmationKey !== action.slice('confirm:'.length)) return null;
         return this.confirmEnrollment(session, session.confirmationKey);
@@ -660,6 +707,7 @@ export class TelegramSelectionService {
     }
 
     if (session.stage === 'team-registration-input') return this.previewCartolaTeam(session, input);
+    if (session.stage === 'team-registration-bulk-input') return this.previewCartolaTeams(session, input);
     if (session.stage === 'competitions') return this.handleCompetitionStep(session, input);
     return null;
   }
@@ -699,6 +747,8 @@ export class TelegramSelectionService {
   private beginTeamRegistration(session: SelectionSession): TelegramSelectionResponse {
     session.stage = 'team-registration-input';
     session.candidateTeam = undefined;
+    session.bulkCandidates = undefined;
+    session.bulkResult = undefined;
     this.refresh(session);
     return { ...this.renderTeamRegistrationPrompt(session), editMessage: true };
   }
@@ -883,6 +933,317 @@ export class TelegramSelectionService {
     };
   }
 
+  private beginBulkTeamRegistration(session: SelectionSession): TelegramSelectionResponse {
+    session.stage = 'team-registration-bulk-input';
+    session.candidateTeam = undefined;
+    session.bulkCandidates = undefined;
+    session.bulkResult = undefined;
+    this.refresh(session);
+    return { ...this.renderBulkTeamRegistrationPrompt(session), editMessage: true };
+  }
+
+  private renderBulkTeamRegistrationPrompt(session: SelectionSession, notice = ''): TelegramSelectionResponse {
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    return {
+      text: `${notice ? `${notice}\n\n` : ''}📋 Cadastro de vários times\n\nEnvie os IDs dos seus times do Cartola.\n\nVocê pode separar os IDs por linha, espaço, vírgula ou ponto e vírgula.\n\nExemplo:\n\n13933388\n25903156\n29550505\n\nMáximo: 30 IDs por envio.`,
+      buttons: [],
+      inlineKeyboard: [
+        [{ text: '↩️ Voltar', callback_data: this.callbackData(session, 'registration-back') }],
+        [{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }],
+        [{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }],
+      ],
+      sessionToken: session.sessionToken,
+    };
+  }
+
+  private parseBulkTeamIds(input: string): { ids?: number[]; error?: string } {
+    if (!input.trim()) return { error: 'Envie pelo menos um ID numérico.' };
+    if (input.length > MAX_TEAM_ID_MESSAGE_LENGTH) {
+      return { error: 'A mensagem é muito longa. Envie até 30 IDs numéricos, separados por linha, espaço, vírgula ou ponto e vírgula.' };
+    }
+    const tokens = input.trim().split(/[\s,;]+/u);
+    if (tokens.some(token => !/^\d{1,10}$/.test(token))) {
+      return { error: 'A lista contém um valor inválido. Envie somente IDs numéricos, sem nomes ou outros caracteres.' };
+    }
+    const ids: number[] = [];
+    const seen = new Set<number>();
+    for (const token of tokens) {
+      const id = Number(token);
+      if (!Number.isSafeInteger(id) || id < 1 || id > 4_294_967_295) {
+        return { error: 'Há um ID fora do intervalo aceito pelo POINT FFC. Confira a lista e tente novamente.' };
+      }
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+    if (ids.length > MAX_TELEGRAM_TEAM_IDS) {
+      return { error: 'Você enviou mais de 30 IDs distintos. Divida a lista em envios menores; nenhum ID foi consultado ou cadastrado.' };
+    }
+    return { ids };
+  }
+
+  private async previewCartolaTeams(session: SelectionSession, input: string): Promise<TelegramSelectionResponse> {
+    const parsed = this.parseBulkTeamIds(input);
+    if (!parsed.ids) {
+      this.refresh(session);
+      return this.renderBulkTeamRegistrationPrompt(session, parsed.error);
+    }
+
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      this.refresh(session);
+      return this.renderBulkTeamRegistrationPrompt(session, 'Não foi possível verificar seu vínculo agora. Tente novamente em instantes.');
+    }
+    if (usuarioId === null || (session.linkedUsuarioId !== undefined && usuarioId !== session.linkedUsuarioId)) {
+      this.sessions.delete(session.telegramUserId);
+      return this.main(`Seu vínculo POINT FFC não está ativo. Conecte sua conta para continuar:\n${LINK_URL}`);
+    }
+
+    let associations: Array<{ timeId: number; status: 'proprio' | 'outro' | 'disponivel' }>;
+    try {
+      associations = await this.teams.consultarStatusAssociacaoTimes(usuarioId, parsed.ids);
+    } catch {
+      this.refresh(session);
+      return this.renderBulkTeamRegistrationPrompt(session, 'Não foi possível consultar os times cadastrados agora. Tente novamente em instantes.');
+    }
+    const statusById = new Map(associations.map(item => [item.timeId, item.status]));
+    const lookups = await this.mapWithConcurrency(parsed.ids, CARTOLA_LOOKUP_CONCURRENCY, async (timeId): Promise<BulkTeamCandidate> => {
+      const associationStatus = statusById.get(timeId);
+      if (associationStatus === 'proprio') return { timeId, status: 'own' };
+      if (associationStatus === 'outro') return { timeId, status: 'other' };
+      try {
+        const result = await this.cartola.getTeamById(timeId);
+        const team = this.mapCartolaTeam(timeId, result.value);
+        return { timeId, team, status: 'available' };
+      } catch (error) {
+        return { timeId, status: error instanceof NotFoundException ? 'not-found' : 'temporary' };
+      }
+    });
+    session.linkedUsuarioId = usuarioId;
+    session.bulkCandidates = lookups;
+    session.stage = 'team-registration-bulk-preview';
+    this.refresh(session);
+    return this.renderBulkTeamRegistrationPreview(session);
+  }
+
+  private renderBulkTeamRegistrationPreview(session: SelectionSession): TelegramSelectionResponse {
+    const candidates = session.bulkCandidates ?? [];
+    const available = candidates.filter(item => item.status === 'available' && item.team);
+    const own = candidates.filter(item => item.status === 'own');
+    const unavailable = candidates.filter(item => item.status === 'other');
+    const notFound = candidates.filter(item => item.status === 'not-found');
+    const temporary = candidates.filter(item => item.status === 'temporary');
+    const lines: string[] = ['📋 Prévia do cadastro', '', `✅ Times disponíveis: ${available.length}`];
+    available.forEach((item, index) => lines.push(`${index + 1}. ${this.truncate(item.team?.nome ?? 'Time Cartola', 48)} — #${item.timeId}`));
+    lines.push('', `ℹ️ Já cadastrados no seu perfil: ${own.length}`);
+    if (own.length) lines.push(`IDs: ${this.formatTeamIds(own.map(item => item.timeId))}`);
+    lines.push('', `⚠️ Indisponíveis ou associados a outro perfil: ${unavailable.length}`);
+    if (unavailable.length) lines.push(`IDs: ${this.formatTeamIds(unavailable.map(item => item.timeId))}`);
+    lines.push('', `❌ Não encontrados no Cartola: ${notFound.length}`);
+    if (notFound.length) lines.push(`IDs: ${this.formatTeamIds(notFound.map(item => item.timeId))}`);
+    lines.push('', `⏳ Consulta temporariamente indisponível: ${temporary.length}`);
+    if (temporary.length) lines.push(`IDs: ${this.formatTeamIds(temporary.map(item => item.timeId))}`);
+    lines.push('', available.length
+      ? `Deseja adicionar os ${available.length} times disponíveis ao seu perfil POINT FFC?`
+      : 'Nenhum time está disponível para cadastro. Envie outra lista para tentar novamente.');
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    const keyboard: TelegramInlineButton[][] = [];
+    if (available.length) keyboard.push([{ text: '✅ Confirmar cadastro', callback_data: this.callbackData(session, 'registration-bulk-confirm') }]);
+    keyboard.push([{ text: '✏️ Enviar outra lista', callback_data: this.callbackData(session, 'registration-bulk-edit') }]);
+    keyboard.push([{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }]);
+    keyboard.push([{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }]);
+    return { text: lines.join('\n'), buttons: [], inlineKeyboard: keyboard, sessionToken: session.sessionToken };
+  }
+
+  private async confirmBulkTeamRegistration(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    const original = session.bulkCandidates;
+    if (!original?.length) return this.bulkRegistrationFailure(session, 'A prévia não está mais disponível. Envie a lista novamente.');
+
+    // Rotate the nonce and stage before awaiting any external work. A repeated callback
+    // cannot start a second batch even if Telegram delivers it while this one is running.
+    session.stage = 'team-registration-bulk-processing';
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    this.refresh(session);
+
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      return this.bulkRegistrationFailure(session, 'Não foi possível validar seu vínculo. Nenhum novo cadastro foi iniciado; consulte os times e tente novamente.');
+    }
+    if (usuarioId === null || usuarioId !== session.linkedUsuarioId) {
+      this.sessions.delete(session.telegramUserId);
+      return { text: `Seu vínculo POINT FFC não está ativo. Conecte sua conta para continuar:\n${LINK_URL}`, buttons: [],
+        inlineKeyboard: [], sessionToken: session.sessionToken, editMessage: true, showMainMenu: true };
+    }
+
+    const teamCandidates = original.filter(item => item.status === 'available' && item.team);
+    let currentAssociations: Array<{ timeId: number; status: 'proprio' | 'outro' | 'disponivel' }>;
+    try {
+      currentAssociations = await this.teams.consultarStatusAssociacaoTimes(usuarioId, original.map(item => item.timeId));
+    } catch {
+      return this.bulkRegistrationFailure(session, 'Não foi possível revalidar as associações. Nenhum cadastro foi iniciado; envie a lista novamente mais tarde.');
+    }
+    const currentStatusById = new Map(currentAssociations.map(item => [item.timeId, item.status]));
+    const refreshed = await this.mapWithConcurrency(teamCandidates.filter(item => item.status === 'available'), CARTOLA_LOOKUP_CONCURRENCY,
+      async (candidate): Promise<BulkTeamCandidate> => {
+        try {
+          const result = await this.cartola.getTeamById(candidate.timeId, { forceRefresh: true });
+          const team = this.mapCartolaTeam(candidate.timeId, result.value);
+          const status = currentStatusById.get(candidate.timeId);
+          if (status === 'proprio') return { timeId: candidate.timeId, status: 'own', team };
+          if (status === 'outro') return { timeId: candidate.timeId, status: 'other', team };
+          return { timeId: candidate.timeId, status: 'available', team };
+        } catch (error) {
+          return { timeId: candidate.timeId, status: error instanceof NotFoundException ? 'not-found' : 'temporary' };
+        }
+      });
+
+    const result: BulkRegistrationSummary = {
+      total: original.length, added: [], alreadyOwn: [], unavailable: [], notFound: [], pending: [],
+    };
+    for (const candidate of original) {
+      const currentStatus = currentStatusById.get(candidate.timeId);
+      if (currentStatus === 'proprio') result.alreadyOwn.push(candidate.timeId);
+      else if (currentStatus === 'outro') result.unavailable.push(candidate.timeId);
+      else if (candidate.status === 'own' || candidate.status === 'other') result.pending.push(candidate.timeId);
+      else if (candidate.status === 'not-found') result.notFound.push(candidate.timeId);
+      else if (candidate.status === 'temporary') result.pending.push(candidate.timeId);
+    }
+    const currentById = new Map(refreshed.map(item => [item.timeId, item]));
+    const toRegister: AdicionarTimeDto[] = [];
+    for (const candidate of teamCandidates.filter(item => item.status === 'available')) {
+      const current = currentById.get(candidate.timeId);
+      if (current?.status === 'own') result.alreadyOwn.push(candidate.timeId);
+      else if (current?.status === 'other') result.unavailable.push(candidate.timeId);
+      else if (current?.status === 'not-found') result.notFound.push(candidate.timeId);
+      else if (current?.status === 'temporary') result.pending.push(candidate.timeId);
+      else if (current?.status === 'available' && current.team) toRegister.push(this.teamRegistrationDto(current.team));
+      else result.pending.push(candidate.timeId);
+    }
+
+    let batch: Awaited<ReturnType<MeusTimesService['adicionarTimesEmLote']>> | undefined;
+    if (toRegister.length) {
+      try {
+        batch = await this.teams.adicionarTimesEmLote(usuarioId, toRegister);
+      } catch {
+        // Do not retry a possibly committed write. Resolve the final owner state below.
+      }
+    }
+    const attemptedIds = toRegister.map(item => item.timeId);
+    if (attemptedIds.length) {
+      try {
+        const finalAssociations = await this.teams.consultarStatusAssociacaoTimes(usuarioId, attemptedIds);
+        const finalStatusById = new Map(finalAssociations.map(item => [item.timeId, item.status]));
+        const addedByService = new Set(batch?.timesAdicionados ?? []);
+        for (const timeId of attemptedIds) {
+          const status = finalStatusById.get(timeId);
+          if (status === 'proprio') {
+            if (addedByService.has(timeId)) result.added.push(timeId);
+            else result.alreadyOwn.push(timeId);
+          } else if (status === 'outro') result.unavailable.push(timeId);
+          else result.pending.push(timeId);
+        }
+      } catch {
+        // Successful service results are committed; unresolved outcomes are reported as pending.
+        const addedByService = new Set(batch?.timesAdicionados ?? []);
+        for (const timeId of attemptedIds) {
+          if (addedByService.has(timeId)) result.added.push(timeId);
+          else result.pending.push(timeId);
+        }
+      }
+      const failedIds = new Set(batch?.falhas.map(item => item.timeId).filter((id): id is number => id !== null) ?? []);
+      for (const timeId of attemptedIds) {
+        if (failedIds.has(timeId) && !result.added.includes(timeId) && !result.alreadyOwn.includes(timeId)
+          && !result.unavailable.includes(timeId) && !result.pending.includes(timeId)) result.pending.push(timeId);
+      }
+    }
+
+    session.bulkResult = this.uniqueBulkResult(result);
+    session.bulkCandidates = original.map(candidate => ({ ...candidate }));
+    session.stage = 'team-registration-bulk-result';
+    this.refresh(session);
+    return { ...this.renderBulkTeamRegistrationResult(session), editMessage: true };
+  }
+
+  private bulkRegistrationFailure(session: SelectionSession, message: string): TelegramSelectionResponse {
+    const candidates = session.bulkCandidates ?? [];
+    const result: BulkRegistrationSummary = {
+      total: candidates.length,
+      added: [],
+      alreadyOwn: candidates.filter(item => item.status === 'own').map(item => item.timeId),
+      unavailable: candidates.filter(item => item.status === 'other').map(item => item.timeId),
+      notFound: candidates.filter(item => item.status === 'not-found').map(item => item.timeId),
+      pending: candidates.filter(item => item.status === 'available' || item.status === 'temporary').map(item => item.timeId),
+    };
+    session.bulkResult = result;
+    session.stage = 'team-registration-bulk-result';
+    this.refresh(session);
+    return { ...this.renderBulkTeamRegistrationResult(session, message), editMessage: true };
+  }
+
+  private renderBulkTeamRegistrationResult(session: SelectionSession, notice = ''): TelegramSelectionResponse {
+    const result = session.bulkResult ?? { total: 0, added: [], alreadyOwn: [], unavailable: [], notFound: [], pending: [] };
+    const lines = [
+      `${notice ? `${notice}\n\n` : result.added.length ? '✅ Cadastro concluído!\n\n' : ''}📋 Resultado do lote`,
+      '',
+      ...(!notice && result.added.length === 0 ? ['Nenhum novo time foi cadastrado.', ''] : []),
+      `✅ Adicionados: ${result.added.length}`,
+      `ℹ️ Já cadastrados no seu perfil: ${result.alreadyOwn.length}`,
+      `⚠️ Indisponíveis ou associados a outro perfil: ${result.unavailable.length}`,
+      `❌ Não encontrados: ${result.notFound.length}`,
+      `⏳ Pendentes por falha temporária ou resultado incerto: ${result.pending.length}`,
+      '',
+      `Total de IDs distintos: ${result.total}`,
+    ];
+    if (result.pending.length) lines.push('', `IDs pendentes: ${this.formatTeamIds(result.pending)}`,
+      'Confira seus times cadastrados no POINT FFC antes de reenviar esses IDs.');
+    if (result.unavailable.length) lines.push('', `IDs indisponíveis: ${this.formatTeamIds(result.unavailable)}`);
+    session.callbackNonce = randomBytes(6).toString('base64url');
+    const keyboard: TelegramInlineButton[][] = [
+      [{ text: '⚽ Voltar à competição', callback_data: this.callbackData(session, 'registration-return') }],
+      [{ text: '📋 Cadastrar mais times', callback_data: this.callbackData(session, 'registration-bulk-add-another') }],
+      [{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }],
+    ];
+    return { text: lines.join('\n'), buttons: [], inlineKeyboard: keyboard, sessionToken: session.sessionToken };
+  }
+
+  private formatTeamIds(ids: number[]): string {
+    return ids.map(timeId => `#${timeId}`).join(', ');
+  }
+
+  private teamRegistrationDto(team: CartolaTeamRegistration): AdicionarTimeDto {
+    return {
+      timeId: team.timeId, nome: team.nome,
+      ...(team.nomeCartola ? { nomeCartola: team.nomeCartola } : {}),
+      ...(team.slug ? { slug: team.slug } : {}),
+      ...(team.urlEscudoPng ? { urlEscudoPng: team.urlEscudoPng } : {}),
+      ...(team.fotoPerfil ? { fotoPerfil: team.fotoPerfil } : {}),
+      ...(team.assinante !== undefined ? { assinante: team.assinante } : {}),
+    };
+  }
+
+  private uniqueBulkResult(result: BulkRegistrationSummary): BulkRegistrationSummary {
+    const dedupe = (ids: number[]) => [...new Set(ids)];
+    return {
+      total: result.total, added: dedupe(result.added), alreadyOwn: dedupe(result.alreadyOwn),
+      unavailable: dedupe(result.unavailable), notFound: dedupe(result.notFound), pending: dedupe(result.pending),
+    };
+  }
+
+  private async mapWithConcurrency<T, R>(items: T[], limit: number, map: (item: T) => Promise<R>): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+    const workerCount = Math.min(items.length, limit);
+    await Promise.all(Array.from({ length: workerCount }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await map(items[index]);
+      }
+    }));
+    return results;
+  }
+
   private async returnToCompetitionOrList(session: SelectionSession): Promise<TelegramSelectionResponse> {
     let usuarioId: number | null;
     try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
@@ -915,9 +1276,15 @@ export class TelegramSelectionService {
       session.selectedTeamIds = [];
       session.candidateTeam = undefined;
       if (session.competitions.length === 0) {
-        session.stage = 'team-registration-result';
+        session.stage = session.bulkResult ? 'team-registration-bulk-result' : 'team-registration-result';
         this.refresh(session);
-        return { ...this.renderTeamRegistrationResult(session, 'A competição deixou de estar disponível. Não há competições gratuitas abertas no momento.'), editMessage: true };
+        const notice = 'A competição deixou de estar disponível. Não há competições gratuitas abertas no momento.';
+        return {
+          ...(session.bulkResult
+            ? this.renderBulkTeamRegistrationResult(session, notice)
+            : this.renderTeamRegistrationResult(session, notice)),
+          editMessage: true,
+        };
       }
       this.refresh(session);
       return { ...this.renderCompetitionPage(session, 'A competição anterior não está mais aberta. Escolha outra competição gratuita.'), editMessage: true };
@@ -999,6 +1366,7 @@ export class TelegramSelectionService {
         buttons: [],
         inlineKeyboard: [
           [{ text: '➕ Cadastrar time', callback_data: this.callbackData(session, 'add-team') }],
+          [{ text: '📋 Cadastrar vários times', callback_data: this.callbackData(session, 'add-bulk-teams') }],
           [{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }],
         ],
         sessionToken: session.sessionToken,
@@ -1016,6 +1384,7 @@ export class TelegramSelectionService {
     if (start + PAGE_SIZE < session.allTeams.length) navigation.push({ text: '➡️ Próxima', callback_data: this.callbackData(session, 'next') });
     if (navigation.length) keyboard.push(navigation);
     keyboard.push([{ text: '➕ Adicionar outro time', callback_data: this.callbackData(session, 'add-team') }]);
+    keyboard.push([{ text: '📋 Cadastrar vários times', callback_data: this.callbackData(session, 'add-bulk-teams') }]);
     const allSelected = this.isAllSelected(session);
     keyboard.push([{
       text: allSelected ? DESELECT_ALL_BUTTON : SELECT_ALL_BUTTON,
@@ -1118,7 +1487,8 @@ export class TelegramSelectionService {
     if (!data.startsWith(prefix) || Buffer.byteLength(data, 'utf8') > 64) return null;
     const action = data.slice(prefix.length);
     if (['previous', 'next', 'toggle-all', 'clear', 'continue', 'edit-selection', 'cancel', 'back-competitions', 'main-menu', 'my-inscriptions',
-      'add-team', 'registration-back', 'registration-confirm', 'registration-participate', 'registration-add-another'].includes(action)) return action;
+      'add-team', 'add-bulk-teams', 'registration-back', 'registration-confirm', 'registration-participate', 'registration-add-another',
+      'registration-return', 'registration-bulk-confirm', 'registration-bulk-edit', 'registration-bulk-add-another'].includes(action)) return action;
     if (session.stage === 'competitions' && /^select-competition:[0-9a-z]{1,8}$/.test(action)) return action;
     const confirm = /^confirm:([A-Za-z0-9_-]{24})$/.exec(action);
     if (confirm && confirm[1] === session.confirmationKey) return action;
