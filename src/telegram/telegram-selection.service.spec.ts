@@ -1,6 +1,8 @@
 import { InscricoesCompeticaoService } from '../ligas-competicoes/inscricoes-competicao.service';
 import { LotesInscricaoService } from '../ligas-competicoes/lotes-inscricao.service';
 import { MeusTimesService } from '../meus-times/meus-times.service';
+import { CartolaService } from '../cartola/cartola.service';
+import { NotFoundException } from '@nestjs/common';
 import { TelegramLinkService } from '../telegram-link/telegram-link.service';
 import { TelegramCompetitionsService } from './telegram-competitions.service';
 import { TelegramSelectionResponse, TelegramSelectionService } from './telegram-selection.service';
@@ -27,7 +29,8 @@ describe('TelegramSelectionService', () => {
     contarParticipantesAtivos: jest.Mock;
   };
   let links: { resolveActiveUserId: jest.Mock };
-  let teams: { listarTimesDoUsuario: jest.Mock };
+  let teams: { listarTimesDoUsuario: jest.Mock; adicionarTime: jest.Mock; buscarTimeDoUsuario: jest.Mock };
+  let cartola: { getTeamById: jest.Mock };
   let inscriptions: { minhas: jest.Mock; minhasDoUsuario: jest.Mock };
   let enrollmentBatches: { criarFree: jest.Mock; consultarResultadoFreeConfirmado: jest.Mock };
   let lastEnrollment: { response: Record<string, unknown>; ids: number[] } | null;
@@ -40,7 +43,12 @@ describe('TelegramSelectionService', () => {
       contarParticipantesAtivos: jest.fn().mockResolvedValue(0),
     };
     links = { resolveActiveUserId: jest.fn().mockResolvedValue(7) };
-    teams = { listarTimesDoUsuario: jest.fn().mockResolvedValue([team(1001)]) };
+    teams = {
+      listarTimesDoUsuario: jest.fn().mockResolvedValue([team(1001)]),
+      adicionarTime: jest.fn().mockResolvedValue({ status: 'adicionado', timeId: 13933388 }),
+      buscarTimeDoUsuario: jest.fn().mockResolvedValue(null),
+    };
+    cartola = { getTeamById: jest.fn().mockResolvedValue({ value: { time: { time_id: 13933388, nome: 'Real Prime CFC', nome_cartola: 'Cartoleiro', url_escudo_png: 'https://cartola.example/escudo.png' } } }) };
     inscriptions = { minhas: jest.fn().mockResolvedValue([]), minhasDoUsuario: jest.fn().mockResolvedValue([]) };
     lastEnrollment = null;
     enrollmentBatches = {
@@ -70,6 +78,7 @@ describe('TelegramSelectionService', () => {
     teams as unknown as MeusTimesService,
     inscriptions as unknown as InscricoesCompeticaoService,
     enrollmentBatches as unknown as LotesInscricaoService,
+    cartola as unknown as CartolaService,
   );
 
   const startTeams = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
@@ -78,6 +87,14 @@ describe('TelegramSelectionService', () => {
     if (!selected?.inlineKeyboard || !selected.sessionToken) throw new Error('expected inline team keyboard');
     service.attachInlineMessage(telegramUserId, selected.sessionToken, telegramUserId, 900);
     return selected;
+  };
+
+  const startRegistrationPrompt = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
+    const list = await startTeams(telegramUserId);
+    const addLabel = list.text.includes('Você ainda não possui times') ? '➕ Cadastrar time' : '➕ Adicionar outro time';
+    const response = await press(telegramUserId, button(list, addLabel));
+    if (!response?.inlineKeyboard) throw new Error('expected team registration prompt');
+    return response;
   };
 
   const button = (response: TelegramSelectionResponse, text: string): string => {
@@ -111,6 +128,159 @@ describe('TelegramSelectionService', () => {
     expect(selected?.editMessage).toBe(true);
     expect(selected?.text).toContain('Escolha seus times');
     expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
+  });
+
+  it('offers first-team registration when the linked account has no teams', async () => {
+    teams.listarTimesDoUsuario.mockResolvedValue([]);
+    const response = await startTeams();
+    expect(response.text).toContain('Você ainda não possui times cadastrados no POINT FFC');
+    expect(response.inlineKeyboard?.flat().map(item => item.text)).toEqual(['➕ Cadastrar time', '🏠 Menu principal']);
+  });
+
+  it('offers adding another team without removing the current team-selection controls', async () => {
+    const response = await startTeams();
+    const labels = response.inlineKeyboard?.flat().map(item => item.text) ?? [];
+    expect(labels).toContain('➕ Adicionar outro time');
+    expect(labels).toContain('☑️ Selecionar todos');
+    expect(labels).toContain('🏠 Menu principal');
+  });
+
+  it('accepts only a single bounded numeric ID during the registration input step', async () => {
+    await startRegistrationPrompt();
+    const invalid = await service.handle('54321', '13933388,13933389');
+    expect(invalid?.text).toContain('somente um ID numérico');
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    await service.clear('54321');
+    await expect(service.handle('54321', '13933388')).resolves.toMatchObject({ text: expect.stringContaining('expirou ou foi reiniciada') });
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+  });
+
+  it.each(['0', '4294967296', '12345678901', '-10', '1 2'])('rejects unsupported Cartola ID input %s', async id => {
+    await startRegistrationPrompt();
+    const response = await service.handle('54321', id);
+    expect(response?.text).toMatch(/ID numérico|intervalo aceito/);
+    expect(cartola.getTeamById).not.toHaveBeenCalled();
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+  });
+
+  it('returns to the prompt when the Cartola team ID does not exist', async () => {
+    cartola.getTeamById.mockRejectedValueOnce(new NotFoundException());
+    const prompt = await startRegistrationPrompt();
+    const response = await service.handle('54321', '13933388');
+    expect(response?.text).toContain('Não encontramos esse time no Cartola');
+    expect(response?.inlineKeyboard?.flat().map(item => item.text)).toEqual(prompt.inlineKeyboard?.flat().map(item => item.text));
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+  });
+
+  it('handles Cartola outage without persisting an association', async () => {
+    cartola.getTeamById.mockRejectedValueOnce(new Error('Cartola unavailable'));
+    await startRegistrationPrompt();
+    const response = await service.handle('54321', '13933388');
+    expect(response?.text).toContain('Não foi possível consultar o Cartola');
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+  });
+
+  it('shows official Cartola data in a preview and does not persist before confirmation', async () => {
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    expect(preview?.text).toContain('Real Prime CFC');
+    expect(preview?.text).toContain('13933388');
+    expect(preview?.inlineKeyboard?.flat().map(item => item.text)).toContain('✅ Adicionar ao meu perfil');
+    expect(cartola.getTeamById).toHaveBeenCalledWith(13933388);
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+  });
+
+  it('persists only after explicit confirmation using the active linked user and no enrollment', async () => {
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+    const result = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+    expect(result?.text).toContain('✅ Time adicionado ao seu perfil!');
+    expect(links.resolveActiveUserId).toHaveBeenCalledWith('54321');
+    expect(teams.adicionarTime).toHaveBeenCalledWith(7, expect.objectContaining({
+      timeId: 13933388, nome: 'Real Prime CFC', nomeCartola: 'Cartoleiro',
+    }));
+    expect(cartola.getTeamById).toHaveBeenLastCalledWith(13933388, { forceRefresh: true });
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('does not persist when the Telegram link is revoked before confirmation', async () => {
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    links.resolveActiveUserId.mockResolvedValueOnce(null);
+    const response = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+    expect(response?.text).toContain('vínculo POINT FFC não está ativo');
+    expect(teams.adicionarTime).not.toHaveBeenCalled();
+  });
+
+  it('rejects registration callback after session expiry', async () => {
+    jest.useFakeTimers();
+    try {
+      await startRegistrationPrompt();
+      const preview = await service.handle('54321', '13933388');
+      jest.advanceTimersByTime(10 * 60 * 1000 + 1);
+      const response = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+      expect(response?.text).toContain('Sua seleção expirou');
+      expect(teams.adicionarTime).not.toHaveBeenCalled();
+    } finally { jest.useRealTimers(); }
+  });
+
+  it('rejects adulterated and repeated confirmation callbacks', async () => {
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    const confirm = button(preview!, '✅ Adicionar ao meu perfil');
+    await expect(press('54321', `${confirm}x`)).resolves.toBeNull();
+    const result = await press('54321', confirm);
+    expect(result?.text).toContain('Time adicionado');
+    await expect(press('54321', confirm)).resolves.toBeNull();
+    expect(teams.adicionarTime).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reveal or associate a team already assigned to a different profile', async () => {
+    teams.adicionarTime.mockResolvedValueOnce({ status: 'ja_existente', timeId: 13933388 });
+    teams.buscarTimeDoUsuario.mockResolvedValueOnce(null);
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    const response = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+    expect(response?.text).toContain('não pode ser associado ao seu perfil');
+    expect(response?.text).not.toContain('usuarioId');
+    expect(response?.text).not.toContain('Time adicionado');
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+  });
+
+  it('treats same-profile repeat as already registered and does not duplicate', async () => {
+    teams.adicionarTime.mockResolvedValueOnce({ status: 'ja_existente', timeId: 13933388 });
+    teams.buscarTimeDoUsuario.mockResolvedValueOnce(team(13933388));
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    const response = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+    expect(response?.text).toContain('já está cadastrado no seu perfil');
+    expect(teams.adicionarTime).toHaveBeenCalledTimes(1);
+  });
+
+  it('checks persisted state after an uncertain write and never retries the insertion', async () => {
+    teams.adicionarTime.mockRejectedValueOnce(new Error('connection lost after commit'));
+    teams.buscarTimeDoUsuario.mockResolvedValueOnce(team(13933388));
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    const response = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+    expect(response?.text).toContain('Time adicionado ao seu perfil');
+    expect(teams.adicionarTime).toHaveBeenCalledTimes(1);
+    expect(teams.buscarTimeDoUsuario).toHaveBeenCalledWith(7, 13933388);
+  });
+
+  it('returns to the still-open competition with the newly registered team loaded', async () => {
+    teams.adicionarTime.mockImplementation(async (_usuarioId: number, dados: { timeId: number; nome: string }) => {
+      teams.listarTimesDoUsuario.mockResolvedValue([team(1001), team(dados.timeId, dados.nome)]);
+      return { status: 'adicionado', timeId: dados.timeId };
+    });
+    await startRegistrationPrompt();
+    const preview = await service.handle('54321', '13933388');
+    const receipt = await press('54321', button(preview!, '✅ Adicionar ao meu perfil'));
+    const returned = await press('54321', button(receipt!, '⚽ Voltar à competição'));
+    expect(competitions.buscarGratuitaElegivel).toHaveBeenCalledWith(42);
+    expect(returned?.inlineKeyboard?.flat().some(item => item.text.includes('Real Prime CFC'))).toBe(true);
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
   });
 
   it('lists only the linked user registrations and pages them using inline controls', async () => {

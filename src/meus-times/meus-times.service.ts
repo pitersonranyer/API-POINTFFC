@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { Prisma, TimeUsuario } from '@prisma/client';
@@ -30,12 +30,21 @@ export class MeusTimesService {
   }
 
   async adicionarTime(usuarioId: number, dadosTime: AdicionarTimeDto): Promise<AdicionarTimeResultado> {
+    const dto = plainToInstance(AdicionarTimeDto, dadosTime);
+    const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true });
+    if (errors.length > 0) throw new BadRequestException('Dados do time invalidos');
     try {
-      await this.prisma.timeUsuario.create({ data: { usuarioId, ...dadosTime } });
-      return { status: 'adicionado', timeId: dadosTime.timeId };
+      await this.prisma.timeUsuario.create({ data: { usuarioId, ...dto } });
+      return { status: 'adicionado', timeId: dto.timeId };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        return { status: 'ja_existente', timeId: dadosTime.timeId };
+        // A primary-key or global TIME_ID unique-index conflict is safe to report
+        // as an existing association; the owner is never returned to the caller.
+        const association = await this.prisma.timeUsuario.findFirst({
+          where: { timeId: dto.timeId },
+          select: { usuarioId: true },
+        });
+        if (association) return { status: 'ja_existente', timeId: dto.timeId };
       }
       throw error;
     }

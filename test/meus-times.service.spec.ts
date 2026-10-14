@@ -9,22 +9,54 @@ const team = (usuarioId: number, timeId: number): TimeUsuario => ({
 });
 
 describe('MeusTimesService', () => {
-  const delegate = { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), deleteMany: jest.fn() };
+  const delegate = { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), create: jest.fn(), deleteMany: jest.fn() };
   const prisma = { timeUsuario: delegate } as unknown as PrismaService;
   const service = new MeusTimesService(prisma);
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('cria um vinculo e permite o mesmo time para usuarios diferentes', async () => {
-    delegate.create.mockResolvedValue({});
+  it('permite associar o time uma vez e bloqueia outro perfil sem revelar o usuario associado', async () => {
+    delegate.create.mockResolvedValueOnce({}).mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '5.22.0' }),
+    );
+    delegate.findFirst.mockResolvedValue({ usuarioId: 1 });
     await expect(service.adicionarTime(1, { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'adicionado', timeId: 10 });
-    await expect(service.adicionarTime(2, { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'adicionado', timeId: 10 });
+    const conflict = await service.adicionarTime(2, { timeId: 10, nome: 'Time' });
+    expect(conflict).toEqual({ status: 'ja_existente', timeId: 10 });
+    expect(conflict).not.toHaveProperty('usuarioId');
     expect(delegate.create.mock.calls.map(([arg]) => arg.data.usuarioId)).toEqual([1, 2]);
+    expect(delegate.findFirst).toHaveBeenCalledWith({ where: { timeId: 10 }, select: { usuarioId: true } });
   });
 
   it('trata a chave composta duplicada como regra de negocio', async () => {
     delegate.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '5.22.0' }));
+    delegate.findFirst.mockResolvedValue({ usuarioId: 1 });
     await expect(service.adicionarTime(1, { timeId: 10, nome: 'Time' })).resolves.toEqual({ status: 'ja_existente', timeId: 10 });
+  });
+
+  it('aplica as regras do DTO mesmo quando o serviço é reutilizado fora do controller', async () => {
+    await expect(service.adicionarTime(1, { timeId: 0, nome: '' })).rejects.toThrow();
+    expect(delegate.create).not.toHaveBeenCalled();
+  });
+
+  it('resolve duas inclusoes concorrentes com uma unica associacao efetiva', async () => {
+    let owner: number | null = null;
+    delegate.create.mockImplementation(({ data }) => {
+      if (owner === null) {
+        owner = data.usuarioId;
+        return Promise.resolve({});
+      }
+      return Promise.reject(new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '5.22.0' }));
+    });
+    delegate.findFirst.mockImplementation(() => Promise.resolve({ usuarioId: owner }));
+
+    const results = await Promise.all([
+      service.adicionarTime(1, { timeId: 10, nome: 'Time' }),
+      service.adicionarTime(2, { timeId: 10, nome: 'Time' }),
+    ]);
+
+    expect(results.map(result => result.status).sort()).toEqual(['adicionado', 'ja_existente']);
+    expect(owner).toBe(1);
   });
 
   it('lista somente pelo usuario e nao expoe usuarioId', async () => {
@@ -44,6 +76,7 @@ describe('MeusTimesService', () => {
     delegate.create.mockImplementation(({ data }) => data.timeId <= 7
       ? Promise.resolve({})
       : Promise.reject(new Prisma.PrismaClientKnownRequestError('duplicate', { code: 'P2002', clientVersion: '5.22.0' })));
+    delegate.findFirst.mockResolvedValue({ usuarioId: 1 });
     const times = Array.from({ length: 10 }, (_, index) => ({ timeId: index + 1, nome: `Time ${index + 1}` }));
     const result = await service.adicionarTimesEmLote(1, times);
     expect(result).toMatchObject({ solicitados: 10, adicionados: 7, jaExistentes: 3, falhas: [] });
