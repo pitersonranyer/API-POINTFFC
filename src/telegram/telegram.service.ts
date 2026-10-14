@@ -58,10 +58,6 @@ const MAIN_REPLY_KEYBOARD: TelegramReplyMarkup = {
 const LINK_WEBSITE_KEYBOARD: TelegramReplyMarkup = {
   inline_keyboard: [[{ text: LINK_WEBSITE_BUTTON, url: LINK_WEBSITE_URL }]],
 };
-const PUBLIC_WEBSITE_KEYBOARD: TelegramReplyMarkup = {
-  inline_keyboard: [[{ text: '🌐 Acessar POINT FFC', url: 'https://pointffc.com.br' }]],
-};
-
 interface TelegramMessage {
   chat: {
     id: number | string;
@@ -296,9 +292,8 @@ export class TelegramService {
         await this.createLinkRequest(message);
         return;
       }
-      await this.sendOrFail(message.chat.id,
-        '🔗 Sua conta POINT FFC está conectada ao Telegram.\n\nAcesse o site para gerenciar sua conta.',
-        undefined, PUBLIC_WEBSITE_KEYBOARD);
+      const response = await this.selectionService.startAccountTeamManagement(String(message.from!.id));
+      await this.sendSelectionResponse(message.chat.id, response, String(message.from!.id));
     } catch {
       this.logger.warn('Consulta de vínculo Telegram falhou.');
       await this.sendOrFail(message.chat.id, 'Não foi possível consultar sua conta agora. Tente novamente em instantes.');

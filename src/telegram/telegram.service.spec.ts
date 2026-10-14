@@ -17,6 +17,7 @@ describe('TelegramService', () => {
   let selectionService: {
     start: jest.Mock;
     startMyRegistrations: jest.Mock;
+    startAccountTeamManagement: jest.Mock;
     handle: jest.Mock;
     handleCallback: jest.Mock;
     attachInlineMessage: jest.Mock;
@@ -48,6 +49,7 @@ describe('TelegramService', () => {
     selectionService = {
       start: jest.fn().mockResolvedValue({ text: 'Selecione uma competição gratuita.', buttons: [], inlineKeyboard: [[{ text: 'Rodada 27', callback_data: 'pfc:test:nonce:select-competition:16' }]] }),
       startMyRegistrations: jest.fn().mockResolvedValue({ text: '📋 Minhas inscrições', buttons: [], inlineKeyboard: [[{ text: '🏠 Menu principal', callback_data: 'pfc:test:nonce:main-menu' }]] }),
+      startAccountTeamManagement: jest.fn().mockResolvedValue({ text: 'Sua conta POINT FFC está conectada. Times cadastrados: 2.', buttons: [], inlineKeyboard: [[{ text: '➕ Cadastrar um time', callback_data: 'pfc:test:nonce:account-register-one' }, { text: '📋 Cadastrar vários times', callback_data: 'pfc:test:nonce:account-register-bulk' }]] }),
       handle: jest.fn().mockResolvedValue(null),
       handleCallback: jest.fn().mockResolvedValue(null),
       attachInlineMessage: jest.fn().mockReturnValue(true),
@@ -133,7 +135,7 @@ describe('TelegramService', () => {
     expect(competitionsService.listarDivulgaveis).toHaveBeenCalledTimes(2);
   });
 
-  it('shows linked account status with a safe site button', async () => {
+  it('shows linked account status and contextual team management actions', async () => {
     telegramLinks.resolveActiveUserId.mockResolvedValue(42);
     const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
     await service.handleWebhook(webhookSecret, {
@@ -143,7 +145,8 @@ describe('TelegramService', () => {
     const body = JSON.parse(fetchSpy.mock.calls[0][1]?.body as string);
     expect(telegramLinks.resolveActiveUserId).toHaveBeenCalledWith('54321');
     expect(body.text).toContain('Sua conta POINT FFC está conectada');
-    expect(body.reply_markup.inline_keyboard[0][0]).toEqual({ text: '🌐 Acessar POINT FFC', url: 'https://pointffc.com.br' });
+    expect(body.reply_markup.inline_keyboard.flat().map((button: { text: string }) => button.text)).toEqual(['➕ Cadastrar um time', '📋 Cadastrar vários times']);
+    expect(selectionService.startAccountTeamManagement).toHaveBeenCalledWith('54321');
     expect(body.text).not.toContain('42');
   });
 
