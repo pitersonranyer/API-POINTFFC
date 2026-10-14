@@ -56,6 +56,12 @@ describe('LotesInscricaoService', () => {
     expect(f.state.movimentos).toEqual([]);
   });
 
+  it('nao recupera lote FREE quando a chave e consultada por outro usuario', async () => {
+    Object.assign(f.competicao, { tipoAcesso: 'FREE', valorInscricao: new Prisma.Decimal(0) });
+    await f.service.criarFree(1, 10, { timesCartolaIds: [123], valorUnitarioEsperado: '0.00' }, chave);
+    await expect(f.service.consultarResultadoFreeConfirmado(11, chave)).resolves.toBeNull();
+  });
+
   it('o caminho FREE-only rejeita competicao paga dentro da transacao sem tocar na carteira', async () => {
     const obterCarteira = jest.spyOn(f.carteiras, 'obterOuCriarEmTransacao');
     const debitar = jest.spyOn(f.carteiras, 'debitarEmTransacao');

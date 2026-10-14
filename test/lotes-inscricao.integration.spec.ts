@@ -54,6 +54,12 @@ integration('Inscricoes em lote - atomicidade e concorrencia MySQL', () => {
   });
   afterAll(() => prisma.$disconnect());
   const comprar = (key: string, id = competicoes[0]) => service.criar(id, usuarioId, dto, key);
+  const inscreverFree = (key: string, ids: number[], id = competicoes[0]) => service.criarFree(id, usuarioId, {
+    timesCartolaIds: ids, valorUnitarioEsperado: '0.00',
+  }, key);
+  const marcarFree = (id = competicoes[0], valorInscricao = '0') => prisma.competicaoLiga.update({
+    where: { id }, data: { tipoAcesso: 'FREE', valorInscricao },
+  });
   const saldo = async () => (await prisma.carteira.findUniqueOrThrow({ where: { usuarioId } })).saldoDisponivel.toFixed(2);
   const debitos = () => prisma.movimentacaoCarteira.count({ where: { carteira: { usuarioId }, origem: 'INSCRICAO', tipo: 'DEBITO' } });
   async function semCompra(esperado = '30.00') {
@@ -144,6 +150,96 @@ integration('Inscricoes em lote - atomicidade e concorrencia MySQL', () => {
       where: { competicaoLigaId_timeIdCartola: { competicaoLigaId: competicoes[0], timeIdCartola: 456 } },
     })).toMatchObject({ loteInscricaoId: null });
     expect(await debitos()).toBe(0); expect(await saldo()).toBe('30.00');
+  });
+
+  it('criarFree persiste atomicamente um time e nao movimenta a carteira', async () => {
+    await marcarFree();
+    const response = await inscreverFree(randomUUID(), [123]);
+    expect(response).toMatchObject({ quantidade: 1, tipoAcesso: 'FREE', valorUnitario: '0.00', valorTotal: '0.00',
+      movimentacaoDebitoId: null, saldoDisponivelAposOperacao: null });
+    const lot = await prisma.loteInscricao.findUniqueOrThrow({ where: { id: response.loteId } });
+    expect(lot.confirmadoEm).toBeInstanceOf(Date);
+    expect(await prisma.inscricaoTimeCompeticao.count({ where: { loteInscricaoId: response.loteId, statusInscricao: 'ATIVA' } })).toBe(1);
+    expect(await debitos()).toBe(0);
+    expect(await saldo()).toBe('30.00');
+  });
+
+  it('criarFree persiste varios times no mesmo lote e replay da mesma chave nao duplica', async () => {
+    await marcarFree();
+    const key = randomUUID();
+    const response = await inscreverFree(key, [123, 456]);
+    expect(response).toMatchObject({ quantidade: 2, tipoAcesso: 'FREE', valorTotal: '0.00', movimentacaoDebitoId: null });
+    expect(await prisma.inscricaoTimeCompeticao.count({ where: { loteInscricaoId: response.loteId } })).toBe(2);
+    expect(await inscreverFree(key, [456, 123])).toEqual(response);
+    expect(await prisma.loteInscricao.count({ where: { usuarioId } })).toBe(1);
+    expect(await prisma.inscricaoTimeCompeticao.count({ where: { usuarioId } })).toBe(2);
+    expect(await debitos()).toBe(0);
+    expect(await saldo()).toBe('30.00');
+  });
+
+  it('criarFree rejeita PAGO e FREE com valor diferente de zero sem persistir efeitos', async () => {
+    const paidKey = randomUUID();
+    await expect(inscreverFree(paidKey, [123])).rejects.toMatchObject({ response: { code: 'COMPETICAO_NAO_FREE' } });
+    await semCompra();
+    await marcarFree(competicoes[0], '0.01');
+    await expect(inscreverFree(randomUUID(), [123])).rejects.toMatchObject({ response: { code: 'COMPETICAO_NAO_FREE' } });
+    await semCompra();
+  });
+
+  it('criarFree rejeita time ja inscrito sem persistir subconjunto do novo lote', async () => {
+    await marcarFree();
+    await inscreverFree(randomUUID(), [123]);
+    await expect(inscreverFree(randomUUID(), [123, 456])).rejects.toMatchObject({ response: { code: 'TIME_JA_INSCRITO' } });
+    expect(await prisma.loteInscricao.count({ where: { usuarioId } })).toBe(1);
+    expect(await prisma.inscricaoTimeCompeticao.count({ where: { usuarioId } })).toBe(1);
+    expect(await debitos()).toBe(0);
+    expect(await saldo()).toBe('30.00');
+  });
+
+  it('criarFree faz rollback completo se a persistencia de um time do lote falhar', async () => {
+    await marcarFree();
+    const originalTransaction = prisma.$transaction.bind(prisma);
+    let creates = 0;
+    jest.spyOn(prisma, '$transaction').mockImplementation(((callback: any, options: any) =>
+      originalTransaction(async (tx: any) => {
+        const inscriptionDelegate = tx.inscricaoTimeCompeticao;
+        const interceptedDelegate = new Proxy(inscriptionDelegate, {
+          get(target, property) {
+            const value = Reflect.get(target, property, target);
+            if (property === 'create') return async (args: any) => {
+              const persisted = await value.call(target, args);
+              creates++;
+              if (creates === 2) throw new Error('Falha injetada na segunda inscricao');
+              return persisted;
+            };
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+        const interceptedTransaction = new Proxy(tx, {
+          get(target, property) {
+            if (property === 'inscricaoTimeCompeticao') return interceptedDelegate;
+            const value = Reflect.get(target, property, target);
+            return typeof value === 'function' ? value.bind(target) : value;
+          },
+        });
+        return callback(interceptedTransaction);
+      }, options)) as any);
+
+    await expect(inscreverFree(randomUUID(), [123, 456])).rejects.toThrow('Falha injetada');
+    await semCompra();
+  });
+
+  it('confirmações FREE concorrentes com a mesma chave retornam o mesmo lote sem duplicar', async () => {
+    await marcarFree();
+    const key = randomUUID();
+    const [first, repeated] = await Promise.all([
+      inscreverFree(key, [123, 456]), inscreverFree(key, [456, 123]),
+    ]);
+    expect(first).toEqual(repeated);
+    expect(await prisma.loteInscricao.count({ where: { usuarioId } })).toBe(1);
+    expect(await prisma.inscricaoTimeCompeticao.count({ where: { usuarioId } })).toBe(2);
+    expect(await debitos()).toBe(0);
+    expect(await saldo()).toBe('30.00');
   });
 
   it('ultima vaga concorrente aceita somente um time', async () => {

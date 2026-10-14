@@ -61,14 +61,16 @@ describe('TelegramSelectionService', () => {
         times: lastEnrollment.ids.map(timeIdCartola => ({ timeIdCartola, nomeTime: `Time ${timeIdCartola}` })),
       })),
     };
-    service = new TelegramSelectionService(
-      competitions as unknown as TelegramCompetitionsService,
-      links as unknown as TelegramLinkService,
-      teams as unknown as MeusTimesService,
-      inscriptions as unknown as InscricoesCompeticaoService,
-      enrollmentBatches as unknown as LotesInscricaoService,
-    );
+    service = createFreshService();
   });
+
+  const createFreshService = () => new TelegramSelectionService(
+    competitions as unknown as TelegramCompetitionsService,
+    links as unknown as TelegramLinkService,
+    teams as unknown as MeusTimesService,
+    inscriptions as unknown as InscricoesCompeticaoService,
+    enrollmentBatches as unknown as LotesInscricaoService,
+  );
 
   const startTeams = async (telegramUserId = '54321'): Promise<TelegramSelectionResponse> => {
     const competitionsPage = await service.start(telegramUserId);
@@ -256,6 +258,66 @@ describe('TelegramSelectionService', () => {
     expect(repeated?.text).toContain('🏆 Inscrição realizada com sucesso!');
     expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(2);
     expect(enrollmentBatches.consultarResultadoFreeConfirmado).toHaveBeenCalledWith(7, key);
+  });
+
+  it('recovers a confirmed receipt after session loss without creating another batch', async () => {
+    const initial = await startTeams();
+    const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    enrollmentBatches.consultarResultadoFreeConfirmado.mockRejectedValueOnce(new Error('response lost'));
+    const uncertain = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    expect(uncertain?.text).toContain('operação pode ter sido concluída');
+    const recoveryCallback = button(uncertain!, '✅ Confirmar inscrição');
+    const key = recoveryCallback.split(':').at(-1)!;
+
+    service.clear('54321');
+    const recovered = await press('54321', recoveryCallback);
+    expect(recovered?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(enrollmentBatches.consultarResultadoFreeConfirmado).toHaveBeenLastCalledWith(7, key);
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers after a process restart and scopes the persisted key to the active linked user', async () => {
+    const initial = await startTeams();
+    const selected = await press('54321', button(initial, '⬜ Time 1001 (#1001)'));
+    const summary = await press('54321', button(selected!, '✅ Continuar (1)'));
+    enrollmentBatches.consultarResultadoFreeConfirmado.mockRejectedValueOnce(new Error('process lost response'));
+    const uncertain = await press('54321', button(summary!, '✅ Confirmar inscrição'));
+    const recoveryCallback = button(uncertain!, '✅ Confirmar inscrição');
+    const key = recoveryCallback.split(':').at(-1)!;
+
+    service = createFreshService();
+    const recovered = await press('54321', recoveryCallback);
+    expect(recovered?.text).toContain('🏆 Inscrição realizada com sucesso!');
+    expect(enrollmentBatches.consultarResultadoFreeConfirmado).toHaveBeenLastCalledWith(7, key);
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(1);
+
+    service = createFreshService();
+    links.resolveActiveUserId.mockResolvedValueOnce(8);
+    enrollmentBatches.consultarResultadoFreeConfirmado.mockResolvedValueOnce(null);
+    const foreign = await press('99999', recoveryCallback);
+    expect(foreign?.text).toBe('');
+    expect(enrollmentBatches.consultarResultadoFreeConfirmado).toHaveBeenLastCalledWith(8, key);
+    expect(enrollmentBatches.criarFree).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects malformed recovery callbacks and requires an active Telegram link', async () => {
+    const invalid = await service.handleCallback({
+      telegramUserId: '54321', chatId: '54321', messageId: 900,
+      data: 'pfc:session12345678:nonce1234:confirm:invalid',
+    });
+    expect(invalid).toBeNull();
+    expect(enrollmentBatches.consultarResultadoFreeConfirmado).not.toHaveBeenCalled();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
+
+    links.resolveActiveUserId.mockResolvedValueOnce(null);
+    const revoked = await service.handleCallback({
+      telegramUserId: '54321', chatId: '54321', messageId: 900,
+      data: 'pfc:session12345678:nonce1234:confirm:aaaaaaaaaaaaaaaaaaaaaaaa',
+    });
+    expect(revoked).toBeNull();
+    expect(enrollmentBatches.consultarResultadoFreeConfirmado).not.toHaveBeenCalled();
+    expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();
   });
 
   it('does not enroll until explicit confirmation and blocks competition that became paid', async () => {
