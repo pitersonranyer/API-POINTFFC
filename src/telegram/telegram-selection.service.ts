@@ -155,51 +155,15 @@ export class TelegramSelectionService {
         this.sessions.delete(session.telegramUserId);
         return { text: 'Jornada cancelada.', buttons: [], sessionToken, inlineKeyboard: [], editMessage: true };
       }
+      if (action === 'continue') return this.continueSelection(session);
+      if (action === 'edit-selection') {
+        session.stage = 'teams';
+        this.refresh(session);
+        return { ...this.renderTeams(session), editMessage: true };
+      }
+      if (session.stage !== 'teams') return null;
 
-      let usuarioId: number | null;
-      try {
-        usuarioId = await this.resolveUser(session.telegramUserId);
-      } catch {
-        return { text: '', buttons: [], answerText: 'Não foi possível verificar seu vínculo. Tente novamente.' };
-      }
-      if (usuarioId === null) {
-        this.sessions.delete(session.telegramUserId);
-        return {
-          text: `Não foi possível confirmar seu vínculo ativo. Conecte sua conta POINT FFC:\n${LINK_URL}`,
-          buttons: [],
-          sessionToken: session.sessionToken,
-          inlineKeyboard: [],
-          editMessage: true,
-          answerText: 'Vínculo não disponível. Conecte sua conta POINT FFC.',
-        };
-      }
-
-      let eligibility: EligibilitySnapshot;
-      try {
-        eligibility = await this.loadEligibility(session, usuarioId);
-      } catch {
-        return { text: '', buttons: [], answerText: 'Não foi possível atualizar a elegibilidade. Tente novamente.' };
-      }
-      if (!eligibility.competition) {
-        this.sessions.delete(session.telegramUserId);
-        return {
-          text: 'A competição deixou de estar disponível para participação gratuita. Toque em “⚽ Participar grátis” para consultar novamente.',
-          buttons: [],
-          sessionToken: session.sessionToken,
-          inlineKeyboard: [],
-          editMessage: true,
-          answerText: 'Competição indisponível. Consulte novamente pelo menu.',
-        };
-      }
-
-      const priorEligibleIds = session.allTeams.map(team => team.id);
-      const priorCapacity = session.maxSelectableTeams;
-      const dropped = this.applyEligibility(session, eligibility);
-      const eligibilityChanged = priorCapacity !== session.maxSelectableTeams
-        || priorEligibleIds.toString() !== session.allTeams.map(team => team.id).toString();
-      let notice = dropped > 0
-        ? 'Alguns times foram removidos da seleção porque sua elegibilidade mudou.'
-        : eligibilityChanged ? 'A elegibilidade dos times foi atualizada.' : '';
+      let notice = '';
       if (action === 'previous' || action === 'next') {
         const lastPage = Math.max(0, Math.ceil(session.allTeams.length / PAGE_SIZE) - 1);
         const nextPage = action === 'previous' ? session.page - 1 : session.page + 1;
@@ -216,14 +180,6 @@ export class TelegramSelectionService {
         }
       } else if (action === 'clear') {
         session.selectedTeamIds = [];
-      } else if (action === 'continue') {
-        if (session.selectedTeamIds.length === 0) {
-          this.refresh(session);
-          return { ...this.renderTeams(session, 'Selecione pelo menos um time para continuar.'), editMessage: true };
-        }
-        session.stage = 'summary';
-      } else if (action === 'edit-selection') {
-        session.stage = 'teams';
       } else if (action.startsWith('toggle-team:')) {
         const teamId = Number(action.slice('toggle-team:'.length));
         if (!session.allTeams.some(team => team.id === teamId)) {
@@ -238,9 +194,71 @@ export class TelegramSelectionService {
       }
 
       this.refresh(session);
-      if (session.stage === 'summary') return { ...this.renderSummary(session, eligibility.competition, notice), editMessage: true };
       return { ...this.renderTeams(session, notice), editMessage: true };
     });
+  }
+
+  private async continueSelection(session: SelectionSession): Promise<TelegramSelectionResponse> {
+    if (session.selectedTeamIds.length === 0) {
+      this.refresh(session);
+      return { ...this.renderTeams(session, 'Selecione pelo menos um time para continuar.'), editMessage: true };
+    }
+
+    let usuarioId: number | null;
+    try {
+      usuarioId = await this.resolveUser(session.telegramUserId);
+    } catch {
+      return { text: '', buttons: [], answerText: 'Não foi possível verificar seu vínculo. Tente novamente.' };
+    }
+    if (usuarioId === null) {
+      this.sessions.delete(session.telegramUserId);
+      return {
+        text: `Não foi possível confirmar seu vínculo ativo. Conecte sua conta POINT FFC:\n${LINK_URL}`,
+        buttons: [],
+        sessionToken: session.sessionToken,
+        inlineKeyboard: [],
+        editMessage: true,
+        answerText: 'Vínculo não disponível. Conecte sua conta POINT FFC.',
+      };
+    }
+
+    let eligibility: EligibilitySnapshot;
+    try {
+      eligibility = await this.loadEligibility(session, usuarioId);
+    } catch {
+      return { text: '', buttons: [], answerText: 'Não foi possível atualizar a elegibilidade. Tente novamente.' };
+    }
+    if (!eligibility.competition) {
+      this.sessions.delete(session.telegramUserId);
+      return {
+        text: 'A competição deixou de estar disponível para participação gratuita. Toque em “⚽ Participar grátis” para consultar novamente.',
+        buttons: [],
+        sessionToken: session.sessionToken,
+        inlineKeyboard: [],
+        editMessage: true,
+        answerText: 'Competição indisponível. Consulte novamente pelo menu.',
+      };
+    }
+
+    const priorEligibleIds = session.allTeams.map(team => team.id);
+    const priorCapacity = session.maxSelectableTeams;
+    this.applyEligibility(session, eligibility);
+    const eligibilityChanged = priorCapacity !== session.maxSelectableTeams
+      || priorEligibleIds.toString() !== session.allTeams.map(team => team.id).toString();
+    if (eligibilityChanged) {
+      session.selectedTeamIds = [];
+      session.page = 0;
+      session.stage = 'teams';
+      this.refresh(session);
+      return {
+        ...this.renderTeams(session, 'A elegibilidade mudou desde o carregamento. A seleção foi limpa; revise os times atualizados e selecione novamente.'),
+        editMessage: true,
+      };
+    }
+
+    session.stage = 'summary';
+    this.refresh(session);
+    return { ...this.renderSummary(session, eligibility.competition), editMessage: true };
   }
 
   private async serializeUser<T>(telegramUserId: string, action: () => Promise<T>): Promise<T> {
@@ -304,22 +322,8 @@ export class TelegramSelectionService {
       return this.main(`Para participar, conecte sua conta POINT FFC primeiro:\n${LINK_URL}`);
     }
 
-    let competition: CompeticaoCardDto | null;
     try {
-      competition = await this.competitions.buscarGratuitaElegivel(option.value);
-    } catch {
-      return this.main('Não foi possível revalidar essa competição agora. Inicie novamente em alguns instantes.');
-    }
-    if (!competition) {
-      this.sessions.delete(session.telegramUserId);
-      return this.start(session.telegramUserId).then(result => ({
-        ...result,
-        text: `Essa competição não está mais disponível para participação.\n\n${result.text}`,
-      }));
-    }
-
-    try {
-      return await this.showTeams(session, competition.id, usuarioId);
+      return await this.showTeams(session, option.value, usuarioId);
     } catch {
       return this.main('Não foi possível consultar seus times agora. Tente iniciar a jornada novamente em instantes.');
     }
