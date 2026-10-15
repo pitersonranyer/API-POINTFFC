@@ -7,6 +7,22 @@ describe('LotesInscricaoService', () => {
   const dto = { timesCartolaIds: [456, 123], valorUnitarioEsperado: '10.00' };
   beforeEach(() => { f = lotesFixture(); });
   const criar = () => f.service.criar(1, 10, dto, chave);
+  it('recovers a paid receipt without recharging even after balance, price and availability change', async () => {
+    const response = await criar();
+    await f.carteiras.debitar({ usuarioId: 10, valor: '5.00', origem: 'AJUSTE' });
+    f.competicao.valorInscricao = new Prisma.Decimal('99');
+    f.competicao.status = 'ENCERRADA';
+    expect(await f.service.consultarResultadoPagoConfirmado(10, chave)).toMatchObject({ resposta: response });
+    expect(await f.service.consultarResultadoPagoConfirmado(11, chave)).toBeNull();
+    expect(f.state.carteira.saldoDisponivel.toFixed(2)).toBe('75.00');
+    expect(f.state.lotes).toHaveLength(1);
+  });
+
+  it('rejects a paid receipt whose debit does not match the confirmed batch', async () => {
+    await criar();
+    f.state.movimentos[0].valor = new Prisma.Decimal('1');
+    await expect(f.service.consultarResultadoPagoConfirmado(10, chave)).rejects.toMatchObject({ response: { code: 'INCONSISTENCIA_FINANCEIRA' } });
+  });
   const semEfeitos = () => {
     expect(f.state.lotes).toEqual([]); expect(f.state.inscricoes).toEqual([]); expect(f.state.movimentos).toEqual([]);
     expect(f.state.carteira.saldoDisponivel.toFixed(2)).toBe('100.00');

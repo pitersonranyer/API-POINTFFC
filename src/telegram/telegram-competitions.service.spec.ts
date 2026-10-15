@@ -87,4 +87,17 @@ describe('TelegramCompetitionsService', () => {
       where: { competicaoLigaId: 10, statusInscricao: 'ATIVA' },
     });
   });
+
+  it('offers eligible FREE and paid competitions with the same availability rules', async () => {
+    ligasService.listarCompeticoes.mockResolvedValue([
+      openCompetition(10), openCompetition(11, { tipoAcesso: 'PAGO', valorInscricao: 10 }),
+      openCompetition(12, { tipoAcesso: 'PAGO', valorInscricao: 0 }),
+      openCompetition(13, { tipoAcesso: 'PAGO', valorInscricao: 10, status: 'ENCERRADA' }),
+    ]);
+    prisma.inscricaoTimeCompeticao.groupBy.mockResolvedValue([]);
+    const now = new Date('2026-09-15T12:00:00Z');
+    expect((await service.listarDivulgaveis(now)).map(item => item.id)).toEqual([10, 11]);
+    await expect(service.buscarElegivel(11, now)).resolves.toMatchObject({ tipoAcesso: 'PAGO', valorInscricao: 10 });
+    await expect(service.buscarElegivel(13, now)).resolves.toBeNull();
+  });
 });

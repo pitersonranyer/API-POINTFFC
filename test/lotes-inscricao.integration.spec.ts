@@ -83,6 +83,7 @@ integration('Inscricoes em lote - atomicidade e concorrencia MySQL', () => {
     const key = randomUUID(); const [a, b] = await Promise.all([comprar(key), comprar(key)]);
     expect(a).toEqual(b); expect(await debitos()).toBe(1); expect(await saldo()).toBe('10.00');
     expect(await prisma.loteInscricao.count({ where: { usuarioId } })).toBe(1);
+    expect(await service.consultarResultadoPagoConfirmado(usuarioId, key)).toMatchObject({ resposta: a });
   });
 
   it('mesma chave concorrente em competicoes diferentes gera um sucesso e um conflito de conteudo', async () => {
@@ -177,12 +178,11 @@ integration('Inscricoes em lote - atomicidade e concorrencia MySQL', () => {
     expect(await saldo()).toBe('30.00');
   });
 
-  it('criarFree rejeita PAGO e FREE com valor diferente de zero sem persistir efeitos', async () => {
+  it('criarFree rejeita PAGO e o banco impede FREE com valor positivo sem efeitos', async () => {
     const paidKey = randomUUID();
     await expect(inscreverFree(paidKey, [123])).rejects.toMatchObject({ response: { code: 'COMPETICAO_NAO_FREE' } });
     await semCompra();
-    await marcarFree(competicoes[0], '0.01');
-    await expect(inscreverFree(randomUUID(), [123])).rejects.toMatchObject({ response: { code: 'COMPETICAO_NAO_FREE' } });
+    await expect(marcarFree(competicoes[0], '0.01')).rejects.toThrow(/COMP_LIGA_FREE_check/);
     await semCompra();
   });
 

@@ -47,6 +47,9 @@ export function lotesFixture() {
           && item.chaveIdempotenciaHash === where.usuarioId_chaveIdempotenciaHash.chaveIdempotenciaHash);
         if (!row || !include) return row ?? null;
         return { ...row,
+          movimentacaoDebito: include.movimentacaoDebito
+            ? state.movimentos.filter(item => item.id === row.movimentacaoDebitoId)
+              .map(item => ({ ...item, carteira: { ...state.carteira } }))[0] ?? null : undefined,
           inscricoes: state.inscricoes.filter(item => item.loteInscricaoId === row.id)
             .sort((a, b) => a.timeIdCartola - b.timeIdCartola),
           competicaoLiga: { nome: 'POINT FFC - Rodada 42' },

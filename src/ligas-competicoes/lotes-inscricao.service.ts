@@ -63,6 +63,42 @@ export class LotesInscricaoService {
     return { resposta, competenciaNome: lote.competicaoLiga.nome, times: lote.inscricoes };
   }
 
+  async consultarResultadoPagoConfirmado(usuarioId: number, chave: string) {
+    // Telegram sends an explicit quoted price. Recover the committed receipt,
+    // including its historical balance, without charging or checking today's price.
+    if (!Number.isSafeInteger(usuarioId) || usuarioId < 1 || !/^[a-zA-Z0-9_-]{16,128}$/.test(chave)) return null;
+    const lote = await this.prisma.loteInscricao.findUnique({
+      where: { usuarioId_chaveIdempotenciaHash: { usuarioId, chaveIdempotenciaHash: hash(chave) } },
+      include: {
+        inscricoes: { orderBy: { timeIdCartola: 'asc' } },
+        competicaoLiga: { select: { nome: true } },
+        movimentacaoDebito: { include: { carteira: { select: { usuarioId: true } } } },
+      },
+    });
+    if (!lote || lote.tipoAcesso !== 'PAGO' || !lote.confirmadoEm || !lote.respostaOriginal) return null;
+    const ids = lote.inscricoes.map(item => item.timeIdCartola);
+    const resposta = this.replay(lote, hash(JSON.stringify({ versao: 1, competicaoId: lote.competicaoLigaId,
+      timesCartolaIds: ids, valorUnitarioEsperado: lote.valorUnitario.toFixed(2) })));
+    const debito = lote.movimentacaoDebito;
+    if (lote.usuarioId !== usuarioId || lote.moeda !== 'BRL' || !lote.valorUnitario.gt(0)
+      || !lote.valorTotal.equals(lote.valorUnitario.mul(ids.length)) || lote.quantidade !== ids.length
+      || !debito || debito.id !== lote.movimentacaoDebitoId || debito.carteira.usuarioId !== usuarioId
+      || debito.tipo !== 'DEBITO' || debito.origem !== 'INSCRICAO' || debito.status !== 'CONFIRMADA'
+      || debito.referenciaId !== `lote:${lote.id}` || !debito.valor.equals(lote.valorTotal)
+      || debito.saldoPosterior.isNegative() || !debito.saldoAnterior.minus(debito.valor).equals(debito.saldoPosterior)
+      || resposta.loteId !== lote.id || resposta.competicaoId !== lote.competicaoLigaId || resposta.tipoAcesso !== 'PAGO'
+      || resposta.quantidade !== ids.length || resposta.moeda !== 'BRL' || resposta.movimentacaoDebitoId !== debito.id
+      || resposta.valorUnitario !== lote.valorUnitario.toFixed(2) || resposta.valorTotal !== lote.valorTotal.toFixed(2)
+      || resposta.saldoDisponivelAposOperacao !== debito.saldoPosterior.toFixed(2)
+      || resposta.inscricoes.length !== ids.length || resposta.inscricoes.some((item, index) => {
+        const inscricao = lote.inscricoes[index];
+        return item.id !== inscricao.id || item.timeIdCartola !== inscricao.timeIdCartola || item.statusInscricao !== 'ATIVA'
+          || inscricao.usuarioId !== usuarioId || inscricao.loteInscricaoId !== lote.id
+          || inscricao.competicaoLigaId !== lote.competicaoLigaId || !inscricao.valorInscricao.equals(lote.valorUnitario);
+      })) throw inconsistencia();
+    return { resposta, competenciaNome: lote.competicaoLiga.nome, times: lote.inscricoes };
+  }
+
   async criar(competicaoId: number, usuarioId: number, dto: CriarLoteInscricaoDto,
     chave: string | undefined, somenteFree = false): Promise<LoteInscricaoResponseDto> {
     // Cada tentativa e uma transacao integral. Somente conflitos do banco sao repetidos.

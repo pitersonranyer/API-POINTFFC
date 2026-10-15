@@ -25,6 +25,8 @@ describe('TelegramSelectionService', () => {
   const registration = (timeIdCartola: number, statusInscricao = 'ATIVA') => ({ timeIdCartola, statusInscricao });
 
   let competitions: {
+    listarDivulgaveis: jest.Mock;
+    buscarElegivel: jest.Mock;
     listarGratuitasElegiveis: jest.Mock;
     buscarGratuitaElegivel: jest.Mock;
     contarParticipantesAtivos: jest.Mock;
@@ -42,6 +44,8 @@ describe('TelegramSelectionService', () => {
 
   beforeEach(() => {
     competitions = {
+      listarDivulgaveis: jest.fn().mockImplementation(() => competitions.listarGratuitasElegiveis()),
+      buscarElegivel: jest.fn().mockImplementation((id: number) => competitions.buscarGratuitaElegivel(id)),
       listarGratuitasElegiveis: jest.fn().mockResolvedValue([competition()]),
       buscarGratuitaElegivel: jest.fn().mockResolvedValue(competition()),
       contarParticipantesAtivos: jest.fn().mockResolvedValue(0),
@@ -512,7 +516,7 @@ describe('TelegramSelectionService', () => {
     competitions.listarGratuitasElegiveis.mockResolvedValueOnce([]);
     const returned = await press('54321', button(result!, '⚽ Participar'));
     expect(returned?.text).toContain('A competição deixou de estar disponível');
-    expect(returned?.text).toContain('Não há competições gratuitas abertas');
+    expect(returned?.text).toContain('Não há competições abertas');
     expect(returned?.text).not.toContain('Time adicionado ao seu perfil');
     expect(returned?.inlineKeyboard?.flat().map(item => item.text)).toContain('📋 Cadastrar mais times');
     expect(enrollmentBatches.criarFree).not.toHaveBeenCalled();

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { randomBytes } from 'crypto';
 import { CompeticaoCardDto } from '../ligas-competicoes/dto/ligas-competicoes-response.dto';
 import { MinhaInscricaoDto } from '../ligas-competicoes/dto/inscricoes-competicao.dto';
@@ -109,6 +110,9 @@ interface SelectionSession {
   enrollmentTeamIds?: number[];
   enrollmentMode?: 'manual' | 'direct';
   walletRequestId?: string;
+  paidQuote?: { unitario: string; total: string; saldo: string; times: number[] };
+  paidAttempted?: boolean;
+  returnToPaid?: boolean;
 }
 
 export interface TelegramSelectionResponse {
@@ -151,12 +155,12 @@ export class TelegramSelectionService {
     this.sessions.delete(telegramUserId);
     let competitions: CompeticaoCardDto[];
     try {
-      competitions = await this.competitions.listarGratuitasElegiveis();
+      competitions = await this.competitions.listarDivulgaveis();
     } catch {
-      return this.main('Não foi possível consultar as competições gratuitas agora. Tente novamente em instantes.');
+      return this.main('Não foi possível consultar as competições agora. Tente novamente em instantes.');
     }
     if (competitions.length === 0) {
-      return this.main('No momento, não há competições gratuitas abertas para participação.');
+      return this.main('No momento, não há competições abertas para participação.');
     }
 
     const session: SelectionSession = {
@@ -235,11 +239,16 @@ export class TelegramSelectionService {
   }
 
   async handle(telegramUserId: string, text: string): Promise<TelegramSelectionResponse | null> {
-    return this.serializeUser(telegramUserId, () => this.handleSequentially(telegramUserId, text));
+    return this.serializeUser(telegramUserId, async () => this.withPaidReturn(telegramUserId, await this.handleSequentially(telegramUserId, text)));
   }
 
   async handleCallback(callback: TelegramSelectionCallback): Promise<TelegramSelectionResponse | null> {
-    return this.serializeUser(callback.telegramUserId, async () => {
+    return this.serializeUser(callback.telegramUserId, async () => this.withPaidReturn(
+      callback.telegramUserId, await this.handleCallbackSequentially(callback),
+    ));
+  }
+
+  private async handleCallbackSequentially(callback: TelegramSelectionCallback): Promise<TelegramSelectionResponse | null> {
       const session = this.sessions.get(callback.telegramUserId);
       if (!session) return this.recoverConfirmedEnrollment(callback);
       if (session.stage === 'receipt' && session.completedConfirmationCallback === callback.data
@@ -249,7 +258,7 @@ export class TelegramSelectionService {
       if (!this.isCurrentCallback(session, callback)) return null;
       if (session.expiresAt <= Date.now()) {
         const action = this.callbackAction(session, callback.data);
-        if (action?.startsWith('confirm:')) {
+        if (action?.startsWith('confirm:') || action?.startsWith('pay:')) {
           const recovered = await this.recoverConfirmedEnrollment(callback);
           if (recovered?.text.startsWith('🏆 Inscrição realizada')) {
             return recovered;
@@ -267,6 +276,16 @@ export class TelegramSelectionService {
       }
       const action = this.callbackAction(session, callback.data);
       if (!action) return null;
+      if (action === 'paid-return' && session.returnToPaid) {
+        const response = await this.continueSelection(session);
+        if (!session.stage.startsWith('wallet')) session.returnToPaid = false;
+        return response;
+      }
+      if (action === 'paid-recharge' && session.stage === 'summary' && session.paidQuote && !session.paidAttempted) {
+        session.returnToPaid = true;
+        session.confirmationKey = undefined;
+        return this.openWallet(session);
+      }
       if (action === 'main-menu') return this.endJourney(session, 'Menu principal');
       if (session.stage === 'competitions') {
         if (action === 'cancel') return this.endJourney(session, 'Jornada cancelada.');
@@ -424,7 +443,14 @@ export class TelegramSelectionService {
       if (action === 'cancel') {
         return this.endJourney(session, 'Jornada cancelada.');
       }
-      if (action === 'direct-enrollment' && session.stage === 'teams') return this.beginDirectEnrollment(session);
+      if (action === 'add-team' && session.stage === 'teams') return this.beginTeamRegistration(session);
+      if (action === 'add-bulk-teams' && session.stage === 'teams') return this.beginBulkTeamRegistration(session);
+      if (action === 'direct-enrollment' && session.stage === 'teams'
+        && session.competitions.find(item => item.id === session.competitionId)?.tipoAcesso === 'FREE') return this.beginDirectEnrollment(session);
+      if (action.startsWith('pay:')) {
+        if (session.stage !== 'summary' || session.confirmationKey !== action.slice('pay:'.length)) return null;
+        return this.confirmPaidEnrollment(session, session.confirmationKey);
+      }
       if (action.startsWith('confirm:')) {
         if (session.stage !== 'summary' || session.confirmationKey !== action.slice('confirm:'.length)) return null;
         return this.confirmEnrollment(session, session.confirmationKey);
@@ -485,7 +511,6 @@ export class TelegramSelectionService {
 
       this.refresh(session);
       return { ...this.renderTeams(session, notice), editMessage: true };
-    });
   }
 
   private async continueSelection(session: SelectionSession): Promise<TelegramSelectionResponse> {
@@ -518,10 +543,10 @@ export class TelegramSelectionService {
     } catch {
       return { text: '', buttons: [], answerText: 'Não foi possível atualizar a elegibilidade. Tente novamente.' };
     }
-    if (!eligibility.competition || eligibility.competition.tipoAcesso !== 'FREE') {
+    if (!this.matchesAccess(session, eligibility.competition)) {
       this.sessions.delete(session.telegramUserId);
       return {
-        text: 'A competição deixou de estar disponível para participação gratuita. Toque em “🏆 Competições” para consultar novamente.',
+        text: 'A competição deixou de estar disponível nas condições selecionadas. Toque em “🏆 Competições” para consultar novamente.',
         buttons: [],
         sessionToken: session.sessionToken,
         inlineKeyboard: [],
@@ -550,7 +575,8 @@ export class TelegramSelectionService {
     session.enrollmentMode = 'manual';
     session.enrollmentTeamIds = [...session.selectedTeamIds];
     this.refresh(session);
-    return { ...this.renderSummary(session, eligibility.competition), editMessage: true };
+    if (eligibility.competition!.tipoAcesso === 'PAGO') return this.preparePaidSummary(session, eligibility.competition!);
+    return { ...this.renderSummary(session, eligibility.competition!), editMessage: true };
   }
 
   private async selectCompetition(session: SelectionSession, competitionId: number): Promise<TelegramSelectionResponse> {
@@ -569,16 +595,20 @@ export class TelegramSelectionService {
     competitionId: number,
     usuarioId: number,
   ): Promise<TelegramSelectionResponse> {
-    const competition = await this.competitions.buscarGratuitaElegivel(competitionId);
-    if (!competition || competition.tipoAcesso !== 'FREE') {
+    const competition = await this.competitions.buscarElegivel(competitionId);
+    if (!this.matchesAccess(session, competition, competitionId)) {
       session.stage = 'competitions';
       session.competitionId = undefined;
       this.refresh(session);
-      return this.renderCompetitionPage(session, 'Esta competição não está mais aberta para participação gratuita. Escolha outra.');
+      return this.renderCompetitionPage(session, 'Esta competição não está mais aberta nas condições selecionadas. Escolha outra.');
     }
+    if (!competition) throw new NotFoundException();
     const index = session.competitions.findIndex(item => item.id === competition.id);
     if (index >= 0) session.competitions[index] = competition;
     session.competitionId = competition.id;
+    session.paidQuote = undefined;
+    session.paidAttempted = false;
+    session.returnToPaid = false;
     session.linkedUsuarioId = usuarioId;
     session.stage = 'participation-offer';
     this.refresh(session);
@@ -932,6 +962,130 @@ export class TelegramSelectionService {
       .map(({ currentOrFuture: _currentOrFuture, ...row }) => row);
   }
 
+  private money(value: string | number): string {
+    return new Prisma.Decimal(value).toFixed(2).replace('.', ',');
+  }
+
+  private matchesAccess(session: SelectionSession, competition: CompeticaoCardDto | null,
+    expectedId = session.competitionId ?? competition?.id): boolean {
+    const expected = session.competitions.find(item => item.id === expectedId);
+    return !!competition && !!expected && competition.id === expected.id && competition.tipoAcesso === expected.tipoAcesso;
+  }
+
+  private withPaidReturn(telegramUserId: string, response: TelegramSelectionResponse | null): TelegramSelectionResponse | null {
+    const session = this.sessions.get(telegramUserId);
+    if (session?.returnToPaid && session.stage.startsWith('wallet') && response?.inlineKeyboard) {
+      response.inlineKeyboard.push([{ text: '↩️ Voltar à competição', callback_data: this.callbackData(session, 'paid-return') }]);
+    }
+    return response;
+  }
+
+  private async preparePaidSummary(session: SelectionSession, competition: CompeticaoCardDto, notice = ''): Promise<TelegramSelectionResponse> {
+    try {
+      const snapshot = await this.wallet.consultar(session.telegramUserId);
+      if (snapshot.usuarioId !== session.linkedUsuarioId) return this.endJourney(session, 'Seu vínculo mudou. Inicie novamente.');
+      if (snapshot.status !== 'ATIVA') return { ...this.renderTeams(session, 'Carteira bloqueada. Nenhum débito realizado.'), editMessage: true };
+      const unitario = new Prisma.Decimal(competition.valorInscricao);
+      const total = unitario.mul(session.selectedTeamIds.length);
+      session.paidQuote = { unitario: unitario.toFixed(2), total: total.toFixed(2), saldo: snapshot.saldoDisponivel,
+        times: [...session.selectedTeamIds].sort((a, b) => a - b) };
+      session.paidAttempted = false;
+      session.stage = 'summary';
+      this.refresh(session);
+      return this.renderPaidSummary(session, competition, notice);
+    } catch {
+      session.confirmationKey = undefined;
+      return { ...this.renderTeams(session, 'Não foi possível consultar o saldo. Nenhum débito realizado; tente novamente.'), editMessage: true };
+    }
+  }
+
+  private renderPaidSummary(session: SelectionSession, competition: CompeticaoCardDto, notice = '', preserveKey = false): TelegramSelectionResponse {
+    const quote = session.paidQuote!;
+    const missing = new Prisma.Decimal(quote.total).minus(quote.saldo);
+    const insufficient = missing.gt(0);
+    const prefix = [notice, insufficient
+      ? `Saldo insuficiente. Disponível: R$ ${this.money(quote.saldo)}. Necessário: R$ ${this.money(quote.total)}. Faltam: R$ ${this.money(missing.toFixed(2))}.` : ''].filter(Boolean).join('\n\n');
+    const response = this.renderSummary(session, competition, prefix, preserveKey, !insufficient || session.paidAttempted === true);
+    response.text = response.text.replace('Valor total: R$ 0,00',
+      `Valor unitário: R$ ${this.money(quote.unitario)}\nValor total: R$ ${this.money(quote.total)}\n${session.paidAttempted ? 'Saldo consultado antes da tentativa' : 'Saldo disponível'}: R$ ${this.money(quote.saldo)}`);
+    if (session.paidAttempted) {
+      response.text = response.text.replace('Os times foram selecionados, mas nenhuma inscrição foi realizada.',
+        'Resultado em verificação. Repetir esta confirmação recupera a mesma operação.');
+    } else response.text += '\nO débito só ocorre ao confirmar a inscrição.';
+    for (const row of response.inlineKeyboard ?? []) for (const item of row) {
+      item.callback_data = item.callback_data.replace(':confirm:', ':pay:');
+    }
+    if (!session.paidAttempted) response.inlineKeyboard!.splice(insufficient ? 0 : 1, 0,
+      [{ text: '💰 Recarregar carteira', callback_data: this.callbackData(session, 'paid-recharge') }]);
+    return { ...response, editMessage: true };
+  }
+
+  private async confirmPaidEnrollment(session: SelectionSession, key: string): Promise<TelegramSelectionResponse> {
+    const competition = session.competitions.find(item => item.id === session.competitionId);
+    if (!competition || competition.tipoAcesso !== 'PAGO' || !session.paidQuote || !session.competitionId) {
+      return this.endJourney(session, 'A confirmação não está mais disponível. Inicie novamente.');
+    }
+    let usuarioId: number | null;
+    try { usuarioId = await this.resolveUser(session.telegramUserId); } catch {
+      return this.renderPaidSummary(session, competition, 'Não foi possível verificar seu vínculo. Tente a mesma confirmação novamente.', true);
+    }
+    if (usuarioId === null || usuarioId !== session.linkedUsuarioId) return this.endJourney(session, 'Seu vínculo não está ativo. Inicie novamente.');
+    try {
+      const persisted = await this.enrollmentBatches.consultarResultadoPagoConfirmado(usuarioId, key);
+      if (persisted) return this.renderEnrollmentSuccess(persisted, this.keepReceiptSession(session, key));
+      if (!session.paidAttempted) {
+        const latest = await this.loadEligibility(session, usuarioId);
+        if (!latest.competition || latest.competition.tipoAcesso !== 'PAGO') return this.endJourney(session, 'A competição não está disponível para inscrição paga. Nenhum débito realizado.');
+        const selected = [...session.paidQuote.times];
+        this.applyEligibility(session, latest);
+        if (selected.toString() !== session.selectedTeamIds.toString() || selected.length > session.maxSelectableTeams) {
+          session.selectedTeamIds = [];
+          return { ...this.renderTeams(session, 'A elegibilidade ou capacidade mudou. Revise os times e confirme uma nova seleção. Nenhum débito realizado.'), editMessage: true };
+        }
+        if (!new Prisma.Decimal(latest.competition.valorInscricao).equals(session.paidQuote.unitario)) {
+          return this.preparePaidSummary(session, latest.competition, 'O preço mudou. Revise os novos valores e confirme novamente.');
+        }
+        const snapshot = await this.wallet.consultar(session.telegramUserId);
+        if (snapshot.usuarioId !== usuarioId) return this.endJourney(session, 'Seu vínculo mudou. Inicie novamente.');
+        if (snapshot.status !== 'ATIVA') return { ...this.renderTeams(session, 'Carteira bloqueada. Nenhum débito realizado.'), editMessage: true };
+        session.paidQuote.saldo = snapshot.saldoDisponivel;
+        if (new Prisma.Decimal(snapshot.saldoDisponivel).lt(session.paidQuote.total)) return this.renderPaidSummary(session, latest.competition);
+      }
+      // Freeze the same IDs, expected price and key across uncertain results.
+      session.paidAttempted = true;
+      await this.enrollmentBatches.criar(session.competitionId, usuarioId, {
+        timesCartolaIds: [...session.paidQuote.times], valorUnitarioEsperado: session.paidQuote.unitario,
+      }, key);
+      const confirmed = await this.enrollmentBatches.consultarResultadoPagoConfirmado(usuarioId, key);
+      if (!confirmed) return this.renderPaidSummary(session, competition, 'O resultado ainda não pôde ser consultado. Repita a mesma confirmação para recuperar a operação sem duplicidade.', true);
+      return this.renderEnrollmentSuccess(confirmed, this.keepReceiptSession(session, key));
+    } catch (error) {
+      const code = this.enrollmentErrorCode(error);
+      if (code === 'SALDO_INSUFICIENTE' || code === 'PRECO_INSCRICAO_ALTERADO') {
+        session.paidAttempted = false;
+        const latest = await this.competitions.buscarElegivel(session.competitionId).catch(() => null);
+        if (!latest || latest.tipoAcesso !== 'PAGO') return this.endJourney(session, 'A competição não está mais disponível.');
+        return this.preparePaidSummary(session, latest, code === 'SALDO_INSUFICIENTE'
+          ? 'Saldo insuficiente. Nenhuma inscrição ou débito foi confirmado.' : 'O preço mudou. Revise e confirme novamente.');
+      }
+      const message = this.businessEnrollmentFailure(error);
+      if (message || code === 'CARTEIRA_BLOQUEADA') {
+        session.paidAttempted = false;
+        session.confirmationKey = undefined;
+        session.selectedTeamIds = [];
+        return this.endJourney(session, `${message ?? 'Carteira bloqueada.'} Nenhum débito deste lote foi confirmado. Consulte as competições novamente.`);
+      }
+      return this.renderPaidSummary(session, competition,
+        'Não foi possível confirmar o resultado. A operação pode ter sido concluída; repita a mesma confirmação para recuperar a operação sem duplicidade.', true);
+    }
+  }
+
+  private enrollmentErrorCode(error: unknown): string | null {
+    if (!(error instanceof Error) || !('getResponse' in error) || typeof error.getResponse !== 'function') return null;
+    const response: unknown = error.getResponse();
+    return this.isRecord(response) && typeof response.code === 'string' ? response.code : null;
+  }
+
   private async confirmEnrollment(session: SelectionSession, idempotencyKey: string): Promise<TelegramSelectionResponse> {
     const competition = session.competitions.find(item => item.id === session.competitionId);
     if (!competition || competition.tipoAcesso !== 'FREE' || !session.competitionId) {
@@ -1023,7 +1177,9 @@ export class TelegramSelectionService {
     try {
       const usuarioId = await this.resolveUser(callback.telegramUserId);
       if (usuarioId === null) return null;
-      const confirmed = await this.enrollmentBatches.consultarResultadoFreeConfirmado(usuarioId, idempotencyKey);
+      const confirmed = callback.data.includes(':pay:')
+        ? await this.enrollmentBatches.consultarResultadoPagoConfirmado(usuarioId, idempotencyKey)
+        : await this.enrollmentBatches.consultarResultadoFreeConfirmado(usuarioId, idempotencyKey);
       if (!confirmed) return {
         text: '', buttons: [], answerText: 'Ainda não foi possível localizar uma inscrição confirmada para esta ação. Tente novamente em instantes ou inicie uma nova seleção pelo menu.',
       };
@@ -1092,7 +1248,7 @@ export class TelegramSelectionService {
 
   private idempotencyKeyFromCallback(data: string): string | null {
     if (Buffer.byteLength(data, 'utf8') > 64) return null;
-    const match = /^pfc:[A-Za-z0-9_-]{16}:[A-Za-z0-9_-]{8}:confirm:([A-Za-z0-9_-]{24})$/.exec(data);
+    const match = /^pfc:[A-Za-z0-9_-]{16}:[A-Za-z0-9_-]{8}:(?:confirm|pay):([A-Za-z0-9_-]{24})$/.exec(data);
     return match?.[1] ?? null;
   }
 
@@ -1103,7 +1259,9 @@ export class TelegramSelectionService {
     const previous = session.enrollmentMode === 'direct' && (session.directAlreadyEnrolledIds?.length ?? 0) > 0
       ? `\nJá inscritos anteriormente nesta competição: ${session.directAlreadyEnrolledIds!.length}\n` : '';
     const header = `🏆 Inscrição realizada com sucesso!\n\nCompetição: ${this.truncate(confirmed.competenciaNome, 180)}${previous}\n\n`;
-    const footer = `\n\nTotal: ${confirmed.resposta.quantidade} ${confirmed.resposta.quantidade === 1 ? 'time' : 'times'}\nValor: R$ 0,00`;
+    const footer = `\n\nTotal: ${confirmed.resposta.quantidade} ${confirmed.resposta.quantidade === 1 ? 'time' : 'times'}\n${confirmed.resposta.tipoAcesso === 'PAGO'
+      ? `Valor debitado: R$ ${this.money(confirmed.resposta.valorTotal)}\nSaldo após a operação: R$ ${this.money(confirmed.resposta.saldoDisponivelAposOperacao!)}`
+      : 'Valor: R$ 0,00'}`;
     const selectedLines = confirmed.times.map(time => `• ${this.truncate(time.nomeTime, 200)} (#${time.timeIdCartola})`);
     const priorNames = new Map((session.directCandidates ?? []).map(item => [item.timeId, item.team?.nome]));
     const previousLines = (session.enrollmentMode === 'direct' ? session.directAlreadyEnrolledIds ?? [] : [])
@@ -2045,8 +2203,8 @@ export class TelegramSelectionService {
     }
     if (session.competitionId) {
       try {
-        const current = await this.competitions.buscarGratuitaElegivel(session.competitionId);
-        if (current?.tipoAcesso === 'FREE') {
+        const current = await this.competitions.buscarElegivel(session.competitionId);
+        if (this.matchesAccess(session, current) && current) {
           const index = session.competitions.findIndex(item => item.id === current.id);
           if (index >= 0) session.competitions[index] = current;
           else session.competitions.push(current);
@@ -2058,7 +2216,7 @@ export class TelegramSelectionService {
       }
     }
     try {
-      session.competitions = await this.competitions.listarGratuitasElegiveis();
+      session.competitions = await this.competitions.listarDivulgaveis();
       session.competitionId = undefined;
       session.stage = 'competitions';
       session.page = 0;
@@ -2069,7 +2227,7 @@ export class TelegramSelectionService {
       if (session.competitions.length === 0) {
         session.stage = session.bulkResult ? 'team-registration-bulk-result' : 'team-registration-result';
         this.refresh(session);
-        const notice = 'A competição deixou de estar disponível. Não há competições gratuitas abertas no momento.';
+        const notice = 'A competição deixou de estar disponível. Não há competições abertas no momento.';
         return {
           ...(session.bulkResult
             ? this.renderBulkTeamRegistrationResult(session, notice)
@@ -2078,7 +2236,7 @@ export class TelegramSelectionService {
         };
       }
       this.refresh(session);
-      return { ...this.renderCompetitionPage(session, 'A competição anterior não está mais aberta. Escolha outra competição gratuita.'), editMessage: true };
+      return { ...this.renderCompetitionPage(session, 'A competição anterior não está mais aberta. Escolha outra competição.'), editMessage: true };
     } catch {
       return { text: '', buttons: [], answerText: 'Não foi possível consultar as competições agora. Seu time foi cadastrado e pode ser consultado em Minha conta.' };
     }
@@ -2090,10 +2248,10 @@ export class TelegramSelectionService {
     session.linkedUsuarioId = usuarioId;
     session.page = 0;
     const eligibility = await this.loadEligibility(session, usuarioId);
-    if (!eligibility.competition || eligibility.competition.tipoAcesso !== 'FREE') {
+    if (!this.matchesAccess(session, eligibility.competition)) {
       session.stage = 'competitions';
       this.sessions.delete(session.telegramUserId);
-      return this.main('A competição deixou de estar disponível para participação gratuita. Consulte novamente pelo menu.');
+      return this.main('A competição deixou de estar disponível nas condições selecionadas. Consulte novamente pelo menu.');
     }
     this.applyEligibility(session, eligibility);
     this.refresh(session);
@@ -2106,7 +2264,7 @@ export class TelegramSelectionService {
 
   private async loadEligibility(session: SelectionSession, usuarioId: number): Promise<EligibilitySnapshot> {
     if (!session.competitionId) return { competition: null, registrations: [], teams: [], ownedTeamCount: 0, activeParticipants: 0 };
-    const competition = await this.competitions.buscarGratuitaElegivel(session.competitionId);
+    const competition = await this.competitions.buscarElegivel(session.competitionId);
     if (!competition) return { competition: null, registrations: [], teams: [], ownedTeamCount: 0, activeParticipants: 0 };
     const [registrations, ownedTeams, activeParticipants] = await Promise.all([
       this.inscriptions.minhas(competition.id, usuarioId),
@@ -2152,6 +2310,14 @@ export class TelegramSelectionService {
     session.page = this.validPage(session.page, session.allTeams.length);
     session.callbackNonce = randomBytes(6).toString('base64url');
     if (session.allTeams.length === 0 && (session.ownedTeamCount ?? 0) === 0) {
+      if (session.competitions.find(item => item.id === session.competitionId)?.tipoAcesso === 'PAGO') {
+        return { text: `Cadastre seus times no POINT FFC antes da inscrição paga.${prefix ? `\n\n${prefix}` : ''}`, buttons: [],
+          inlineKeyboard: [
+            [{ text: '➕ Cadastrar um time', callback_data: this.callbackData(session, 'add-team') }],
+            [{ text: '📋 Cadastrar vários times', callback_data: this.callbackData(session, 'add-bulk-teams') }],
+            [{ text: BACK_BUTTON, callback_data: this.callbackData(session, 'back-competitions') }],
+          ], sessionToken: session.sessionToken };
+      }
       return {
         text: `⚽ Selecione os times para participar\n\nVocê ainda não possui times cadastrados no POINT FFC. Informe uma lista de IDs do Cartola para inscrever seus times nesta competição.${prefix ? `\n\n${prefix}` : ''}`,
         buttons: [],
@@ -2178,7 +2344,9 @@ export class TelegramSelectionService {
       text: allSelected ? DESELECT_ALL_BUTTON : SELECT_ALL_BUTTON,
       callback_data: this.callbackData(session, 'toggle-all'),
     }]);
-    keyboard.push([{ text: '📋 Inscrever por lista de IDs', callback_data: this.callbackData(session, 'direct-enrollment') }]);
+    if (session.competitions.find(item => item.id === session.competitionId)?.tipoAcesso === 'FREE') {
+      keyboard.push([{ text: '📋 Inscrever por lista de IDs', callback_data: this.callbackData(session, 'direct-enrollment') }]);
+    }
     if (session.selectedTeamIds.length > 0) {
       keyboard.push([{
         text: `➡️ Continuar com selecionados (${session.selectedTeamIds.length})`,
@@ -2189,6 +2357,9 @@ export class TelegramSelectionService {
 
     const competition = session.competitions.find(item => item.id === session.competitionId);
     const countText = `Times selecionados: ${session.selectedTeamIds.length}`;
+    const instructions = competition?.tipoAcesso === 'PAGO'
+      ? 'Escolha seus times cadastrados. A seleção não realiza débito.'
+      : 'Escolha seus times cadastrados ou informe uma lista de IDs do Cartola para inscrição direta.';
     const limitText = session.maxSelectableTeams < session.allTeams.length
       ? `\nLimite disponível: ${session.maxSelectableTeams}` : '';
     const pageText = session.allTeams.length > PAGE_SIZE
@@ -2196,7 +2367,7 @@ export class TelegramSelectionService {
     const emptyText = session.allTeams.length === 0 || session.maxSelectableTeams === 0
       ? '\nNão há times elegíveis disponíveis nesta competição.' : '';
     return {
-      text: `${prefix ? `${prefix}\n\n` : ''}${competition ? `${this.formatCompetition(competition)}\n\n` : ''}⚽ Selecione os times para participar\n\nEscolha seus times cadastrados ou informe uma lista de IDs do Cartola para inscrição direta.\n${countText}${limitText}${pageText}${emptyText}`,
+      text: `${prefix ? `${prefix}\n\n` : ''}${competition ? `${this.formatCompetition(competition)}\n\n` : ''}⚽ Selecione os times para participar\n\n${instructions}\n${countText}${limitText}${pageText}${emptyText}`,
       buttons: [],
       inlineKeyboard: keyboard,
       sessionToken: session.sessionToken,
@@ -2276,10 +2447,12 @@ export class TelegramSelectionService {
       'add-team', 'add-bulk-teams', 'account-register-one', 'account-register-bulk', 'registration-back', 'registration-confirm', 'registration-participate', 'registration-add-another', 'registration-account',
       'registration-return', 'registration-bulk-confirm', 'registration-bulk-edit', 'registration-bulk-add-another', 'direct-enrollment', 'direct-back-manual',
       'direct-edit', 'direct-continue', 'direct-register-confirm', 'account-wallet', 'wallet-add', 'wallet-refresh', 'wallet-back',
-      'wallet-confirm', 'wallet-edit', 'wallet-abandon', 'wallet-recover'].includes(action)) return action;
+      'wallet-confirm', 'wallet-edit', 'wallet-abandon', 'wallet-recover', 'paid-recharge', 'paid-return'].includes(action)) return action;
     if (session.stage === 'competitions' && /^select-competition:[0-9a-z]{1,8}$/.test(action)) return action;
     const confirm = /^confirm:([A-Za-z0-9_-]{24})$/.exec(action);
     if (confirm && confirm[1] === session.confirmationKey) return action;
+    const pay = /^pay:([A-Za-z0-9_-]{24})$/.exec(action);
+    if (pay && pay[1] === session.confirmationKey) return action;
     const match = /^toggle-team:([0-9a-z]{1,8})$/.exec(action);
     if (!match) return null;
     const teamId = Number.parseInt(match[1], 36);
@@ -2304,7 +2477,7 @@ export class TelegramSelectionService {
     const deadline = competition.fimInscricao
       ? `\nPrazo: ${new Date(competition.fimInscricao).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}`
       : '';
-    return `🏆 ${this.truncate(competition.nome, 150)}\nRodada: ${round}\nValor: R$ 0,00${deadline}`;
+    return `🏆 ${this.truncate(competition.nome, 150)}\nRodada: ${round}\nValor: R$ ${this.money(competition.valorInscricao)} por time (${competition.tipoAcesso === 'PAGO' ? 'PAGA' : 'FREE'})${deadline}`;
   }
 
   private renderCompetitionPage(session: SelectionSession, prefix = ''): TelegramSelectionResponse {
@@ -2327,7 +2500,7 @@ export class TelegramSelectionService {
     keyboard.push([{ text: HOME_BUTTON, callback_data: this.callbackData(session, 'main-menu') }]);
     keyboard.push([{ text: CANCEL_BUTTON, callback_data: this.callbackData(session, 'cancel') }]);
     return {
-      text: `${prefix ? `${prefix}\n\n` : ''}⚽ Competições gratuitas abertas — escolha uma opção:\n\n${pageItems.map(item => this.formatCompetition(item)).join('\n\n')}`,
+      text: `${prefix ? `${prefix}\n\n` : ''}⚽ Competições abertas — FREE e PAGAS — escolha uma opção:\n\n${pageItems.map(item => this.formatCompetition(item)).join('\n\n')}`,
       buttons: this.legacyCompetitionButtons(session, start), inlineKeyboard: keyboard, sessionToken: session.sessionToken,
     };
   }
@@ -2341,7 +2514,7 @@ export class TelegramSelectionService {
   }
 
   private keepReceiptSession(session: SelectionSession, idempotencyKey: string): SelectionSession {
-    session.completedConfirmationCallback = this.callbackData(session, `confirm:${idempotencyKey}`);
+    session.completedConfirmationCallback = this.callbackData(session, `${session.paidQuote ? 'pay' : 'confirm'}:${idempotencyKey}`);
     session.stage = 'receipt';
     session.confirmationKey = undefined;
     session.selectedTeamIds = [];

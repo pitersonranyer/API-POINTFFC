@@ -59,6 +59,10 @@ export class TelegramCompetitionsService {
     return competicoes.find(competicao => competicao.id === id) ?? null;
   }
 
+  async buscarElegivel(id: number, now = new Date()): Promise<CompeticaoCardDto | null> {
+    return (await this.listarDivulgaveis(now)).find(competicao => competicao.id === id) ?? null;
+  }
+
   async contarParticipantesAtivos(competicaoId: number): Promise<number> {
     return this.prisma.inscricaoTimeCompeticao.count({
       where: { competicaoLigaId: competicaoId, statusInscricao: 'ATIVA' },
