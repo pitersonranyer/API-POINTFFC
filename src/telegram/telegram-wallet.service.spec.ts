@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CarteiraService } from '../carteira/carteira.service';
 import { RecargaPixService } from '../carteira/recarga-pix.service';
@@ -17,7 +17,7 @@ describe('TelegramWalletService', () => {
   let request: ReturnType<typeof pendingRequest>;
   let prisma: { telegramWalletRequest: Record<string, jest.Mock>; telegramAccountLink: { findUnique: jest.Mock }; $transaction: jest.Mock; $queryRaw: jest.Mock };
   let links: { resolveActiveUser: jest.Mock };
-  let wallets: { obterOuCriar: jest.Mock };
+  let wallets: { obterOuCriar: jest.Mock; creditar: jest.Mock; debitar: jest.Mock; aplicarRecargaPix: jest.Mock };
   let pix: { criarParaTelegram: jest.Mock; consultarStatusTelegram: jest.Mock };
   let service: TelegramWalletService;
 
@@ -33,7 +33,12 @@ describe('TelegramWalletService', () => {
     prisma = { telegramWalletRequest: {
       findFirst: jest.fn().mockImplementation(async () => ({ ...request })),
       findUnique: jest.fn().mockImplementation(async () => ({ ...request })),
-      updateMany: jest.fn().mockImplementation(async ({ data }: { data: Partial<typeof request> }) => {
+      updateMany: jest.fn().mockImplementation(async ({ where, data }: {
+        where: { confirmadoEm?: null; expiraEm?: { gt: Date } };
+        data: Partial<typeof request>;
+      }) => {
+        if (where.confirmadoEm === null && request.confirmadoEm !== null) return { count: 0 };
+        if (where.expiraEm && request.expiraEm <= where.expiraEm.gt) return { count: 0 };
         Object.assign(request, data);
         return { count: 1 };
       }),
@@ -44,12 +49,73 @@ describe('TelegramWalletService', () => {
     $queryRaw: jest.fn().mockResolvedValue([{ id_usuario: 7 }]),
     };
     links = { resolveActiveUser: jest.fn().mockResolvedValue({ idUsuario: 7, email: 'private@example.test' }) };
-    wallets = { obterOuCriar: jest.fn().mockResolvedValue({ saldoDisponivel: new Prisma.Decimal('12.50'), saldoBloqueado: new Prisma.Decimal('3.00'), status: 'ATIVA' }) };
+    wallets = {
+      obterOuCriar: jest.fn().mockResolvedValue({ saldoDisponivel: new Prisma.Decimal('12.50'), saldoBloqueado: new Prisma.Decimal('3.00'), status: 'ATIVA' }),
+      creditar: jest.fn(), debitar: jest.fn(), aplicarRecargaPix: jest.fn(),
+    };
     pix = {
       criarParaTelegram: jest.fn().mockResolvedValue({ id: 91, valor: '25.00', status: 'PENDENTE', idPagamentoExterno: 'mp-91', pixCopiaCola: 'pix-copy', qrCode: 'aGVsbG8=', expiracao: new Date(Date.now() + 3600000) }),
       consultarStatusTelegram: jest.fn().mockResolvedValue({ id: 91, valor: '25.00', status: 'APROVADA', idPagamentoExterno: 'mp-91', pixCopiaCola: 'pix-copy', qrCode: 'aGVsbG8=', expiracao: null }),
     };
     service = createService();
+  });
+
+  afterEach(() => jest.useRealTimers());
+
+  it('confirms an unconfirmed valid request before generating PIX', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-14T12:00:00Z'));
+    request.confirmadoEm = null;
+    request.expiraEm = new Date(Date.now() + 1);
+
+    await expect(service.confirmar('54321', request.id)).resolves.toMatchObject({ id: 91 });
+
+    expect(request.confirmadoEm).toEqual(new Date());
+    expect(prisma.telegramWalletRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: request.id, telegramUserId: '54321', usuarioId: 7, confirmadoEm: null, expiraEm: { gt: new Date() } },
+      data: { confirmadoEm: new Date() },
+    });
+    expect(prisma.telegramWalletRequest.updateMany.mock.invocationCallOrder[0])
+      .toBeLessThan(pix.criarParaTelegram.mock.invocationCallOrder[0]);
+    expect(pix.criarParaTelegram).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([-1, 0])('rejects an unconfirmed request expiring at now %d ms without PIX or wallet changes', async (offset) => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-14T12:00:00Z'));
+    request.confirmadoEm = null;
+    request.expiraEm = new Date(Date.now() + offset);
+    const original = { ...request };
+
+    await expect(service.confirmar('54321', request.id)).rejects.toBeInstanceOf(ConflictException);
+
+    expect(prisma.telegramWalletRequest.updateMany).toHaveBeenCalledWith({
+      where: { id: request.id, telegramUserId: '54321', usuarioId: 7, confirmadoEm: null, expiraEm: { gt: new Date() } },
+      data: { confirmadoEm: new Date() },
+    });
+    expect(request).toEqual(original);
+    expect(prisma.telegramWalletRequest.create).not.toHaveBeenCalled();
+    expect(pix.criarParaTelegram).not.toHaveBeenCalled();
+    expect(pix.consultarStatusTelegram).not.toHaveBeenCalled();
+    expect(wallets.obterOuCriar).not.toHaveBeenCalled();
+    expect(wallets.creditar).not.toHaveBeenCalled();
+    expect(wallets.debitar).not.toHaveBeenCalled();
+    expect(wallets.aplicarRecargaPix).not.toHaveBeenCalled();
+  });
+
+  it('retries an already confirmed request after its confirmation deadline using the same charge key', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-14T12:00:00Z'));
+    request.confirmadoEm = null;
+    request.expiraEm = new Date(Date.now() + 1);
+    const first = await service.confirmar('54321', request.id);
+    jest.advanceTimersByTime(2);
+    const repeated = await service.confirmar('54321', request.id);
+
+    expect(repeated.id).toBe(first.id);
+    expect(pix.criarParaTelegram.mock.calls).toEqual([
+      [{ idUsuario: 7, email: 'private@example.test' }, '25.00', request.idempotencyKey],
+      [{ idUsuario: 7, email: 'private@example.test' }, '25.00', request.idempotencyKey],
+    ]);
+    expect(prisma.telegramWalletRequest.updateMany.mock.calls.filter(([args]) => args.data.confirmadoEm)).toHaveLength(1);
+    expect(prisma.telegramWalletRequest.create).not.toHaveBeenCalled();
   });
 
   it('rejects users without an active Telegram link and never exposes an email in the error', async () => {

@@ -73,4 +73,18 @@ describe('RecargaPixService Telegram-only operations', () => {
     expect(recarga.status).toBe('PENDENTE');
     expect(carteira.aplicarRecargaPix).not.toHaveBeenCalled();
   });
+
+  it('reuses the linked Order on repeated confirmation without creating another charge or credit', async () => {
+    recargas.consultarPorExternalReference.mockImplementation(async () => ({ ...recarga }));
+    const usuario = { idUsuario: 7, email: 'private@example.test' };
+
+    const first = await service.criarParaTelegram(usuario, '25.00', idempotencyKey);
+    const repeated = await service.criarParaTelegram(usuario, '25.00', idempotencyKey);
+
+    expect(repeated.id).toBe(first.id);
+    expect(client.create).toHaveBeenCalledTimes(1);
+    expect(client.get).toHaveBeenCalledWith('ORD123');
+    expect(recargas.criar).not.toHaveBeenCalled();
+    expect(carteira.aplicarRecargaPix).not.toHaveBeenCalled();
+  });
 });
