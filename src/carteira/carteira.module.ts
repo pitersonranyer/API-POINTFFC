@@ -8,9 +8,10 @@ import { MercadoPagoRecargaClient } from './mercado-pago-recarga.client';
 import { RecargaPixService } from './recarga-pix.service';
 import { RecargaPixController } from './recarga-pix.controller';
 import { RecargaPixWebhookController } from './recarga-pix-webhook.controller';
+import { TelegramPixNotificationService } from './telegram-pix-notification.service';
 
 @Module({ imports: [PrismaModule, AuthModule],
   controllers: [CarteiraController, RecargaPixController, RecargaPixWebhookController],
-  providers: [CarteiraService, RecargaCarteiraService, MercadoPagoRecargaClient, RecargaPixService],
+  providers: [CarteiraService, RecargaCarteiraService, MercadoPagoRecargaClient, RecargaPixService, TelegramPixNotificationService],
   exports: [CarteiraService, RecargaCarteiraService, RecargaPixService] })
 export class CarteiraModule {}

@@ -213,15 +213,17 @@ describe('CarteiraService - crédito PIX vinculado', () => {
   });
 
   it('aprovação duplicada não cria outra movimentação nem soma saldo', async () => {
-    await service.aplicarRecargaPix(3, oficial);
-    await service.aplicarRecargaPix(3, oficial);
+    const first = await service.aplicarRecargaPixComResultado(3, oficial);
+    const repeated = await service.aplicarRecargaPixComResultado(3, oficial);
+    expect(first.creditadaAgora).toBe(true);
+    expect(repeated.creditadaAgora).toBe(false);
     expect(tx.movimentacaoCarteira.create).toHaveBeenCalledTimes(1);
     expect(tx.carteira.update).toHaveBeenCalledTimes(1);
     expect(carteira.saldoDisponivel.toString()).toBe('17.25');
   });
 
   it.each(['PENDENTE', 'PROCESSANDO', 'REJEITADA', 'EXPIRADA', 'CANCELADA', 'REEMBOLSADA', null] as const)('status %s não credita', async (status) => {
-    await service.aplicarRecargaPix(3, { ...oficial, status });
+    expect((await service.aplicarRecargaPixComResultado(3, { ...oficial, status })).creditadaAgora).toBe(false);
     expect(tx.carteira.update).not.toHaveBeenCalled();
     expect(tx.movimentacaoCarteira.create).not.toHaveBeenCalled();
   });

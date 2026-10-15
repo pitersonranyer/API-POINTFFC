@@ -3,6 +3,7 @@ import { Prisma, RecargaCarteira, Usuario } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CarteiraService, RecargaPixOficial } from './carteira.service';
+import { TelegramPixNotificationService } from './telegram-pix-notification.service';
 import { RecargaCarteiraService } from './recarga-carteira.service';
 import { MercadoPagoRecargaClient, RECARGA_ORDER_ID, RecargaOrder } from './mercado-pago-recarga.client';
 import { mapRecargaOrderStatus } from './mercado-pago-recarga-status';
@@ -11,7 +12,8 @@ import { mapRecargaOrderStatus } from './mercado-pago-recarga-status';
 export class RecargaPixService {
   private readonly logger = new Logger(RecargaPixService.name);
   constructor(private readonly prisma: PrismaService, private readonly carteiras: CarteiraService,
-    private readonly recargas: RecargaCarteiraService, private readonly client: MercadoPagoRecargaClient) {}
+    private readonly recargas: RecargaCarteiraService, private readonly client: MercadoPagoRecargaClient,
+    private readonly notificacoes: TelegramPixNotificationService) {}
 
   validarValor(valor: string): void {
     if (typeof valor !== 'string' || valor.length > 13 || !/^\d+(\.\d{1,2})?$/.test(valor) ||
@@ -31,7 +33,7 @@ export class RecargaPixService {
       // Guarda o vínculo antes do crédito, para permitir retry de webhook se o crédito falhar.
       await this.prisma.recargaCarteira.updateMany({ where: { id: recarga.id, idPagamentoExterno: null },
         data: { idPagamentoExterno: oficial.idPagamentoExterno } });
-      return this.resposta(await this.carteiras.aplicarRecargaPix(recarga.id, oficial));
+      return this.resposta(await this.aplicarRecarga(recarga.id, oficial));
     });
   }
 
@@ -119,7 +121,7 @@ export class RecargaPixService {
         etapa = 'validacao_order';
         const oficial = this.validarOrder(recarga, order);
         etapa = 'processamento_recarga';
-        const resultado = await this.carteiras.aplicarRecargaPix(recarga.id, oficial);
+        const resultado = await this.aplicarRecarga(recarga.id, oficial);
         log('log', 'WEBHOOK_CARTEIRA_PROCESSADA', { resultado: 'ok', status: statusSeguro(resultado.status) });
         return { received: true };
       } catch (error) {
@@ -132,7 +134,18 @@ export class RecargaPixService {
 
   private async sincronizar(recarga: RecargaCarteira) {
     const order = await this.client.get(recarga.idPagamentoExterno!);
-    return this.resposta(await this.carteiras.aplicarRecargaPix(recarga.id, this.validarOrder(recarga, order)));
+    return this.resposta(await this.aplicarRecarga(recarga.id, this.validarOrder(recarga, order)));
+  }
+
+  private async aplicarRecarga(id: number, oficial: RecargaPixOficial) {
+    const { recarga, creditadaAgora } = await this.carteiras.aplicarRecargaPixComResultado(id, oficial);
+    if (creditadaAgora) {
+      try { await this.notificacoes.enviar(recarga); } catch {
+        // No raw transport/Prisma errors: they may include tokens or private data.
+        this.logger.warn({ marker: 'TELEGRAM_PIX_NOTIFICACAO_FALHOU', timestamp: new Date().toISOString() });
+      }
+    }
+    return recarga;
   }
 
   private async prepararRecarga(

@@ -1,3 +1,4 @@
+import { TelegramPixNotificationService } from '../src/carteira/telegram-pix-notification.service';
 import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { CarteiraService } from '../src/carteira/carteira.service';
@@ -18,13 +19,15 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
   const recargas = new RecargaCarteiraService(prisma as PrismaService);
   const links = new TelegramLinkService(prisma as PrismaService);
   const client = { assertConfigured: jest.fn(), validateSignature: jest.fn(), get: jest.fn(), create: jest.fn() };
-  const service = new RecargaPixService(prisma as PrismaService, carteiras, recargas, client as unknown as MercadoPagoRecargaClient);
+  const notificacoes = { enviar: jest.fn() };
+  const service = new RecargaPixService(prisma as PrismaService, carteiras, recargas, client as unknown as MercadoPagoRecargaClient, notificacoes as unknown as TelegramPixNotificationService);
   const telegramService = new TelegramWalletService(prisma as PrismaService, links, carteiras, service);
   let usuario: { idUsuario: number; email: string };
   let carteiraId: number;
   let order: RecargaOrder;
   beforeAll(() => prisma.$connect());
   beforeEach(async () => {
+    notificacoes.enviar.mockReset();
     usuario = await prisma.usuario.create({ data: { email: `pix-${randomUUID()}@example.invalid` } });
     carteiraId = (await carteiras.obterOuCriar(usuario.idUsuario)).id;
     order = { id: `ORD${randomUUID().replace(/-/g, '').toUpperCase()}`, total_amount: '7.25', status: 'processed', status_detail: 'accredited' } as RecargaOrder;
@@ -81,6 +84,7 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
     await Promise.all([webhook(), webhook()]);
     expect(await prisma.movimentacaoCarteira.count({ where: { recargaId: recarga.id } })).toBe(1);
     expect((await carteiras.obterOuCriar(usuario.idUsuario)).saldoDisponivel.toString()).toBe('7.25');
+    expect(notificacoes.enviar).toHaveBeenCalledTimes(1);
   });
 
   it('dois POSTs com a mesma chave reutilizam recarga e crédito', async () => {
@@ -125,6 +129,21 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
     expect(await prisma.recargaCarteira.count({ where: { carteiraId } })).toBe(1);
     expect(await prisma.movimentacaoCarteira.count({ where: { carteiraId } })).toBe(0);
     expect((await carteiras.obterOuCriar(usuario.idUsuario)).saldoDisponivel.toString()).toBe('0');
+    expect(notificacoes.enviar).not.toHaveBeenCalled();
+    await Promise.all([webhook(), webhook()]);
+    expect(notificacoes.enviar).toHaveBeenCalledTimes(1);
+    expect(await prisma.movimentacaoCarteira.count({ where: { carteiraId } })).toBe(1);
+    expect((await carteiras.obterOuCriar(usuario.idUsuario)).saldoDisponivel.toString()).toBe('7.25');
+  });
+
+  it('falha na notificação não reverte crédito nem provoca retry no webhook duplicado', async () => {
+    await pendente();
+    notificacoes.enviar.mockRejectedValue(new Error('Telegram indisponível'));
+    await expect(webhook()).resolves.toEqual({ received: true });
+    await expect(webhook()).resolves.toEqual({ received: true });
+    expect(notificacoes.enviar).toHaveBeenCalledTimes(1);
+    expect(await prisma.movimentacaoCarteira.count({ where: { carteiraId } })).toBe(1);
+    expect((await carteiras.obterOuCriar(usuario.idUsuario)).saldoDisponivel.toString()).toBe('7.25');
   });
 
   it('falha após saldo, movimentação e aprovação reverte tudo antes do commit', async () => {

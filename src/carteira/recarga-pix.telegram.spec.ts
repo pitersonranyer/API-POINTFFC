@@ -1,3 +1,4 @@
+import { TelegramPixNotificationService } from './telegram-pix-notification.service';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { CarteiraService } from './carteira.service';
@@ -11,7 +12,7 @@ describe('RecargaPixService Telegram-only operations', () => {
   const externalReference = createHash('sha256').update(`7:${idempotencyKey}`).digest('hex');
   let recarga: Record<string, unknown>;
   let prisma: { recargaCarteira: Record<string, jest.Mock> };
-  let carteira: { obterOuCriar: jest.Mock; aplicarRecargaPix: jest.Mock };
+  let carteira: { obterOuCriar: jest.Mock; aplicarRecargaPixComResultado: jest.Mock };
   let recargas: { consultarPorExternalReference: jest.Mock; criar: jest.Mock };
   let client: { assertConfigured: jest.Mock; create: jest.Mock; get: jest.Mock };
   let service: RecargaPixService;
@@ -35,7 +36,7 @@ describe('RecargaPixService Telegram-only operations', () => {
     } };
     carteira = {
       obterOuCriar: jest.fn().mockResolvedValue({ id: 3, status: 'ATIVA' }),
-      aplicarRecargaPix: jest.fn(),
+      aplicarRecargaPixComResultado: jest.fn(),
     };
     recargas = {
       consultarPorExternalReference: jest.fn().mockResolvedValue({ ...recarga }),
@@ -51,6 +52,7 @@ describe('RecargaPixService Telegram-only operations', () => {
       carteira as unknown as CarteiraService,
       recargas as unknown as RecargaCarteiraService,
       client as unknown as MercadoPagoRecargaClient,
+      { enviar: jest.fn() } as unknown as TelegramPixNotificationService,
     );
   });
 
@@ -62,7 +64,7 @@ describe('RecargaPixService Telegram-only operations', () => {
     }));
     expect(result.status).toBe('PENDENTE');
     expect(result.pixCopiaCola).toBe('pix-copy');
-    expect(carteira.aplicarRecargaPix).not.toHaveBeenCalled();
+    expect(carteira.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
   });
 
   it('queries the provider status without applying credit; the webhook remains the credit path', async () => {
@@ -71,7 +73,7 @@ describe('RecargaPixService Telegram-only operations', () => {
     expect(client.get).toHaveBeenCalledWith('ORD123');
     expect(result.status).toBe('APROVADA');
     expect(recarga.status).toBe('PENDENTE');
-    expect(carteira.aplicarRecargaPix).not.toHaveBeenCalled();
+    expect(carteira.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
   });
 
   it('reuses the linked Order on repeated confirmation without creating another charge or credit', async () => {
@@ -85,6 +87,6 @@ describe('RecargaPixService Telegram-only operations', () => {
     expect(client.create).toHaveBeenCalledTimes(1);
     expect(client.get).toHaveBeenCalledWith('ORD123');
     expect(recargas.criar).not.toHaveBeenCalled();
-    expect(carteira.aplicarRecargaPix).not.toHaveBeenCalled();
+    expect(carteira.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
   });
 });

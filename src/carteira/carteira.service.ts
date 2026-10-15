@@ -88,6 +88,12 @@ export class CarteiraService {
   // Recebe exclusivamente dados já consultados no provedor pelo fluxo interno PIX.
   // Recarga -> carteira é a ordem de locks; nenhuma chamada externa ocorre aqui.
   aplicarRecargaPix(recargaId: number, oficial: RecargaPixOficial) {
+    return this.aplicarRecargaPixComResultado(recargaId, oficial).then(({ recarga }) => recarga);
+  }
+
+  // The flag belongs to this committed transaction, not to the provider status.
+  // Only the transaction inserting the unique movement may notify the user.
+  aplicarRecargaPixComResultado(recargaId: number, oficial: RecargaPixOficial) {
     return this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<RawIds<RecargaCarteira, 'id' | 'carteiraId'>[]>`
         SELECT * FROM RECARGA_CARTEIRA WHERE id = ${recargaId} FOR UPDATE`;
@@ -102,7 +108,8 @@ export class CarteiraService {
       // Reembolso não estorna saldo nesta fase e não pode ser desfeito por aprovação atrasada.
       const status = recarga.status === 'REEMBOLSADA' ? recarga.status
         : movimento && oficial.status !== 'REEMBOLSADA' ? 'APROVADA' : oficial.status ?? recarga.status;
-      if (status === 'APROVADA' && oficial.status === 'APROVADA' && !movimento) {
+      const creditadaAgora = status === 'APROVADA' && oficial.status === 'APROVADA' && !movimento;
+      if (creditadaAgora) {
         const carteiras = await tx.$queryRaw<RawIds<Carteira, 'id' | 'usuarioId'>[]>`
           SELECT * FROM CARTEIRA WHERE id = ${recarga.carteiraId} FOR UPDATE`;
         const carteira = carteiras[0] && normalizarIdsRaw(carteiras[0], ['id', 'usuarioId']);
@@ -121,11 +128,12 @@ export class CarteiraService {
           saldoAnterior: anterior, saldoPosterior: posterior, referenciaId: String(recargaId), status: 'CONFIRMADA',
         } });
       }
-      return tx.recargaCarteira.update({ where: { id: recargaId }, data: {
+      const resultado = await tx.recargaCarteira.update({ where: { id: recargaId }, data: {
         idPagamentoExterno: oficial.idPagamentoExterno, status,
         pixCopiaCola: oficial.pixCopiaCola, qrCode: oficial.qrCode, expiracao: oficial.expiracao,
         aprovadoEm: status === 'APROVADA' ? recarga.aprovadoEm ?? new Date() : undefined,
       } });
+      return { recarga: resultado, creditadaAgora };
     });
   }
 

@@ -1,3 +1,4 @@
+import { TelegramPixNotificationService } from '../src/carteira/telegram-pix-notification.service';
 import { BadGatewayException, ConflictException, Logger, UnauthorizedException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +14,7 @@ describe('RecargaPixService', () => {
   let client: any;
   let recarga: any;
   let order: any;
+  let notificacoes: { enviar: jest.Mock };
   const user = { idUsuario: 1, email: 'user@example.com' };
   const key = 'same-request-key-1234';
   beforeEach(() => {
@@ -26,15 +28,56 @@ describe('RecargaPixService', () => {
       transactions: { payments: [{ payment_method: { id: 'pix', qr_code: 'copy-secret', qr_code_base64: 'qr-secret' } }] } };
     prisma = { recargaCarteira: { updateMany: jest.fn().mockResolvedValue({ count: 1 }), findFirst: jest.fn().mockResolvedValue(recarga) } };
     carteiras = { obterOuCriar: jest.fn().mockResolvedValue({ id: 2, status: 'ATIVA' }),
-      aplicarRecargaPix: jest.fn().mockImplementation(async (_id: number, data: any) => ({ ...recarga, ...data })) };
+      aplicarRecargaPixComResultado: jest.fn().mockImplementation(async (_id: number, data: any) => ({ recarga: { ...recarga, ...data }, creditadaAgora: false })) };
     recargas = { consultarPorExternalReference: jest.fn().mockResolvedValue(null),
       consultarPorIdPagamentoExterno: jest.fn().mockResolvedValue(recarga),
       criar: jest.fn().mockImplementation(async (data: any) => { recarga = { ...recarga, ...data, idPagamentoExterno: null, valor: new Prisma.Decimal(data.valor) }; return recarga; }) };
     client = { assertConfigured: jest.fn(), validateSignature: jest.fn(), get: jest.fn().mockImplementation(async () => order),
       create: jest.fn().mockImplementation(async (_valor: string, ref: string) => ({ ...order, external_reference: ref })) };
-    service = new RecargaPixService(prisma, carteiras, recargas, client);
+    notificacoes = { enviar: jest.fn() };
+    service = new RecargaPixService(prisma, carteiras, recargas, client, notificacoes as unknown as TelegramPixNotificationService);
   });
   afterEach(() => jest.restoreAllMocks());
+
+  it('notifies only after credit commits and does not notify duplicate webhooks', async () => {
+    order.status = 'processed'; order.status_detail = 'accredited';
+    let commit!: (value: unknown) => void;
+    let started!: () => void;
+    const processing = new Promise<void>((resolve) => { started = resolve; });
+    carteiras.aplicarRecargaPixComResultado.mockImplementationOnce(() => {
+      started();
+      return new Promise((resolve) => { commit = resolve; });
+    });
+    const webhook = service.webhook('sig', 'req', 'ORD1');
+    await processing;
+    expect(notificacoes.enviar).not.toHaveBeenCalled();
+    commit({ recarga: { ...recarga, status: 'APROVADA' }, creditadaAgora: true });
+    await expect(webhook).resolves.toEqual({ received: true });
+    await service.webhook('sig', 'req', 'ORD1');
+    expect(notificacoes.enviar).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['action_required', 'rejected'])('does not notify non-credited Order %s', async (status) => {
+    order.status = status;
+    await service.webhook('sig', 'req', 'ORD1');
+    expect(notificacoes.enviar).not.toHaveBeenCalled();
+  });
+
+  it('preserves webhook success after notification failure and logs no transport secrets', async () => {
+    carteiras.aplicarRecargaPixComResultado.mockResolvedValueOnce({ recarga: { ...recarga, status: 'APROVADA' }, creditadaAgora: true });
+    notificacoes.enviar.mockRejectedValue(new Error('https://api.telegram.org/botsecret-token private@example.test'));
+    await expect(service.webhook('sig', 'req', 'ORD1')).resolves.toEqual({ received: true });
+    await service.webhook('sig', 'req', 'ORD1');
+    expect(notificacoes.enviar).toHaveBeenCalledTimes(1);
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(expect.objectContaining({ marker: 'TELEGRAM_PIX_NOTIFICACAO_FALHOU' }));
+    expect(JSON.stringify(jest.mocked(Logger.prototype.warn).mock.calls)).not.toMatch(/secret-token|private@example/);
+  });
+
+  it('never notifies a credit transaction that rolls back', async () => {
+    carteiras.aplicarRecargaPixComResultado.mockRejectedValue(new Error('rollback'));
+    await expect(service.webhook('sig', 'req', 'ORD1')).rejects.toThrow();
+    expect(notificacoes.enviar).not.toHaveBeenCalled();
+  });
 
   const events = () => [Logger.prototype.log, Logger.prototype.warn, Logger.prototype.error]
     .flatMap((method) => jest.mocked(method).mock.calls.map(([event]) => event));
@@ -54,7 +97,7 @@ describe('RecargaPixService', () => {
 
     expect(client.get).toHaveBeenCalledWith(dataId);
     expect(recargas.consultarPorIdPagamentoExterno).toHaveBeenCalledWith(dataId);
-    expect(carteiras.aplicarRecargaPix).toHaveBeenCalledWith(7, expect.objectContaining({ idPagamentoExterno: dataId }));
+    expect(carteiras.aplicarRecargaPixComResultado).toHaveBeenCalledWith(7, expect.objectContaining({ idPagamentoExterno: dataId }));
     expect(events().filter((event) => event.orderId).every((event) => event.orderId === dataId)).toBe(true);
     expect(events()).toEqual([expect.objectContaining({ marker: 'WEBHOOK_CARTEIRA_PROCESSADA', orderId: dataId })]);
   });
@@ -83,7 +126,7 @@ describe('RecargaPixService', () => {
     if (etapa === 'assinatura') client.validateSignature.mockImplementation(() => { throw error; });
     if (etapa === 'consulta_order') client.get.mockRejectedValue(error);
     if (etapa === 'localizacao_recarga') recargas.consultarPorIdPagamentoExterno.mockRejectedValue(error);
-    if (etapa === 'processamento_recarga') carteiras.aplicarRecargaPix.mockRejectedValue(error);
+    if (etapa === 'processamento_recarga') carteiras.aplicarRecargaPixComResultado.mockRejectedValue(error);
     const result = service.webhook('signature-secret', 'request-secret', 'ORD1');
     if (etapa === 'assinatura' || etapa === 'consulta_order') await expect(result).rejects.toBe(error);
     else await expect(result).rejects.toMatchObject({ status: 503 });
@@ -102,7 +145,7 @@ describe('RecargaPixService', () => {
     expect(JSON.stringify(events())).not.toContain('sensitive@example.com');
     jest.mocked(Logger.prototype.error).mockClear();
     order.status = 'sensitive@example.com'; order.status_detail = 'qr-secret';
-    carteiras.aplicarRecargaPix.mockResolvedValueOnce({ ...recarga, status: 'sensitive@example.com' });
+    carteiras.aplicarRecargaPixComResultado.mockResolvedValueOnce({ recarga: { ...recarga, status: 'sensitive@example.com' }, creditadaAgora: false });
     await service.webhook('sig', 'req', 'ORD1');
     expect(events()).toEqual([expect.objectContaining({ marker: 'WEBHOOK_CARTEIRA_PROCESSADA', status: 'desconhecido' })]);
     expect(JSON.stringify(events())).not.toMatch(/sensitive@example.com|qr-secret/);
@@ -120,7 +163,7 @@ describe('RecargaPixService', () => {
   it('PIX já aprovado na criação usa o mesmo caminho de crédito', async () => {
     order.status = 'processed'; order.status_detail = 'accredited';
     expect(await service.criar(user, '10.00', key)).toMatchObject({ status: 'APROVADA' });
-    expect(carteiras.aplicarRecargaPix).toHaveBeenCalledWith(7, expect.objectContaining({ status: 'APROVADA' }));
+    expect(carteiras.aplicarRecargaPixComResultado).toHaveBeenCalledWith(7, expect.objectContaining({ status: 'APROVADA' }));
   });
 
   it('retry da criação recupera recarga e mantém a mesma referência', async () => {
@@ -179,7 +222,7 @@ describe('RecargaPixService', () => {
     await service.webhook('sig', 'request', 'ORD1');
     expect(client.validateSignature).toHaveBeenCalledWith('sig', 'request', 'ORD1');
     expect(client.get).toHaveBeenCalledTimes(2);
-    expect(carteiras.aplicarRecargaPix.mock.calls.map((c: any[]) => c[1].status)).toEqual(['PENDENTE', 'APROVADA']);
+    expect(carteiras.aplicarRecargaPixComResultado.mock.calls.map((c: any[]) => c[1].status)).toEqual(['PENDENTE', 'APROVADA']);
   });
 
   it('Order desconhecida retorna ACK sem criar recarga nem creditar', async () => {
@@ -188,7 +231,7 @@ describe('RecargaPixService', () => {
     try {
       expect(await service.webhook('sig', 'req', 'ORD1')).toEqual({ received: true });
       expect(recargas.criar).not.toHaveBeenCalled();
-      expect(carteiras.aplicarRecargaPix).not.toHaveBeenCalled();
+      expect(carteiras.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
       expect(events()).toEqual([expect.objectContaining({ marker: 'WEBHOOK_CARTEIRA_IGNORADO', resultado: 'ignorada_sem_recarga' })]);
       expect(Logger.prototype.log).not.toHaveBeenCalled();
       expect(Logger.prototype.error).not.toHaveBeenCalled();
@@ -200,19 +243,19 @@ describe('RecargaPixService', () => {
   it('assinatura inválida impede consulta e crédito', async () => {
     client.validateSignature.mockImplementation(() => { throw new UnauthorizedException('Assinatura inválida'); });
     await expect(service.webhook('bad', 'req', 'ORD1')).rejects.toThrow('Assinatura inválida');
-    expect(client.get).not.toHaveBeenCalled(); expect(carteiras.aplicarRecargaPix).not.toHaveBeenCalled();
+    expect(client.get).not.toHaveBeenCalled(); expect(carteiras.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
   });
 
   it('Order.get com erro permite retry sem atualizar banco', async () => {
     client.get.mockRejectedValue(new BadGatewayException('Order indisponível'));
     await expect(service.webhook('sig', 'req', 'ORD1')).rejects.toThrow('Order indisponível');
-    expect(carteiras.aplicarRecargaPix).not.toHaveBeenCalled();
+    expect(carteiras.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
   });
 
   it.each([{ id: 'ORDOTHER' }, { total_amount: '11.00' }, { external_reference: 'another' }])('rejeita Order inconsistente %j', async (change) => {
     Object.assign(order, change);
     await expect(service.webhook('sig', 'req', 'ORD1')).rejects.toThrow();
-    expect(carteiras.aplicarRecargaPix).not.toHaveBeenCalled();
+    expect(carteiras.aplicarRecargaPixComResultado).not.toHaveBeenCalled();
   });
 
   it('rejeita provedor incompatível', async () => {
