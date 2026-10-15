@@ -62,6 +62,26 @@ describe('TelegramWalletService', () => {
 
   afterEach(() => jest.useRealTimers());
 
+  it('waits for the user lock before reading the link or confirmation snapshot', async () => {
+    let releaseLock!: (rows: { id_usuario: number }[]) => void;
+    let lockStarted!: () => void;
+    const started = new Promise<void>((resolve) => { lockStarted = resolve; });
+    prisma.$queryRaw.mockImplementationOnce(() => {
+      lockStarted();
+      return new Promise((resolve) => { releaseLock = resolve; });
+    });
+
+    const confirmation = service.confirmar('54321', request.id);
+    await started;
+    expect(prisma.telegramAccountLink.findUnique).not.toHaveBeenCalled();
+    expect(prisma.telegramWalletRequest.findFirst).not.toHaveBeenCalled();
+    expect(pix.criarParaTelegram).not.toHaveBeenCalled();
+    releaseLock([{ id_usuario: 7 }]);
+    await confirmation;
+    expect(prisma.telegramAccountLink.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.telegramWalletRequest.findFirst).toHaveBeenCalled();
+  });
+
   it('confirms an unconfirmed valid request before generating PIX', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-14T12:00:00Z'));
     request.confirmadoEm = null;

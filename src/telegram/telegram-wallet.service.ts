@@ -66,9 +66,11 @@ export class TelegramWalletService {
     this.validarValor(valor);
     const usuario = await this.resolveUser(telegramUserId);
     return this.prisma.$transaction(async (tx) => {
-      await this.assertActiveLink(tx, telegramUserId, usuario.idUsuario);
+      // Acquire the user lock before any consistent read establishes a
+      // REPEATABLE READ snapshot, so a waiting request sees the last commit.
       await tx.$queryRaw<{ id_usuario: number | bigint }[]>`
         SELECT id_usuario FROM USUARIO WHERE id_usuario = ${usuario.idUsuario} FOR UPDATE`;
+      await this.assertActiveLink(tx, telegramUserId, usuario.idUsuario);
       const active = await this.findActiveRequest(telegramUserId, usuario.idUsuario, tx);
       if (active) return this.view(active);
 
@@ -132,9 +134,10 @@ export class TelegramWalletService {
     operationId: string,
   ): Promise<TelegramWalletRequest> {
     return this.prisma.$transaction(async (tx) => {
-      await this.assertActiveLink(tx, telegramUserId, usuarioId);
+      // Keep the first snapshot read after the lock, including link validation.
       await tx.$queryRaw<{ id_usuario: number | bigint }[]>`
         SELECT id_usuario FROM USUARIO WHERE id_usuario = ${usuarioId} FOR UPDATE`;
+      await this.assertActiveLink(tx, telegramUserId, usuarioId);
       const request = await this.findOwnedRequest(telegramUserId, usuarioId, operationId, tx);
       if (request.confirmadoEm) return request;
 
