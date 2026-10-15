@@ -38,6 +38,11 @@ export class CartolaService {
     return this.http.get<CartolaMatchesResponse>(`/partidas/${round}`);
   }
 
+  // Snapshot consumers must not use the stale fallback of the public market cache.
+  loadMarketAthletesFresh(): Promise<CartolaPayload> {
+    return this.http.get<CartolaPayload>('/atletas/mercado');
+  }
+
   // Administrative reads bypass the automatic window and the persisted-score cache.
   loadAdministrativeScoredAthletesFresh(round: number): Promise<CartolaScoredAthletesPayload> {
     return this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados/${round}`);

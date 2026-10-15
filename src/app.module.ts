@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { PointFantasyModule } from './point-fantasy/point-fantasy.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { FutebolSchedulerModule } from './futebol/futebol-scheduler.module';
 import { FutebolQueryModule } from './futebol/futebol-query.module';
@@ -27,6 +28,7 @@ import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
+    PointFantasyModule,
     ScheduleModule.forRoot(),
     FutebolSchedulerModule,
     FutebolQueryModule,

@@ -124,6 +124,7 @@ model RodadaProcessamento {
 }
 
 model Usuario {
+  fantasyEscalacoes FantasyEscalacao[]
   idUsuario       Int        @id @default(autoincrement()) @map("id_usuario") @db.UnsignedInt
   firebaseUid     String?    @unique @map("firebase_uid") @db.VarChar(128)
   senhaHash       String?    @map("senha_hash") @db.VarChar(255)
@@ -746,4 +747,119 @@ model TelegramLinkRequest {
   @@index([telegramUserId, criadoEm])
   @@index([expiraEm, usadoEm])
   @@map("TELEGRAM_LINK_REQUEST")
+}
+
+// Independent POINT FFC snapshots; external IDs belong exclusively to Cartola.
+model FantasyCatalogo {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  versao Int @map("VERSAO") @db.UnsignedInt
+  status String @default("CAPTURADO") @map("STATUS") @db.VarChar(20)
+  capturadoEm DateTime @map("CAPTURADO_EM")
+  congeladoEm DateTime? @map("CONGELADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  referencias Json @map("REFERENCIAS")
+  atletas FantasyCatalogoAtleta[]
+  competicoes FantasyCompeticao[]
+  @@unique([temporada, rodada, versao])
+  @@map("FANTASY_CATALOGO")
+}
+
+model FantasyCatalogoAtleta {
+  escalacoes FantasyEscalacaoAtleta[]
+  comoCapitao FantasyEscalacao[] @relation("FantasyCapitao")
+  comoReservaMago FantasyEscalacao[] @relation("FantasyMago")
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  catalogoId Int @map("CATALOGO_ID") @db.UnsignedInt
+  atletaIdExterno Int @map("ATLETA_ID_EXTERNO") @db.UnsignedInt
+  clubeIdExterno Int @map("CLUBE_ID_EXTERNO") @db.UnsignedInt
+  posicaoId Int @map("POSICAO_ID") @db.UnsignedInt
+  statusId Int @map("STATUS_ID") @db.UnsignedInt
+  apelido String @map("APELIDO") @db.VarChar(255)
+  precoCartola Decimal @map("PRECO_CARTOLA") @db.Decimal(12, 2)
+  categoriaId Int? @map("CATEGORIA_ID") @db.UnsignedTinyInt
+  pointcoins Int @map("POINTCOINS") @db.UnsignedSmallInt
+  catalogo FantasyCatalogo @relation(fields: [catalogoId], references: [id], onDelete: Restrict)
+  @@unique([catalogoId, atletaIdExterno])
+  @@index([catalogoId, clubeIdExterno, id])
+  @@map("FANTASY_CATALOGO_ATLETA")
+}
+
+model FantasyCompeticao {
+  escalacoes FantasyEscalacao[]
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  catalogoId Int @map("CATALOGO_ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  tipoAcesso CompeticaoTipoAcesso @default(FREE) @map("TIPO_ACESSO")
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  status String @default("RASCUNHO") @map("STATUS") @db.VarChar(30)
+  inicioInscricao DateTime @map("INICIO_INSCRICAO")
+  fimInscricao DateTime @map("FIM_INSCRICAO")
+  fechamentoDefinitivoEm DateTime? @map("FECHAMENTO_DEFINITIVO_EM")
+  limiteEscalacoesUsuario Int? @map("LIMITE_ESCALACOES_USUARIO") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  catalogo FantasyCatalogo @relation(fields: [catalogoId], references: [id], onDelete: Restrict)
+  partidas FantasyCompeticaoPartida[]
+  @@index([status, temporada, rodada])
+  @@index([catalogoId])
+  @@map("FANTASY_COMPETICAO")
+}
+
+model FantasyCompeticaoPartida {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  partidaIdExterno Int @map("PARTIDA_ID_EXTERNO") @db.UnsignedInt
+  clubeMandanteId Int @map("CLUBE_MANDANTE_ID") @db.UnsignedInt
+  clubeVisitanteId Int @map("CLUBE_VISITANTE_ID") @db.UnsignedInt
+  inicioPrevisto DateTime @map("INICIO_PREVISTO")
+  inicioReal DateTime? @map("INICIO_REAL")
+  status String @default("AGENDADA") @map("STATUS") @db.VarChar(30)
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  @@unique([competicaoId, partidaIdExterno])
+  @@map("FANTASY_COMPETICAO_PARTIDA")
+}
+
+enum FantasyEscalacaoPapel {
+  TITULAR
+  TECNICO
+  RESERVA
+}
+
+model FantasyEscalacao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  formacao String @map("FORMACAO") @db.VarChar(5)
+  status String @default("RASCUNHO") @map("STATUS") @db.VarChar(20)
+  versao Int @default(1) @map("VERSAO") @db.UnsignedInt
+  capitaoAtletaId Int? @map("CAPITAO_ATLETA_ID") @db.UnsignedInt
+  reservaMagoAtletaId Int? @map("RESERVA_MAGO_ATLETA_ID") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  capitao FantasyCatalogoAtleta? @relation("FantasyCapitao", fields: [capitaoAtletaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reservaMago FantasyCatalogoAtleta? @relation("FantasyMago", fields: [reservaMagoAtletaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  atletas FantasyEscalacaoAtleta[]
+  @@index([usuarioId, competicaoId, id])
+  @@index([competicaoId])
+  @@index([capitaoAtletaId])
+  @@index([reservaMagoAtletaId])
+  @@map("FANTASY_ESCALACAO")
+}
+
+model FantasyEscalacaoAtleta {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  escalacaoId Int @map("ESCALACAO_ID") @db.UnsignedInt
+  catalogoAtletaId Int @map("CATALOGO_ATLETA_ID") @db.UnsignedInt
+  papel FantasyEscalacaoPapel @map("PAPEL")
+  escalacao FantasyEscalacao @relation(fields: [escalacaoId], references: [id], onDelete: Cascade)
+  atleta FantasyCatalogoAtleta @relation(fields: [catalogoAtletaId], references: [id], onDelete: Restrict)
+  @@unique([escalacaoId, catalogoAtletaId])
+  @@index([catalogoAtletaId])
+  @@map("FANTASY_ESCALACAO_ATLETA")
 }
