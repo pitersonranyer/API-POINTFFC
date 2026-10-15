@@ -13,8 +13,8 @@ CREATE TABLE `TELEGRAM_WALLET_REQUEST` (
   `atualizado_em` DATETIME(3) NOT NULL,
   UNIQUE INDEX `TELEGRAM_WALLET_REQUEST_idempotency_key_key` (`idempotency_key`),
   UNIQUE INDEX `TELEGRAM_WALLET_REQUEST_recarga_id_key` (`recarga_id`),
-  INDEX `TELEGRAM_WALLET_REQUEST_telegram_user_id_usuario_id_criado_em_idx` (`telegram_user_id`, `usuario_id`, `criado_em`),
-  INDEX `TELEGRAM_WALLET_REQUEST_usuario_id_confirmado_em_expira_em_idx` (`usuario_id`, `confirmado_em`, `expira_em`),
+  INDEX `TG_WALLET_REQUEST_TELEGRAM_USUARIO_CRIADO_idx` (`telegram_user_id`, `usuario_id`, `criado_em`),
+  INDEX `TG_WALLET_REQUEST_USUARIO_CONFIRMADO_EXPIRA_idx` (`usuario_id`, `confirmado_em`, `expira_em`),
   PRIMARY KEY (`id`),
   CONSTRAINT `TELEGRAM_WALLET_REQUEST_usuario_id_fkey`
     FOREIGN KEY (`usuario_id`) REFERENCES `USUARIO` (`id_usuario`) ON DELETE CASCADE ON UPDATE CASCADE,

@@ -232,8 +232,8 @@ model TelegramWalletRequest {
   usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Cascade)
   recarga RecargaCarteira? @relation(fields: [recargaId], references: [id], onDelete: Restrict)
 
-  @@index([telegramUserId, usuarioId, criadoEm])
-  @@index([usuarioId, confirmadoEm, expiraEm])
+  @@index([telegramUserId, usuarioId, criadoEm], map: "TG_WALLET_REQUEST_TELEGRAM_USUARIO_CRIADO_idx")
+  @@index([usuarioId, confirmadoEm, expiraEm], map: "TG_WALLET_REQUEST_USUARIO_CONFIRMADO_EXPIRA_idx")
   @@map("TELEGRAM_WALLET_REQUEST")
 }
 

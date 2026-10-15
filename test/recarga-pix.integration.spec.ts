@@ -101,6 +101,8 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
     expect(indexes).toEqual(expect.arrayContaining([
       expect.objectContaining({ Key_name: 'TELEGRAM_WALLET_REQUEST_idempotency_key_key', Non_unique: 0 }),
       expect.objectContaining({ Key_name: 'TELEGRAM_WALLET_REQUEST_recarga_id_key', Non_unique: 0 }),
+      expect.objectContaining({ Key_name: 'TG_WALLET_REQUEST_TELEGRAM_USUARIO_CRIADO_idx', Non_unique: 1 }),
+      expect.objectContaining({ Key_name: 'TG_WALLET_REQUEST_USUARIO_CONFIRMADO_EXPIRA_idx', Non_unique: 1 }),
     ]));
   });
 
