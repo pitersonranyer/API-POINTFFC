@@ -13,43 +13,69 @@ export class RecargaPixService {
   constructor(private readonly prisma: PrismaService, private readonly carteiras: CarteiraService,
     private readonly recargas: RecargaCarteiraService, private readonly client: MercadoPagoRecargaClient) {}
 
+  validarValor(valor: string): void {
+    if (typeof valor !== 'string' || valor.length > 13 || !/^\d+(\.\d{1,2})?$/.test(valor) ||
+      new Prisma.Decimal(valor).lte(0) || new Prisma.Decimal(valor).gt('9999999999.99')) {
+      throw new BadRequestException('Valor decimal inválido');
+    }
+  }
+
   criar(usuario: Pick<Usuario, 'idUsuario' | 'email'>, valor: string, idempotencyKey: string | undefined) {
     return this.executar(async () => {
       this.client.assertConfigured();
-      if (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{16,128}$/.test(idempotencyKey)) {
-        throw new BadRequestException('Informe Idempotency-Key de 16 a 128 caracteres alfanuméricos, hífen ou underscore');
-      }
-      if (typeof valor !== 'string' || !/^\d+(\.\d{1,2})?$/.test(valor) ||
-        new Prisma.Decimal(valor).lte(0) || new Prisma.Decimal(valor).gt('9999999999.99')) {
-        throw new BadRequestException('Valor decimal inválido');
-      }
-      const externalReference = createHash('sha256').update(`${usuario.idUsuario}:${idempotencyKey}`).digest('hex');
-      const carteira = await this.carteiras.obterOuCriar(usuario.idUsuario);
-      let recarga = await this.recargas.consultarPorExternalReference(externalReference);
-      if (!recarga) {
-        if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
-        try {
-          recarga = await this.recargas.criar({ carteiraId: carteira.id, valor, provedor: 'MERCADO_PAGO', externalReference });
-        } catch (error) {
-          if (!(error instanceof ConflictException)) throw error;
-          // UNIQUE externalReference resolve também dois POSTs simultâneos com a mesma chave.
-          recarga = await this.recargas.consultarPorExternalReference(externalReference);
-          if (!recarga) throw error;
-        }
-      }
-      if (recarga.carteiraId !== carteira.id || recarga.provedor !== 'MERCADO_PAGO' || !recarga.valor.equals(valor)) {
-        throw new ConflictException('Idempotency-Key já utilizada para outra recarga/valor');
-      }
+      const { carteira, recarga } = await this.prepararRecarga(usuario, valor, idempotencyKey);
       if (recarga.idPagamentoExterno) return this.sincronizar(recarga);
       if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
-      console.error(JSON.stringify({ marker: 'RECARGA_PIX_BEFORE_MP_CREATE', level: 'error',
-        timestamp: new Date().toISOString(), usuarioId: usuario.idUsuario, recargaId: recarga.id }));
       const order = await this.client.create(recarga.valor.toFixed(2), recarga.externalReference, usuario.email);
       const oficial = this.validarOrder(recarga, order);
       // Guarda o vínculo antes do crédito, para permitir retry de webhook se o crédito falhar.
       await this.prisma.recargaCarteira.updateMany({ where: { id: recarga.id, idPagamentoExterno: null },
         data: { idPagamentoExterno: oficial.idPagamentoExterno } });
       return this.resposta(await this.carteiras.aplicarRecargaPix(recarga.id, oficial));
+    });
+  }
+
+  /** Cria ou recupera um PIX sem aplicar crédito; o webhook oficial continua sendo o único caminho de crédito. */
+  criarParaTelegram(usuario: Pick<Usuario, 'idUsuario' | 'email'>, valor: string, idempotencyKey: string | undefined) {
+    return this.executar(async () => {
+      this.client.assertConfigured();
+      const { carteira, recarga, externalReference } = await this.prepararRecarga(usuario, valor, idempotencyKey);
+      if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
+      const order = recarga.idPagamentoExterno
+        ? await this.client.get(recarga.idPagamentoExterno)
+        : await this.client.create(recarga.valor.toFixed(2), externalReference, usuario.email);
+      const oficial = this.validarOrder(recarga, order);
+      const linked = await this.prisma.recargaCarteira.updateMany({
+        where: { id: recarga.id, OR: [{ idPagamentoExterno: null }, { idPagamentoExterno: oficial.idPagamentoExterno }] },
+        data: {
+          idPagamentoExterno: oficial.idPagamentoExterno,
+          pixCopiaCola: oficial.pixCopiaCola,
+          qrCode: oficial.qrCode,
+          expiracao: oficial.expiracao,
+        },
+      });
+      const persisted = await this.prisma.recargaCarteira.findUnique({ where: { id: recarga.id } });
+      if (!persisted) throw new NotFoundException('Recarga não encontrada');
+      if (linked.count !== 1 && persisted.idPagamentoExterno !== oficial.idPagamentoExterno) {
+        throw new ConflictException('A cobrança PIX está associada a outra ordem.');
+      }
+      return this.resposta(persisted);
+    });
+  }
+
+  /** Consulta a ordem do provedor e seus dados PIX, sem atualizar status financeiro nem creditar saldo. */
+  consultarStatusTelegram(usuarioId: number, id: number) {
+    return this.executar(async () => {
+      const recarga = await this.prisma.recargaCarteira.findFirst({ where: { id, carteira: { usuarioId }, provedor: 'MERCADO_PAGO' } });
+      if (!recarga) throw new NotFoundException('Recarga não encontrada');
+      if (!recarga.idPagamentoExterno) return this.resposta(recarga);
+      const order = await this.client.get(recarga.idPagamentoExterno);
+      const oficial = this.validarOrder(recarga, order);
+      const updated = await this.prisma.recargaCarteira.update({
+        where: { id: recarga.id },
+        data: { pixCopiaCola: oficial.pixCopiaCola, qrCode: oficial.qrCode, expiracao: oficial.expiracao },
+      });
+      return { ...this.resposta(updated), status: oficial.status ?? updated.status };
     });
   }
 
@@ -107,6 +133,35 @@ export class RecargaPixService {
   private async sincronizar(recarga: RecargaCarteira) {
     const order = await this.client.get(recarga.idPagamentoExterno!);
     return this.resposta(await this.carteiras.aplicarRecargaPix(recarga.id, this.validarOrder(recarga, order)));
+  }
+
+  private async prepararRecarga(
+    usuario: Pick<Usuario, 'idUsuario' | 'email'>,
+    valor: string,
+    idempotencyKey: string | undefined,
+  ) {
+    if (typeof idempotencyKey !== 'string' || !/^[a-zA-Z0-9_-]{16,128}$/.test(idempotencyKey)) {
+      throw new BadRequestException('Informe Idempotency-Key de 16 a 128 caracteres alfanuméricos, hífen ou underscore');
+    }
+    this.validarValor(valor);
+    const externalReference = createHash('sha256').update(`${usuario.idUsuario}:${idempotencyKey}`).digest('hex');
+    const carteira = await this.carteiras.obterOuCriar(usuario.idUsuario);
+    let recarga = await this.recargas.consultarPorExternalReference(externalReference);
+    if (!recarga) {
+      if (carteira.status !== 'ATIVA') throw new BadRequestException('Carteira bloqueada');
+      try {
+        recarga = await this.recargas.criar({ carteiraId: carteira.id, valor, provedor: 'MERCADO_PAGO', externalReference });
+      } catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
+        // UNIQUE externalReference resolve também dois POSTs simultâneos com a mesma chave.
+        recarga = await this.recargas.consultarPorExternalReference(externalReference);
+        if (!recarga) throw error;
+      }
+    }
+    if (recarga.carteiraId !== carteira.id || recarga.provedor !== 'MERCADO_PAGO' || !recarga.valor.equals(valor)) {
+      throw new ConflictException('Idempotency-Key já utilizada para outra recarga/valor');
+    }
+    return { carteira, recarga, externalReference };
   }
 
   private validarOrder(recarga: RecargaCarteira, order: RecargaOrder): RecargaPixOficial {

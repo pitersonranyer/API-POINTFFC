@@ -5,8 +5,10 @@ import { RecargaCarteiraService } from '../src/carteira/recarga-carteira.service
 import { RecargaPixService } from '../src/carteira/recarga-pix.service';
 import { MercadoPagoRecargaClient, RecargaOrder } from '../src/carteira/mercado-pago-recarga.client';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { TelegramLinkService } from '../src/telegram-link/telegram-link.service';
+import { TelegramWalletService } from '../src/telegram/telegram-wallet.service';
 
-// Banco MySQL de teste separado, com 0010/0011/0012 já aplicadas pelo operador.
+// Banco MySQL dedicado, com migrations até 0023 já aplicadas pelo operador.
 // Este teste não executa migrations e nunca usa DATABASE_URL implicitamente.
 const databaseUrl = process.env.CARTEIRA_TEST_DATABASE_URL;
 const integration = databaseUrl ? describe : describe.skip;
@@ -14,8 +16,10 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
   const prisma = new PrismaClient(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : undefined);
   const carteiras = new CarteiraService(prisma as PrismaService);
   const recargas = new RecargaCarteiraService(prisma as PrismaService);
+  const links = new TelegramLinkService(prisma as PrismaService);
   const client = { assertConfigured: jest.fn(), validateSignature: jest.fn(), get: jest.fn(), create: jest.fn() };
   const service = new RecargaPixService(prisma as PrismaService, carteiras, recargas, client as unknown as MercadoPagoRecargaClient);
+  const telegramService = new TelegramWalletService(prisma as PrismaService, links, carteiras, service);
   let usuario: { idUsuario: number; email: string };
   let carteiraId: number;
   let order: RecargaOrder;
@@ -30,6 +34,8 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
   afterEach(async () => {
     jest.restoreAllMocks();
     await prisma.$transaction(async (tx) => {
+      await tx.telegramWalletRequest.deleteMany({ where: { usuarioId: usuario.idUsuario } });
+      await tx.telegramAccountLink.deleteMany({ where: { usuarioId: usuario.idUsuario } });
       await tx.movimentacaoCarteira.deleteMany({ where: { carteiraId } });
       await tx.recargaCarteira.deleteMany({ where: { carteiraId } });
       await tx.carteira.delete({ where: { id: carteiraId } });
@@ -84,6 +90,41 @@ integration('PIX persistente - atomicidade e concorrência MySQL', () => {
     expect(await prisma.recargaCarteira.count({ where: { carteiraId } })).toBe(1);
     expect(await prisma.movimentacaoCarteira.count({ where: { carteiraId } })).toBe(1);
     expect((await carteiras.obterOuCriar(usuario.idUsuario)).saldoDisponivel.toString()).toBe('7.25');
+  });
+
+  it('migration 0023 está aplicada com colunas e índices únicos da solicitação Telegram', async () => {
+    const columns = await prisma.$queryRaw<{ Field: string }[]>`SHOW COLUMNS FROM TELEGRAM_WALLET_REQUEST`;
+    const indexes = await prisma.$queryRaw<{ Key_name: string; Non_unique: number | bigint }[]>`SHOW INDEX FROM TELEGRAM_WALLET_REQUEST`;
+    expect(columns.map((column) => column.Field)).toEqual(expect.arrayContaining([
+      'id', 'telegram_user_id', 'usuario_id', 'idempotency_key', 'valor', 'expira_em', 'confirmado_em', 'recarga_id',
+    ]));
+    expect(indexes.map((index) => ({ ...index, Non_unique: Number(index.Non_unique) }))).toEqual(expect.arrayContaining([
+      expect.objectContaining({ Key_name: 'TELEGRAM_WALLET_REQUEST_idempotency_key_key', Non_unique: 0 }),
+      expect.objectContaining({ Key_name: 'TELEGRAM_WALLET_REQUEST_recarga_id_key', Non_unique: 0 }),
+      expect.objectContaining({ Key_name: 'TG_WALLET_REQUEST_TELEGRAM_USUARIO_CRIADO_idx', Non_unique: 1 }),
+      expect.objectContaining({ Key_name: 'TG_WALLET_REQUEST_USUARIO_CONFIRMADO_EXPIRA_idx', Non_unique: 1 }),
+    ]));
+  });
+
+  it('confirmações Telegram simultâneas reutilizam a recarga persistida e não creditam antes do webhook', async () => {
+    const telegramUserId = `tg-${randomUUID()}`.slice(0, 32);
+    await prisma.telegramAccountLink.create({ data: { telegramUserId, usuarioId: usuario.idUsuario } });
+    const request = await telegramService.preparar(telegramUserId, '7.25');
+
+    const [first, second] = await Promise.all([
+      telegramService.confirmar(telegramUserId, request.id),
+      telegramService.confirmar(telegramUserId, request.id),
+    ]);
+
+    expect(first.id).toBe(second.id);
+    const createsAfterConfirmation = client.create.mock.calls.length;
+    const repeated = await telegramService.confirmar(telegramUserId, request.id);
+    expect(repeated.id).toBe(first.id);
+    expect(client.create).toHaveBeenCalledTimes(createsAfterConfirmation);
+    expect(await prisma.telegramWalletRequest.count({ where: { id: request.id, confirmadoEm: { not: null }, recargaId: first.id } })).toBe(1);
+    expect(await prisma.recargaCarteira.count({ where: { carteiraId } })).toBe(1);
+    expect(await prisma.movimentacaoCarteira.count({ where: { carteiraId } })).toBe(0);
+    expect((await carteiras.obterOuCriar(usuario.idUsuario)).saldoDisponivel.toString()).toBe('0');
   });
 
   it('falha após saldo, movimentação e aprovação reverte tudo antes do commit', async () => {

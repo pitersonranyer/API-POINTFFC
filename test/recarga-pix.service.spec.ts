@@ -114,14 +114,7 @@ describe('RecargaPixService', () => {
     expect(recargas.criar.mock.invocationCallOrder[0]).toBeLessThan(client.create.mock.invocationCallOrder[0]);
     expect(prisma.recargaCarteira.updateMany).toHaveBeenCalledWith({ where: { id: 7, idPagamentoExterno: null }, data: { idPagamentoExterno: 'ORD1' } });
     expect(result).toMatchObject({ valor: '10.00', status: 'PENDENTE', pixCopiaCola: 'copy-secret', qrCode: 'qr-secret' });
-    expect(console.error).toHaveBeenCalledTimes(1);
-    const args = jest.mocked(console.error).mock.calls[0];
-    expect(args).toHaveLength(1);
-    expect(args[0]).not.toMatch(/[\r\n]/);
-    expect(JSON.parse(args[0])).toEqual({ marker: 'RECARGA_PIX_BEFORE_MP_CREATE', level: 'error',
-      timestamp: expect.any(String), usuarioId: 1, recargaId: 7 });
-    expect(Number.isFinite(Date.parse(JSON.parse(args[0]).timestamp))).toBe(true);
-    expect(jest.mocked(console.error).mock.invocationCallOrder[0]).toBeLessThan(client.create.mock.invocationCallOrder[0]);
+    expect(console.error).not.toHaveBeenCalled();
   });
 
   it('PIX já aprovado na criação usa o mesmo caminho de crédito', async () => {

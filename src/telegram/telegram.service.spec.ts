@@ -441,6 +441,54 @@ describe('TelegramService', () => {
     expect(JSON.parse(fetchSpy.mock.calls[1][1]?.body as string)).toEqual({ callback_query_id: 'callback-query-1' });
   });
 
+  it('sends PIX copy-and-paste separately and sends a QR image after editing the payment message', async () => {
+    selectionService.handleCallback.mockResolvedValueOnce({
+      text: '💰 Recarga PIX\nValor: R$ 25,00\nStatus: Aguardando pagamento',
+      buttons: [], inlineKeyboard: [[{ text: '🔄 Atualizar', callback_data: 'pfc:session:nonce:wallet-refresh' }]],
+      editMessage: true, sessionToken: 'wallet-session', copyText: '000201PIX-COPY-CODE', qrCodeBase64: 'aGVsbG8=',
+    });
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    await service.handleWebhook(webhookSecret, {
+      update_id: 930,
+      callback_query: {
+        id: 'wallet-callback', from: { id: 54321 }, data: 'pfc:session12345678:nonce1234:wallet-confirm',
+        message: { message_id: 987, chat: { id: 54321, type: 'private' } },
+      },
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy.mock.calls[0][0]).toBe(`https://api.telegram.org/bot${botToken}/editMessageText`);
+    expect(fetchSpy.mock.calls[1][0]).toBe(`https://api.telegram.org/bot${botToken}/sendMessage`);
+    const copy = JSON.parse(fetchSpy.mock.calls[1][1]?.body as string);
+    expect(copy.text).toBe('000201PIX-COPY-CODE');
+    expect(copy.entities).toEqual([{ type: 'code', offset: 0, length: '000201PIX-COPY-CODE'.length }]);
+    expect(copy.reply_markup).toBeUndefined();
+    expect(fetchSpy.mock.calls[2][0]).toBe(`https://api.telegram.org/bot${botToken}/sendPhoto`);
+    expect(fetchSpy.mock.calls[2][1]?.body).toBeInstanceOf(FormData);
+    expect(fetchSpy.mock.calls[3][0]).toBe(`https://api.telegram.org/bot${botToken}/answerCallbackQuery`);
+  });
+
+  it('does not include PIX values in Telegram transport failure logs', async () => {
+    selectionService.handleCallback.mockResolvedValueOnce({
+      text: '💰 Recarga PIX', buttons: [], inlineKeyboard: [], editMessage: true,
+      copyText: 'VERY-SENSITIVE-PIX-CODE', qrCodeBase64: 'aGVsbG8=',
+    });
+    fetchSpy.mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response)
+      .mockResolvedValueOnce({ ok: false, json: jest.fn().mockResolvedValue({ ok: false }) } as unknown as Response)
+      .mockResolvedValueOnce({ ok: false, json: jest.fn().mockResolvedValue({ ok: false }) } as unknown as Response)
+      .mockResolvedValueOnce({ ok: true, json: jest.fn().mockResolvedValue({ ok: true }) } as unknown as Response);
+    const service = createService({ TELEGRAM_WEBHOOK_SECRET: webhookSecret, TELEGRAM_BOT_TOKEN: botToken });
+    const warn = jest.spyOn((service as unknown as { logger: { warn: (message: string) => void } }).logger, 'warn');
+    await service.handleWebhook(webhookSecret, {
+      update_id: 931,
+      callback_query: {
+        id: 'wallet-callback-failure', from: { id: 54321 }, data: 'pfc:session12345678:nonce1234:wallet-confirm',
+        message: { message_id: 987, chat: { id: 54321, type: 'private' } },
+      },
+    });
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('VERY-SENSITIVE-PIX-CODE');
+  });
+
   it('deduplicates a repeated callback update without editing the selection twice', async () => {
     selectionService.handleCallback.mockResolvedValueOnce({
       text: 'Times selecionados: 1', buttons: [], inlineKeyboard: [], editMessage: true,
