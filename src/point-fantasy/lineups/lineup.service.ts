@@ -1,10 +1,12 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHash } from 'crypto';
+import { generatePublicTeamCode, normalizeTeamName, PUBLIC_TEAM_CODE_ATTEMPTS, PublicTeamCodeCollision } from './team-identity';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateLineupDto, LineupPageDto, UpdateLineupDto } from './lineup.dto';
 import { LineupSelection, selectionIds, validateSelection } from './lineup.rules';
 
-const include = { atletas: { include: { atleta: true }, orderBy: { id: 'asc' as const } } };
+const include = { identidade: true, atletas: { include: { atleta: true }, orderBy: { id: 'asc' as const } } };
 type StoredLineup = Prisma.FantasyEscalacaoGetPayload<{ include: typeof include }>;
 type Competition = Prisma.FantasyCompeticaoGetPayload<{ include: { catalogo: true; partidas: true } }>;
 
@@ -23,14 +25,21 @@ export class LineupService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async atomic<T>(action: (tx: Prisma.TransactionClient) => Promise<T>) {
-    try {
-      return await this.prisma.$transaction(action, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2025', 'P2034'].includes(e.code)) {
-        throw new ConflictException('Escalacao alterada por outra solicitacao; recarregue a versao atual');
+    for (let attempt = 0; attempt < PUBLIC_TEAM_CODE_ATTEMPTS; attempt++) {
+      try {
+        return await this.prisma.$transaction(action, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+      } catch (e) {
+        if (e instanceof PublicTeamCodeCollision) {
+          if (attempt + 1 < PUBLIC_TEAM_CODE_ATTEMPTS) continue;
+          throw new ConflictException('Nao foi possivel atribuir codigo publico; repita a solicitacao com os mesmos parametros');
+        }
+        if (e instanceof Prisma.PrismaClientKnownRequestError && ['P2002', 'P2025', 'P2034'].includes(e.code)) {
+          throw new ConflictException('Escalacao alterada por outra solicitacao; recarregue a versao atual');
+        }
+        throw e;
       }
-      throw e;
     }
+    throw new ConflictException('Nao foi possivel atribuir codigo publico');
   }
 
   private async active(tx: Prisma.TransactionClient, usuarioId: number) {
@@ -60,9 +69,16 @@ export class LineupService {
   private response(lineup: StoredLineup) {
     const selection = this.selection(lineup);
     return { id: lineup.id, competicaoId: lineup.competicaoId, status: lineup.status, versao: lineup.versao,
+      nomePublico: lineup.nomePublico ?? null, sequencial: lineup.sequencial ?? null,
+      legado: !lineup.identidadeId, identidade: lineup.identidade ? this.identityResponse(lineup.identidade) : null,
       criadoEm: lineup.criadoEm, atualizadoEm: lineup.atualizadoEm, ...selection,
       atletas: lineup.atletas.map(a => ({ catalogoAtletaId: a.catalogoAtletaId, papel: a.papel, atleta: a.atleta })),
       validacao: validateSelection(selection, lineup.atletas.map(a => a.atleta)) };
+  }
+
+  private identityResponse(identity: Prisma.FantasyTimeIdentidadeGetPayload<object>) {
+    return { nomeBase: identity.nomeBase, identificadorPublico: identity.identificadorPublico,
+      ultimoSequencial: identity.ultimoSequencial };
   }
 
   private version(lineup: StoredLineup, versao: number) {
@@ -88,15 +104,54 @@ export class LineupService {
     return validateSelection(s, athletes);
   }
 
-  private async createWithin(tx: Prisma.TransactionClient, usuarioId: number, c: Competition, s: LineupSelection) {
+  private async createWithin(tx: Prisma.TransactionClient, usuarioId: number, c: Competition, s: LineupSelection,
+    options: { nomeBase?: string; chaveIdempotencia?: string } = {}, origin = 'create') {
     assertLineupEditable(c);
     await this.validate(tx, c, s);
+    let identity = await tx.fantasyTimeIdentidade.findUnique({ where: { usuarioId_competicaoId: { usuarioId, competicaoId: c.id } } });
+    const name = options.nomeBase === undefined ? undefined : normalizeTeamName(options.nomeBase);
+    const fingerprint = createHash('sha256').update(JSON.stringify({ origin, s, name: name ?? null })).digest('hex');
+    if (identity && options.chaveIdempotencia) {
+      const operation = await tx.fantasyTimeOperacao.findUnique({ where: { identidadeId_chave: {
+        identidadeId: identity.id, chave: options.chaveIdempotencia,
+      } } });
+      if (operation) {
+        if (operation.fingerprint !== fingerprint) throw new ConflictException('Chave de idempotencia reutilizada com parametros diferentes');
+        const saved = await tx.fantasyEscalacao.findFirst({ where: { id: operation.escalacaoId, usuarioId, competicaoId: c.id }, include });
+        if (!saved) throw new ConflictException('Operacao ja concluida; rascunho excluido');
+        return this.response(saved);
+      }
+    }
+    if (identity && name !== undefined && name !== identity.nomeBase) throw new ConflictException('Nome-base definitivo nao pode ser alterado');
+    if (!identity) {
+      try {
+        identity = await tx.fantasyTimeIdentidade.create({ data: {
+          usuarioId, competicaoId: c.id, nomeBase: name ?? normalizeTeamName(), identificadorPublico: generatePublicTeamCode(),
+        } });
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          const target = error.meta?.target;
+          if (target === 'FANTASY_TIME_IDENTIDADE_IDENTIFICADOR_PUBLICO_key'
+            || (Array.isArray(target) && target.length === 1 && ['identificadorPublico', 'IDENTIFICADOR_PUBLICO'].includes(target[0]))) {
+            throw new PublicTeamCodeCollision();
+          }
+        }
+        throw error;
+      }
+    }
+    if (identity.ultimoSequencial >= 4294967295) throw new ConflictException('Sequencial esgotado');
+    identity = await tx.fantasyTimeIdentidade.update({ where: { id: identity.id }, data: { ultimoSequencial: { increment: 1 } } });
+    const sequencial = identity.ultimoSequencial;
+    const nomePublico = '#' + identity.identificadorPublico + ' \u00b7 ' + identity.nomeBase + ' ' + String(sequencial).padStart(2, '0');
     const lineup = await tx.fantasyEscalacao.create({ data: {
-      usuarioId, competicaoId: c.id, formacao: s.formacao, status: 'RASCUNHO',
+      usuarioId, competicaoId: c.id, identidadeId: identity.id, sequencial, nomePublico, formacao: s.formacao, status: 'RASCUNHO',
       capitaoAtletaId: s.capitaoAtletaId, reservaMagoAtletaId: s.reservaMagoAtletaId,
       atletas: { create: this.rows(s) },
     }, include });
     assertLineupEditable(c);
+    if (options.chaveIdempotencia) await tx.fantasyTimeOperacao.create({ data: {
+      identidadeId: identity.id, chave: options.chaveIdempotencia, fingerprint, escalacaoId: lineup.id,
+    } });
     return this.response(lineup);
   }
 
@@ -106,7 +161,7 @@ export class LineupService {
       const c = await this.competition(tx, competicaoId);
       return this.createWithin(tx, usuarioId, c, { formacao: dto.formacao, titulares: dto.titulares ?? [],
         tecnico: dto.tecnico ?? null, reservas: dto.reservas ?? [], capitaoAtletaId: dto.capitaoAtletaId ?? null,
-        reservaMagoAtletaId: dto.reservaMagoAtletaId ?? null });
+        reservaMagoAtletaId: dto.reservaMagoAtletaId ?? null }, dto);
     });
   }
 
@@ -119,7 +174,11 @@ export class LineupService {
         tx.fantasyEscalacao.findMany({ where, skip: (page.page - 1) * page.limit, take: page.limit, orderBy: { id: 'desc' }, include }),
         tx.fantasyEscalacao.count({ where }),
       ]);
-      return { items: items.map(item => this.response(item)), total, page: page.page, limit: page.limit };
+      const identity = await tx.fantasyTimeIdentidade.findUnique({ where: { usuarioId_competicaoId: { usuarioId, competicaoId } } });
+      const legados = await tx.fantasyEscalacao.count({ where: { ...where, identidadeId: null } });
+      return { identidade: identity ? this.identityResponse(identity) : null,
+        estadoIdentidade: identity ? 'DEFINIDA' : legados ? 'LEGADO' : 'NOVO', rascunhosLegados: legados,
+        items: items.map(item => this.response(item)), total, page: page.page, limit: page.limit };
     });
   }
 
@@ -158,13 +217,13 @@ export class LineupService {
     });
   }
 
-  async duplicate(usuarioId: number, id: number, versao: number) {
+  async duplicate(usuarioId: number, id: number, versao: number, options: { nomeBase?: string; chaveIdempotencia?: string } = {}) {
     return this.atomic(async tx => {
       await this.active(tx, usuarioId);
       const lineup = await this.owned(tx, usuarioId, id);
       this.version(lineup, versao);
       const c = await this.competition(tx, lineup.competicaoId);
-      return this.createWithin(tx, usuarioId, c, this.selection(lineup));
+      return this.createWithin(tx, usuarioId, c, this.selection(lineup), options, 'duplicate:' + id + ':' + versao);
     });
   }
 

@@ -35,8 +35,8 @@ describe('Lineup service transaction boundaries', () => {
     await expect(service.update(1,1,{versao:1})).rejects.toThrow(ConflictException);
     expect(tx.fantasyEscalacao.updateMany).not.toHaveBeenCalled();
   });
-  it('traduz deadlock/concorrencia para 409', async () => {
-    db.$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('race',{code:'P2034',clientVersion:'5.22.0'}));
+  it.each(['P2002', 'P2025', 'P2034'])('traduz unicidade/deadlock/concorrencia %s para 409', async code => {
+    db.$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('race',{code,clientVersion:'5.22.0'}));
     await expect(service.get(1,1)).rejects.toThrow(ConflictException);
   });
   it('transacao Serializable envolve consulta do proprio usuario', async () => {

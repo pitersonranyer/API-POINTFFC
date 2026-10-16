@@ -57,7 +57,7 @@ describe('Lineup HTTP contract and JWT identity', () => {
   });
   it('duplicacao e exclusao exigem versao e passam dono validado', async () => {
     expect((await request('escalacoes/1/duplicar', 'POST', { versao: 1 })).status).toBe(201);
-    expect(service.duplicate).toHaveBeenCalledWith(11,1,1);
+    expect(service.duplicate).toHaveBeenCalledWith(11,1,1,expect.objectContaining({ versao: 1 }));
     expect((await request('escalacoes/1?versao=1', 'DELETE')).status).toBe(200);
     expect(service.remove).toHaveBeenCalledWith(11,1,1);
     expect((await request('escalacoes/1', 'DELETE')).status).toBe(400);
@@ -67,5 +67,14 @@ describe('Lineup HTTP contract and JWT identity', () => {
     expect((await request('competicoes/1/escalacoes/minhas?limit=101', 'GET')).status).toBe(400);
     expect((await request('escalacoes/4294967296', 'GET')).status).toBe(400);
     expect((await request('escalacoes/0', 'GET')).status).toBe(400);
+  });
+  it('encaminha nome e chave opcionais em criacao e duplicacao', async () => {
+    const identity = { nomeBase: 'Meu Time', chaveIdempotencia: 'attempt-1' };
+    expect((await request('competicoes/1/escalacoes', 'POST', { formacao: '4-3-3', ...identity })).status).toBe(201);
+    expect(service.create).toHaveBeenCalledWith(11, 1, expect.objectContaining(identity));
+    expect((await request('escalacoes/1/duplicar', 'POST', { versao: 1, ...identity })).status).toBe(201);
+    expect(service.duplicate).toHaveBeenCalledWith(11, 1, 1, expect.objectContaining(identity));
+    expect((await request('escalacoes/1', 'PATCH', { versao: 1, nomeBase: 'Outro' })).status).toBe(400);
+    expect((await request('competicoes/1/escalacoes', 'POST', { formacao: '4-3-3', nomePublico: 'Forjado', sequencial: 3 })).status).toBe(400);
   });
 });

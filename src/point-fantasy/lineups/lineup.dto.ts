@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, Max, Min, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, Max, Min, ValidateIf, IsString, Matches, MaxLength } from 'class-validator';
 
 export const FORMATIONS = ['4-3-3', '4-4-2', '3-5-2', '3-4-3', '4-5-1', '5-3-2', '5-4-1'] as const;
 export class LineupIdDto {
@@ -23,9 +23,16 @@ export class LineupSelectionDto {
   @IsOptional() @IsInt() @Min(1) @Max(4294967295) reservaMagoAtletaId?: number | null;
 }
 export class CreateLineupDto extends LineupSelectionDto {
+  @ValidateIf((_o, v) => v !== undefined) @IsString() @MaxLength(120) nomeBase?: string;
+  @ValidateIf((_o, v) => v !== undefined) @IsString() @Matches(/^[A-Za-z0-9_-]{1,100}$/) chaveIdempotencia?: string;
   @IsIn(FORMATIONS) formacao: string;
 }
 export class UpdateLineupDto extends LineupSelectionDto {
   @ValidateIf((_o, v) => v !== undefined) @IsIn(FORMATIONS) formacao?: string;
   @IsInt() @Min(1) @Max(4294967294) versao: number;
+}
+
+export class DuplicateLineupDto extends LineupVersionDto {
+  @ValidateIf((_o, v) => v !== undefined) @IsString() @MaxLength(120) nomeBase?: string;
+  @ValidateIf((_o, v) => v !== undefined) @IsString() @Matches(/^[A-Za-z0-9_-]{1,100}$/) chaveIdempotencia?: string;
 }

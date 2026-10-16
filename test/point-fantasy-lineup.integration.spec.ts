@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { LineupService } from '../src/point-fantasy/lineups/lineup.service';
 import { FORMATION_COUNTS } from '../src/point-fantasy/lineups/lineup.rules';
+import * as teamIdentity from '../src/point-fantasy/lineups/team-identity';
 
 const url = process.env.POINT_FANTASY_TEST_DATABASE_URL;
 const integration = url ? describe : describe.skip;
@@ -14,6 +15,13 @@ integration('Fantasy lineups real MySQL integration (dedicated test database)', 
   const reserves: Record<number, number[]> = {};
   let coach: number;
   const token = `lineup-${Date.now()}`;
+  const extraUsers: number[] = [];
+  const freshUser = async () => {
+    const row = await db.usuario.create({ data: { email: `${token}-${extraUsers.length}@test.invalid`, status: 'ATIVO' } });
+    extraUsers.push(row.idUsuario);
+    return row.idUsuario;
+  };
+  afterEach(() => jest.restoreAllMocks());
   beforeAll(async () => {
     const target = new URL(url!);
     if (target.protocol !== 'mysql:' || !['localhost','127.0.0.1'].includes(target.hostname)
@@ -36,9 +44,9 @@ integration('Fantasy lineups real MySQL integration (dedicated test database)', 
   afterAll(async () => {
     if(!db)return;
     try{
-      if(competition){await db.fantasyEscalacao.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticaoPartida.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticao.delete({where:{id:competition}});}
+      if(competition){await db.fantasyEscalacao.deleteMany({where:{competicaoId:competition}});await db.fantasyTimeOperacao.deleteMany({where:{identidade:{competicaoId:competition}}});await db.fantasyTimeIdentidade.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticaoPartida.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticao.delete({where:{id:competition}});}
       if(catalog||otherCatalog){await db.fantasyCatalogoAtleta.deleteMany({where:{catalogoId:{in:[catalog,otherCatalog].filter(Boolean)}}});await db.fantasyCatalogo.deleteMany({where:{id:{in:[catalog,otherCatalog].filter(Boolean)}}});}
-      await db.usuario.deleteMany({where:{idUsuario:{in:[user,other].filter(Boolean)}}});
+      await db.usuario.deleteMany({where:{idUsuario:{in:[user,other,...extraUsers].filter(Boolean)}}});
     }finally{await db.$disconnect();}
   });
   const complete = (formacao='4-3-3') => {
@@ -114,5 +122,108 @@ integration('Fantasy lineups real MySQL integration (dedicated test database)', 
     const s=await service.create(user,competition,complete());
     await expect(db.fantasyEscalacaoAtleta.create({data:{escalacaoId:s.id,catalogoAtletaId:s.titulares[0],papel:'RESERVA'}})).rejects.toMatchObject({code:'P2002'});
     await expect(db.fantasyEscalacaoAtleta.create({data:{escalacaoId:s.id,catalogoAtletaId:4294967295,papel:'RESERVA'}})).rejects.toMatchObject({code:'P2003'});
+  });
+  it('first-save rollback does not retain an identity', async () => {
+    const injected = new Error('FIRST_SAVE_ROLLBACK');
+    const proxy = { $transaction: (action: any, options: any) => db.$transaction(async tx => { await action(tx); throw injected; }, options) };
+    await expect(new LineupService(proxy as unknown as PrismaService).create(other, competition,
+      { formacao: '4-3-3', nomeBase: 'Primeiro', chaveIdempotencia: 'rollback' })).rejects.toBe(injected);
+    expect(await db.fantasyTimeIdentidade.count({ where: { usuarioId: other, competicaoId: competition } })).toBe(0);
+  });
+  it('concurrent first saves create one identity; retries do not allocate twice', async () => {
+    const dto = { formacao: '4-3-3', nomeBase: 'Concorrente', chaveIdempotencia: 'first' };
+    const results = await Promise.allSettled([service.create(other, competition, dto), service.create(other, competition, dto)]);
+    expect(results.some(r => r.status === 'fulfilled')).toBe(true);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason.status).toBe(409);
+    const replay = await service.create(other, competition, dto);
+    expect(replay.sequencial).toBe(1);
+    expect(await db.fantasyTimeIdentidade.count({ where: { usuarioId: other, competicaoId: competition } })).toBe(1);
+    expect(await db.fantasyEscalacao.count({ where: { usuarioId: other, competicaoId: competition } })).toBe(1);
+  });
+  it('simultaneous create and duplicate allocate distinct monotonically increasing numbers', async () => {
+    const source = (await service.list(other, competition, { page: 1, limit: 50 })).items[0];
+    const create = () => service.create(other, competition, { formacao: '4-3-3', chaveIdempotencia: 'parallel-create' });
+    const duplicate = () => service.duplicate(other, source.id, source.versao, { chaveIdempotencia: 'parallel-copy' });
+    const results = await Promise.allSettled([create(), duplicate()]);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason.status).toBe(409);
+    const a = await create(), b = await duplicate();
+    expect([a.sequencial, b.sequencial].sort()).toEqual([2, 3]);
+    const identity = await db.fantasyTimeIdentidade.findUniqueOrThrow({ where: { usuarioId_competicaoId: { usuarioId: other, competicaoId: competition } } });
+    expect(identity.ultimoSequencial).toBe(3);
+    await expect(db.fantasyTimeIdentidade.create({ data: { usuarioId: other, competicaoId: competition,
+      nomeBase: 'Duplicate', identificadorPublico: 'AAAAAAA' } })).rejects.toMatchObject({ code: 'P2002' });
+    await expect(db.fantasyEscalacao.create({ data: { usuarioId: other, competicaoId: competition,
+      formacao: '4-3-3', nomePublico: a.nomePublico } })).rejects.toMatchObject({ code: 'P2002' });
+    await expect(db.fantasyEscalacao.create({ data: { usuarioId: other, competicaoId: competition,
+      formacao: '4-3-3', identidadeId: identity.id, sequencial: a.sequencial, nomePublico: 'different' } })).rejects.toMatchObject({ code: 'P2002' });
+    await expect(db.fantasyEscalacao.create({ data: { usuarioId: user, competicaoId: competition,
+      formacao: '4-3-3', identidadeId: identity.id, sequencial: 90, nomePublico: 'forged-owner' } })).rejects.toMatchObject({ code: 'P2003' });
+  });
+  it('two unkeyed first saves keep one identity and distinct sequences', async () => {
+    const owner = await freshUser();
+    const dto = { formacao: '4-3-3', nomeBase: 'Original' };
+    const results = await Promise.allSettled([service.create(owner, competition, dto), service.create(owner, competition, dto)]);
+    expect(results.some(r => r.status === 'fulfilled')).toBe(true);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason.status).toBe(409);
+    const list = await service.list(owner, competition, { page: 1, limit: 50 });
+    expect(new Set(list.items.map(i => i.sequencial)).size).toBe(list.total);
+    expect(list.identidade?.ultimoSequencial).toBe(list.total);
+    expect(await db.fantasyTimeIdentidade.count({ where: { usuarioId: owner, competicaoId: competition } })).toBe(1);
+  });
+  it.each(['create', 'duplicate'])('concurrent %s requests retain distinct sequences and idempotency', async kind => {
+    const owner = await freshUser();
+    const source = await service.create(owner, competition, { formacao: '4-3-3', nomeBase: 'Estavel' });
+    const action = (key: string) => kind === 'create'
+      ? service.create(owner, competition, { formacao: '4-3-3', chaveIdempotencia: key })
+      : service.duplicate(owner, source.id, source.versao, { chaveIdempotencia: key });
+    const results = await Promise.allSettled([action('a'), action('b')]);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason.status).toBe(409);
+    const a = await action('a'), b = await action('b');
+    expect([a.sequencial, b.sequencial].sort()).toEqual([2, 3]);
+    expect(a.identidade?.identificadorPublico).toBe(source.identidade?.identificadorPublico);
+    const before = await service.list(owner, competition, { page: 1, limit: 50 });
+    await expect(service.create(owner, competition, { formacao: '4-4-2', chaveIdempotencia: 'a' })).rejects.toMatchObject({ status: 409 });
+    await expect(service.create(owner, competition, { formacao: '4-3-3', nomeBase: 'Renomeado' })).rejects.toMatchObject({ status: 409 });
+    expect((await service.list(owner, competition, { page: 1, limit: 50 })).identidade).toEqual(before.identidade);
+    for (const item of before.items) await service.remove(owner, item.id, item.versao);
+    expect(await service.list(owner, competition, { page: 1, limit: 50 })).toMatchObject({ total: 0, estadoIdentidade: 'DEFINIDA' });
+    const next = await service.create(owner, competition, { formacao: '4-3-3' });
+    expect(next.sequencial).toBe(4);
+    expect(next.identidade?.identificadorPublico).toBe(source.identidade?.identificadorPublico);
+  });
+  it('real public-code collision retries without changing the previous identity', async () => {
+    const owner = await freshUser(), nextOwner = await freshUser();
+    const code = teamIdentity.generatePublicTeamCode();
+    const generate = jest.spyOn(teamIdentity, 'generatePublicTeamCode').mockReturnValue(code);
+    const existing = await service.create(owner, competition, { formacao: '4-3-3', nomeBase: 'Anterior' });
+    const nextCode = code === 'BBBBBBB' ? 'CCCCCCC' : 'BBBBBBB';
+    generate.mockReturnValueOnce(code).mockReturnValue(nextCode);
+    const saved = await service.create(nextOwner, competition, { formacao: '4-3-3', nomeBase: 'Solicitado' });
+    expect(saved).toMatchObject({ sequencial: 1, identidade: { nomeBase: 'Solicitado', identificadorPublico: nextCode } });
+    expect((await service.get(owner, existing.id)).identidade?.identificadorPublico).toBe(code);
+    generate.mockReturnValue(code);
+    const exhaustedOwner = await freshUser();
+    await expect(service.create(exhaustedOwner, competition, { formacao: '4-3-3' })).rejects.toMatchObject({ status: 409 });
+    expect(await db.fantasyTimeIdentidade.count({ where: { usuarioId: exhaustedOwner, competicaoId: competition } })).toBe(0);
+  });
+  it('first save persists the chosen name, a seven-character code and sequence 01', async () => {
+    const owner = await freshUser();
+    const saved = await service.create(owner, competition, { formacao: '4-3-3', nomeBase: 'Tropa do Mago', chaveIdempotencia: 'initial' });
+    expect(saved.identidade?.identificadorPublico).toMatch(/^[A-HJ-NP-Z2-9]{7}$/);
+    expect(saved).toMatchObject({ sequencial: 1, legado: false, identidade: { nomeBase: 'Tropa do Mago', ultimoSequencial: 1 } });
+    expect(saved.nomePublico).toBe('#' + saved.identidade!.identificadorPublico + ' \u00b7 Tropa do Mago 01');
+    expect(await service.get(owner, saved.id)).toMatchObject({ nomePublico: saved.nomePublico, sequencial: 1 });
+  });
+  it('legacy drafts remain unnamed through read, update and duplication', async () => {
+    const owner = await freshUser();
+    const legacy = await db.fantasyEscalacao.create({ data: { usuarioId: owner, competicaoId: competition, formacao: '4-3-3' } });
+    expect(await service.list(owner, competition, { page: 1, limit: 50 })).toMatchObject({ estadoIdentidade: 'LEGADO', rascunhosLegados: 1 });
+    expect(await service.get(owner, legacy.id)).toMatchObject({ legado: true, nomePublico: null, sequencial: null, identidade: null });
+    const edited = await service.update(owner, legacy.id, { versao: 1, formacao: '4-4-2' });
+    expect(edited).toMatchObject({ legado: true, versao: 2, nomePublico: null });
+    const copy = await service.duplicate(owner, legacy.id, edited.versao, { nomeBase: 'Novo nome', chaveIdempotencia: 'legacy-copy' });
+    expect(copy).toMatchObject({ legado: false, sequencial: 1, formacao: '4-4-2', identidade: { nomeBase: 'Novo nome' } });
+    expect(await service.get(owner, legacy.id)).toMatchObject({ legado: true, nomePublico: null, sequencial: null });
+    expect(await service.list(owner, competition, { page: 1, limit: 50 })).toMatchObject({ estadoIdentidade: 'DEFINIDA', rascunhosLegados: 1, total: 2 });
   });
 });

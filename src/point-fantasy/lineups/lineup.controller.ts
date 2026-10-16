@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Usuario } from '@prisma/client';
 import { AuthenticatedUser } from '../../auth/authenticated-user.decorator';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { CreateLineupDto, LineupIdDto, LineupPageDto, LineupVersionDto, UpdateLineupDto } from './lineup.dto';
+import { CreateLineupDto, DuplicateLineupDto, LineupIdDto, LineupPageDto, LineupVersionDto, UpdateLineupDto } from './lineup.dto';
 import { LineupService } from './lineup.service';
 
 @ApiTags('point-fantasy/escalacoes')
@@ -27,8 +27,8 @@ export class LineupController {
     return this.service.update(user.idUsuario, p.id, dto);
   }
   @Post('escalacoes/:id/duplicar')
-  duplicate(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Body() dto: LineupVersionDto) {
-    return this.service.duplicate(user.idUsuario, p.id, dto.versao);
+  duplicate(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Body() dto: DuplicateLineupDto) {
+    return this.service.duplicate(user.idUsuario, p.id, dto.versao, dto);
   }
   @Delete('escalacoes/:id')
   remove(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Query() dto: LineupVersionDto) {

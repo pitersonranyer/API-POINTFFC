@@ -125,6 +125,7 @@ model RodadaProcessamento {
 
 model Usuario {
   fantasyEscalacoes FantasyEscalacao[]
+  fantasyIdentidades FantasyTimeIdentidade[]
   idUsuario       Int        @id @default(autoincrement()) @map("id_usuario") @db.UnsignedInt
   firebaseUid     String?    @unique @map("firebase_uid") @db.VarChar(128)
   senhaHash       String?    @map("senha_hash") @db.VarChar(255)
@@ -787,6 +788,7 @@ model FantasyCatalogoAtleta {
 }
 
 model FantasyCompeticao {
+  identidades FantasyTimeIdentidade[]
   escalacoes FantasyEscalacao[]
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
   catalogoId Int @map("CATALOGO_ID") @db.UnsignedInt
@@ -830,6 +832,12 @@ enum FantasyEscalacaoPapel {
 }
 
 model FantasyEscalacao {
+  identidadeId Int? @map("IDENTIDADE_ID") @db.UnsignedInt
+  sequencial Int? @map("SEQUENCIAL") @db.UnsignedInt
+  nomePublico String? @map("NOME_PUBLICO") @db.VarChar(160)
+  identidade FantasyTimeIdentidade? @relation(fields: [identidadeId, usuarioId, competicaoId], references: [id, usuarioId, competicaoId], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([identidadeId, sequencial], map: "FE_IDENTIDADE_SEQ_key")
+  @@unique([competicaoId, nomePublico], map: "FE_COMP_NOME_key")
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
   usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
   competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
@@ -862,4 +870,35 @@ model FantasyEscalacaoAtleta {
   @@unique([escalacaoId, catalogoAtletaId])
   @@index([catalogoAtletaId])
   @@map("FANTASY_ESCALACAO_ATLETA")
+}
+
+model FantasyTimeIdentidade {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  nomeBase String @map("NOME_BASE") @db.VarChar(60)
+  identificadorPublico String @unique @map("IDENTIFICADOR_PUBLICO") @db.VarChar(32)
+  ultimoSequencial Int @default(0) @map("ULTIMO_SEQUENCIAL") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  escalacoes FantasyEscalacao[]
+  operacoes FantasyTimeOperacao[]
+  @@unique([usuarioId, competicaoId], map: "FTI_USUARIO_COMP_key")
+  @@unique([id, usuarioId, competicaoId], map: "FTI_OWNER_key")
+  @@map("FANTASY_TIME_IDENTIDADE")
+}
+
+// Retained after deletion to prevent a retry from allocating another number.
+model FantasyTimeOperacao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  identidadeId Int @map("IDENTIDADE_ID") @db.UnsignedInt
+  chave String @map("CHAVE") @db.VarChar(100)
+  fingerprint String @map("FINGERPRINT") @db.Char(64)
+  escalacaoId Int @map("ESCALACAO_ID") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  identidade FantasyTimeIdentidade @relation(fields: [identidadeId], references: [id], onDelete: Restrict)
+  @@unique([identidadeId, chave], map: "FTO_IDENTIDADE_CHAVE_key")
+  @@map("FANTASY_TIME_OPERACAO")
 }
