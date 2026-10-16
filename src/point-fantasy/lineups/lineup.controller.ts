@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Usuario } from '@prisma/client';
 import { AuthenticatedUser } from '../../auth/authenticated-user.decorator';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { CreateLineupDto, DuplicateLineupDto, LineupIdDto, LineupPageDto, LineupVersionDto, UpdateLineupDto } from './lineup.dto';
+import { ConfirmFreeLineupsDto, CreateLineupDto, DuplicateLineupDto, LineupIdDto, LineupPageDto, LineupVersionDto, UpdateLineupDto } from './lineup.dto';
 import { LineupService } from './lineup.service';
 
 @ApiTags('point-fantasy/escalacoes')
@@ -12,6 +12,10 @@ import { LineupService } from './lineup.service';
 @Controller('point-fantasy')
 export class LineupController {
   constructor(private readonly service: LineupService) {}
+  @Post('competicoes/:id/inscricoes')
+  confirm(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Body() dto: ConfirmFreeLineupsDto) {
+    return this.service.confirmFree(user.idUsuario, p.id, dto);
+  }
   @Post('competicoes/:id/escalacoes')
   create(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Body() dto: CreateLineupDto) {
     return this.service.create(user.idUsuario, p.id, dto);

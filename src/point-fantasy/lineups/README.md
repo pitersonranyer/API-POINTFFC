@@ -1,4 +1,4 @@
-﻿# POINT FFC Fantasy — Fase 2A: rascunhos de escalação
+# POINT FFC Fantasy — Fase 2A: rascunhos de escalação
 
 Branch: `codex/point-fantasy-lineups-phase-2a`, criada a partir da branch foundation com as alterações locais anteriores preservadas. Backend NestJS / Prisma 5.22 / MySQL 8.0.25.
 
@@ -168,3 +168,47 @@ Nenhum frontend, campinho, inscrição, pagamento, PIX, carteira, pontuação, r
 - Banco de testes bem-sucedido: `point_fantasy_lineups_2a_test_1792080059149`; fixtures removidas ao final. O primeiro banco de ensaio `point_fantasy_lineups_2a_test_1792079999001` ficou com a tentativa inicial de migration falha, somente para inspeção. Nenhum deles é o banco principal e nenhum foi apagado/recriado.
 
 Reexecutar integração somente em banco dedicado com prefixo `point_fantasy_lineups_2a_test_` e migrations aplicadas, configurando POINT_FANTASY_TEST_DATABASE_URL no processo. Nunca apontar essa variável ao banco principal. Sem a variável, a integração é ignorada.
+# Fase 6B — confirmação FREE
+
+`POST /point-fantasy/competicoes/:id/inscricoes` exige JWT de usuário ativo.
+Corpo: `{ "escalacaoIds": [1, 2], "chaveIdempotencia": "confirm-001" }`.
+Aceita de 1 a 100 IDs únicos de rascunhos existentes do próprio usuário na
+competição. A chave é obrigatória, com 1–100 caracteres alfanuméricos ASCII,
+`_` ou `-`. Não envia seleção, valor ou identidade nesse endpoint.
+
+Resposta: `{ competicao: { id, nome, tipoAcesso }, escalacoes: [{ id,
+nomePublico, status: "INSCRITA", confirmadaEm }], quantidadeConfirmada,
+valorTotal: "0.00", estado: "CONFIRMADA" }`. Datas são ISO UTC; nome público
+continua nulo para legados sem identidade. A operação não cria times nem identidade.
+
+O lote é atômico e exige PUBLICADA/FREE, valor zero, catálogo congelado,
+seleções completas e elegíveis, limite por usuário e janela
+`inicioInscricao <= agora < fimInscricao`, antes do fechamento definitivo e
+de qualquer partida iniciada, prevista ou fora de AGENDADA. Rascunhos não
+consomem o limite. Não há efeitos financeiros.
+
+Repetir a mesma chave e o mesmo conjunto de IDs (a ordem não importa) retorna
+o resultado persistido, inclusive após encerrar o período. Outro conjunto com
+a mesma chave retorna 409. Uma escalação já inscrita com outra chave retorna
+409; o lote inteiro é rejeitado. Após conflito concorrente 409, repetir a mesma
+requisição e chave. A idempotência é restrita ao usuário e à competição.
+
+`GET /point-fantasy/competicoes/:id/escalacoes/minhas` e
+`GET /point-fantasy/escalacoes/:id` preservam seus campos e acrescentam
+`confirmadaEm` (null para rascunho). Escalações INSCRITA ficam bloqueadas para
+PATCH, DELETE e duplicação nesta versão conservadora, mantendo leitura privada.
+A janela de edição dos rascunhos existentes permanece a mesma; confirmação
+tem a verificação adicional obrigatória de fimInscricao.
+
+A migration aditiva `0027_point_fantasy_free_registration` cria o registro de
+operação e adiciona data e vínculo à escalação. Preserva dados legados e amplia
+o CHECK de status para RASCUNHO/INSCRITA com consistência dos campos novos.
+FK composta vincula a operação ao mesmo proprietário e competição. Aplicar
+pelo processo habitual antes de disponibilizar o código; não há migração de
+rascunhos para inscritos nem inscrição retroativa.
+
+Testes: `npx jest --runInBand --testPathPattern=point-fantasy`.
+Integração opt-in usa a infraestrutura e a validação de URL local já existentes
+em `test/point-fantasy-lineup.integration.spec.ts`; requer banco dedicado com
+a migration 0027 aplicada. Sem `POINT_FANTASY_TEST_DATABASE_URL`, integrações
+são ignoradas. Testes unitários com fake não comprovam locks e rollback MySQL.

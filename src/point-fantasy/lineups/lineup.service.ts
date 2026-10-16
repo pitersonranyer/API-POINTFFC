@@ -1,9 +1,9 @@
-import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { generatePublicTeamCode, normalizeTeamName, PUBLIC_TEAM_CODE_ATTEMPTS, PublicTeamCodeCollision } from './team-identity';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CreateLineupDto, LineupPageDto, UpdateLineupDto } from './lineup.dto';
+import { ConfirmFreeLineupsDto, CreateLineupDto, LineupPageDto, UpdateLineupDto } from './lineup.dto';
 import { LineupSelection, selectionIds, validateSelection } from './lineup.rules';
 
 const include = { identidade: true, atletas: { include: { atleta: true }, orderBy: { id: 'asc' as const } } };
@@ -69,6 +69,7 @@ export class LineupService {
   private response(lineup: StoredLineup) {
     const selection = this.selection(lineup);
     return { id: lineup.id, competicaoId: lineup.competicaoId, status: lineup.status, versao: lineup.versao,
+      confirmadaEm: lineup.confirmadaEm ?? null,
       nomePublico: lineup.nomePublico ?? null, sequencial: lineup.sequencial ?? null,
       legado: !lineup.identidadeId, identidade: lineup.identidade ? this.identityResponse(lineup.identidade) : null,
       criadoEm: lineup.criadoEm, atualizadoEm: lineup.atualizadoEm, ...selection,
@@ -162,6 +163,57 @@ export class LineupService {
       return this.createWithin(tx, usuarioId, c, { formacao: dto.formacao, titulares: dto.titulares ?? [],
         tecnico: dto.tecnico ?? null, reservas: dto.reservas ?? [], capitaoAtletaId: dto.capitaoAtletaId ?? null,
         reservaMagoAtletaId: dto.reservaMagoAtletaId ?? null }, dto);
+    });
+  }
+
+  async confirmFree(usuarioId: number, competicaoId: number, dto: ConfirmFreeLineupsDto) {
+    const ids = [...dto.escalacaoIds].sort((a, b) => a - b);
+    if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length) {
+      throw new BadRequestException('Selecione de 1 a 100 escalacoes unicas');
+    }
+    const fingerprint = createHash('sha256').update(JSON.stringify(ids)).digest('hex');
+    return this.atomic(async tx => {
+      await this.active(tx, usuarioId);
+      // Serialize confirmations for this competition, including the confirmed-count check.
+      await tx.$queryRaw`SELECT ID FROM FANTASY_COMPETICAO WHERE ID = ${competicaoId} FOR UPDATE`;
+      const key = { usuarioId, competicaoId, chave: dto.chaveIdempotencia };
+      const previous = await tx.fantasyInscricaoOperacao.findUnique({ where: { usuarioId_competicaoId_chave: key } });
+      if (previous) {
+        if (previous.fingerprint !== fingerprint) throw new ConflictException('Chave de idempotencia reutilizada com parametros diferentes');
+        return previous.resultado;
+      }
+      const check = async () => {
+        await this.active(tx, usuarioId);
+        const c = await this.competition(tx, competicaoId);
+        assertLineupEditable(c);
+        if (c.tipoAcesso !== 'FREE' || !c.valorInscricao.isZero()) throw new ConflictException('Somente inscricao FREE disponivel');
+        if (new Date() >= c.fimInscricao) throw new ConflictException('Periodo de inscricao encerrado');
+        return c;
+      };
+      const c = await check();
+      const lineups = await tx.fantasyEscalacao.findMany({ where: { id: { in: ids }, usuarioId, competicaoId }, include, orderBy: { id: 'asc' } });
+      if (lineups.length !== ids.length) throw new NotFoundException('Escalacoes nao encontradas nesta competicao');
+      for (const lineup of lineups) {
+        this.version(lineup, lineup.versao);
+        if (!(await this.validate(tx, c, this.selection(lineup))).completa) throw new BadRequestException('Escalacao incompleta');
+      }
+      const count = await tx.fantasyEscalacao.count({ where: { usuarioId, competicaoId, status: 'INSCRITA' } });
+      if (c.limiteEscalacoesUsuario !== null && count + ids.length > c.limiteEscalacoesUsuario) {
+        throw new ConflictException('Limite de escalacoes inscritas excedido');
+      }
+      const confirmadaEm = new Date();
+      const resultado = { competicao: { id: c.id, nome: c.nome, tipoAcesso: c.tipoAcesso },
+        escalacoes: lineups.map(l => ({ id: l.id, nomePublico: l.nomePublico, status: 'INSCRITA', confirmadaEm: confirmadaEm.toISOString() })),
+        quantidadeConfirmada: ids.length, valorTotal: '0.00', estado: 'CONFIRMADA' };
+      const operation = await tx.fantasyInscricaoOperacao.create({ data: { ...key, fingerprint, resultado } });
+      for (const lineup of lineups) {
+        const changed = await tx.fantasyEscalacao.updateMany({ where: { id: lineup.id, usuarioId, competicaoId, status: 'RASCUNHO', versao: lineup.versao },
+          data: { status: 'INSCRITA', confirmadaEm, inscricaoOperacaoId: operation.id, versao: { increment: 1 } } });
+        if (changed.count !== 1) throw new ConflictException('Escalacao alterada durante inscricao');
+      }
+      // A deadline reached while persisting rolls the entire batch back.
+      await check();
+      return resultado;
     });
   }
 

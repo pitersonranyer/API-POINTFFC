@@ -44,7 +44,7 @@ integration('Fantasy lineups real MySQL integration (dedicated test database)', 
   afterAll(async () => {
     if(!db)return;
     try{
-      if(competition){await db.fantasyEscalacao.deleteMany({where:{competicaoId:competition}});await db.fantasyTimeOperacao.deleteMany({where:{identidade:{competicaoId:competition}}});await db.fantasyTimeIdentidade.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticaoPartida.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticao.delete({where:{id:competition}});}
+      if(competition){await db.fantasyEscalacao.deleteMany({where:{competicaoId:competition}});await db.fantasyInscricaoOperacao.deleteMany({where:{competicaoId:competition}});await db.fantasyTimeOperacao.deleteMany({where:{identidade:{competicaoId:competition}}});await db.fantasyTimeIdentidade.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticaoPartida.deleteMany({where:{competicaoId:competition}});await db.fantasyCompeticao.delete({where:{id:competition}});}
       if(catalog||otherCatalog){await db.fantasyCatalogoAtleta.deleteMany({where:{catalogoId:{in:[catalog,otherCatalog].filter(Boolean)}}});await db.fantasyCatalogo.deleteMany({where:{id:{in:[catalog,otherCatalog].filter(Boolean)}}});}
       await db.usuario.deleteMany({where:{idUsuario:{in:[user,other,...extraUsers].filter(Boolean)}}});
     }finally{await db.$disconnect();}
@@ -225,5 +225,114 @@ integration('Fantasy lineups real MySQL integration (dedicated test database)', 
     expect(copy).toMatchObject({ legado: false, sequencial: 1, formacao: '4-4-2', identidade: { nomeBase: 'Novo nome' } });
     expect(await service.get(owner, legacy.id)).toMatchObject({ legado: true, nomePublico: null, sequencial: null });
     expect(await service.list(owner, competition, { page: 1, limit: 50 })).toMatchObject({ estadoIdentidade: 'DEFINIDA', rascunhosLegados: 1, total: 2 });
+  });
+  it('FREE confirmation serializes concurrent requests, preserves identity and blocks mutations without financial effects', async () => {
+    const owner = await freshUser();
+    const a = await service.create(owner, competition, complete());
+    const b = await service.create(owner, competition, complete());
+    const identityBefore = (await service.get(owner, a.id)).identidade;
+    const financialBefore = await db.movimentacaoCarteira.count();
+    const request = (id: number, key: string) => service.confirmFree(owner, competition, { escalacaoIds: [id], chaveIdempotencia: key });
+    const results = await Promise.allSettled([request(a.id, 'race-a'), request(b.id, 'race-b')]);
+    expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await db.fantasyEscalacao.count({ where: { usuarioId: owner, competicaoId: competition, status: 'INSCRITA' } })).toBe(1);
+    const index = results.findIndex(r => r.status === 'fulfilled');
+    const winner = index === 0 ? a : b;
+    const result = (results[index] as PromiseFulfilledResult<unknown>).value;
+    expect(await request(winner.id, index === 0 ? 'race-a' : 'race-b')).toEqual(result);
+    const saved = await service.get(owner, winner.id);
+    expect(saved).toMatchObject({ status: 'INSCRITA', nomePublico: winner.nomePublico, sequencial: winner.sequencial, identidade: identityBefore, confirmadaEm: expect.any(Date) });
+    await expect(service.update(owner, winner.id, { versao: saved.versao })).rejects.toThrow();
+    await expect(service.remove(owner, winner.id, saved.versao)).rejects.toThrow();
+    await expect(service.duplicate(owner, winner.id, saved.versao)).rejects.toThrow();
+    expect(await db.movimentacaoCarteira.count()).toBe(financialBefore);
+  });
+  it('FREE rejects an incomplete batch without registering its valid draft', async () => {
+    const owner = await freshUser();
+    const valid = await service.create(owner, competition, complete());
+    const incomplete = await service.create(owner, competition, { formacao: '4-3-3' });
+    const before = await service.get(owner, valid.id);
+    await expect(service.confirmFree(owner, competition, { escalacaoIds: [valid.id, incomplete.id], chaveIdempotencia: 'invalid-batch' })).rejects.toThrow('incompleta');
+    expect(await service.get(owner, valid.id)).toEqual(before);
+    expect((await service.get(owner, incomplete.id)).status).toBe('RASCUNHO');
+    expect(await db.fantasyInscricaoOperacao.count({ where: { usuarioId: owner } })).toBe(0);
+  });
+  it('FREE reloads eligibility from persisted athletes and rejects a foreign club', async () => {
+    const owner = await freshUser();
+    const draft = await service.create(owner, competition, complete());
+    const goalkeeper = draft.atletas.find(a => a.papel === 'TITULAR' && a.atleta.posicaoId === 1)!;
+    await db.fantasyEscalacaoAtleta.updateMany({ where: { escalacaoId: draft.id, catalogoAtletaId: goalkeeper.catalogoAtletaId }, data: { catalogoAtletaId: blockedClub } });
+    await expect(service.confirmFree(owner, competition, { escalacaoIds: [draft.id], chaveIdempotencia: 'ineligible' })).rejects.toThrow('fora do catalogo');
+    expect((await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: draft.id } })).status).toBe('RASCUNHO');
+    expect(await db.fantasyInscricaoOperacao.count({ where: { usuarioId: owner } })).toBe(0);
+  });
+  it('FREE counts previous confirmations, rejects a new key for an enrolled team and preserves remaining drafts', async () => {
+    const owner = await freshUser();
+    const a = await service.create(owner, competition, complete());
+    const b = await service.create(owner, competition, complete());
+    await service.confirmFree(owner, competition, { escalacaoIds: [a.id], chaveIdempotencia: 'first' });
+    await expect(service.confirmFree(owner, competition, { escalacaoIds: [b.id], chaveIdempotencia: 'over-limit' })).rejects.toThrow('Limite');
+    await expect(service.confirmFree(owner, competition, { escalacaoIds: [a.id], chaveIdempotencia: 'already-enrolled' })).rejects.toThrow('indisponivel');
+    expect(await service.get(owner, b.id)).toEqual(b);
+    expect(await db.fantasyInscricaoOperacao.count({ where: { usuarioId: owner } })).toBe(1);
+    const own = await service.list(owner, competition, { page: 1, limit: 50 });
+    expect(own.items.find(item => item.id === a.id)).toMatchObject({ status: 'INSCRITA', confirmadaEm: expect.any(Date) });
+    expect(own.items.find(item => item.id === b.id)).toMatchObject({ status: 'RASCUNHO', confirmadaEm: null });
+  });
+  it('MySQL enforces registration state consistency and operation ownership', async () => {
+    const owner = await freshUser(), otherOwner = await freshUser();
+    const a = await service.create(owner, competition, complete());
+    const b = await service.create(otherOwner, competition, complete());
+    await expect(db.fantasyEscalacao.update({ where: { id: b.id }, data: { status: 'INSCRITA' } })).rejects.toThrow();
+    await service.confirmFree(owner, competition, { escalacaoIds: [a.id], chaveIdempotencia: 'constraint-owner' });
+    const saved = await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: a.id } });
+    await expect(db.fantasyEscalacao.update({ where: { id: b.id }, data: {
+      status: 'INSCRITA', confirmadaEm: saved.confirmadaEm, inscricaoOperacaoId: saved.inscricaoOperacaoId,
+    } })).rejects.toThrow();
+    expect((await service.get(otherOwner, b.id)).status).toBe('RASCUNHO');
+  });
+  it('concurrent confirmations with the same key return one durable result', async () => {
+    const owner = await freshUser();
+    const draft = await service.create(owner, competition, complete());
+    const dto = { escalacaoIds: [draft.id], chaveIdempotencia: 'same-key-race' };
+    const results = await Promise.allSettled([service.confirmFree(owner, competition, dto), service.confirmFree(owner, competition, dto)]);
+    expect(results.some(r => r.status === 'fulfilled')).toBe(true);
+    const replay = await service.confirmFree(owner, competition, dto);
+    for (const result of results) {
+      if (result.status === 'fulfilled') expect(result.value).toEqual(replay);
+      else expect(result.reason).toMatchObject({ status: 409 });
+    }
+    expect(await db.fantasyInscricaoOperacao.count({ where: { usuarioId: owner, competicaoId: competition } })).toBe(1);
+    expect(await db.fantasyEscalacao.count({ where: { usuarioId: owner, status: 'INSCRITA' } })).toBe(1);
+  });
+  it('FREE batch and durable idempotency roll back on a real persistence failure', async () => {
+    const owner = await freshUser();
+    const a = await service.create(owner, competition, complete());
+    const b = await service.create(owner, competition, complete());
+    await db.fantasyCompeticao.update({ where: { id: competition }, data: { limiteEscalacoesUsuario: 2 } });
+    try {
+      const original = db.$transaction.bind(db);
+      const spy = jest.spyOn(db, '$transaction').mockImplementationOnce((async (action: any, options: any) => original(async tx => {
+        const update = tx.fantasyEscalacao.updateMany.bind(tx.fantasyEscalacao);
+        let writes = 0;
+        tx.fantasyEscalacao.updateMany = (async (args: any) => {
+          if (++writes === 2) throw new Error('Injected persistence failure');
+          return update(args);
+        }) as typeof update;
+        return action(tx);
+      }, options)) as any);
+      const dto = { escalacaoIds: [a.id, b.id], chaveIdempotencia: 'atomic-batch' };
+      await expect(service.confirmFree(owner, competition, dto)).rejects.toThrow('Injected persistence failure');
+      spy.mockRestore();
+      expect(await db.fantasyEscalacao.count({ where: { usuarioId: owner, status: 'INSCRITA' } })).toBe(0);
+      expect(await db.fantasyInscricaoOperacao.count({ where: { usuarioId: owner } })).toBe(0);
+      const result = await service.confirmFree(owner, competition, dto);
+      expect(result).toMatchObject({ quantidadeConfirmada: 2, valorTotal: '0.00' });
+      expect(await service.confirmFree(owner, competition, { ...dto, escalacaoIds: [b.id, a.id] })).toEqual(result);
+      await expect(service.confirmFree(owner, competition, { ...dto, escalacaoIds: [a.id] })).rejects.toThrow('parametros diferentes');
+    } finally {
+      jest.restoreAllMocks();
+      await db.fantasyCompeticao.update({ where: { id: competition }, data: { limiteEscalacoesUsuario: 1 } });
+    }
   });
 });

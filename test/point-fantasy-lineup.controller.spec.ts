@@ -8,7 +8,7 @@ import { LineupService } from '../src/point-fantasy/lineups/lineup.service';
 describe('Lineup HTTP contract and JWT identity', () => {
   let app: INestApplication;
   let base: string;
-  const service = { create: jest.fn().mockResolvedValue({ id: 1 }), list: jest.fn().mockResolvedValue({ items: [] }),
+  const service = { confirmFree: jest.fn().mockResolvedValue({ estado: 'CONFIRMADA' }), create: jest.fn().mockResolvedValue({ id: 1 }), list: jest.fn().mockResolvedValue({ items: [] }),
     get: jest.fn().mockResolvedValue({ id: 1 }), update: jest.fn().mockResolvedValue({ id: 1 }),
     duplicate: jest.fn().mockResolvedValue({ id: 2 }), remove: jest.fn().mockResolvedValue({ excluida: true }) };
   beforeAll(async () => {
@@ -29,7 +29,7 @@ describe('Lineup HTTP contract and JWT identity', () => {
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   it.each([
-    ['POST','competicoes/1/escalacoes'],['GET','competicoes/1/escalacoes/minhas'],['GET','escalacoes/1'],
+    ['POST','competicoes/1/inscricoes'],['POST','competicoes/1/escalacoes'],['GET','competicoes/1/escalacoes/minhas'],['GET','escalacoes/1'],
     ['PATCH','escalacoes/1'],['POST','escalacoes/1/duplicar'],['DELETE','escalacoes/1?versao=1'],
   ])('JWT obrigatorio %s %s', async (method, route) => {
     expect((await request(route, method, undefined, '')).status).toBe(401);
@@ -41,6 +41,16 @@ describe('Lineup HTTP contract and JWT identity', () => {
     expect((await request('competicoes/1/escalacoes', 'POST', { formacao: '4-3-3' }, 'other')).status).toBe(201);
     expect(service.create).toHaveBeenCalledWith(22, 1, expect.objectContaining({ formacao: '4-3-3' }));
     expect((await request('competicoes/1/escalacoes', 'POST', { formacao: '4-3-3', usuarioId: 99 })).status).toBe(400);
+  });
+  it('confirma com dono do JWT e rejeita lote/chave invalidos ou campos forjados', async () => {
+    const route = 'competicoes/1/inscricoes';
+    expect((await request(route, 'POST', { escalacaoIds: [1, 2], chaveIdempotencia: 'confirm-1' }, 'other')).status).toBe(201);
+    expect(service.confirmFree).toHaveBeenCalledWith(22, 1, expect.objectContaining({ escalacaoIds: [1, 2] }));
+    for (const body of [{ escalacaoIds: [], chaveIdempotencia: 'a' }, { escalacaoIds: [1, 1], chaveIdempotencia: 'a' },
+      { escalacaoIds: [1] }, { escalacaoIds: [1], chaveIdempotencia: 'a', usuarioId: 99 },
+      { escalacaoIds: [1], chaveIdempotencia: '' }, { escalacaoIds: ['1'], chaveIdempotencia: 'a' }]) {
+      expect((await request(route, 'POST', body)).status).toBe(400);
+    }
   });
   it.each([
     { formacao: 'invalida' }, { formacao: '4-3-3', titulares: null }, { formacao: '4-3-3', titulares: [1,1] },

@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, Max, Min, ValidateIf, IsString, Matches, MaxLength } from 'class-validator';
+import { ArrayMinSize, ArrayMaxSize, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, Max, Min, ValidateIf, IsString, Matches, MaxLength } from 'class-validator';
+
+export class ConfirmFreeLineupsDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(100) @ArrayUnique()
+  @IsInt({ each: true }) @Min(1, { each: true }) @Max(4294967295, { each: true }) escalacaoIds: number[];
+  @IsString() @Matches(/^[A-Za-z0-9_-]{1,100}$/) chaveIdempotencia: string;
+}
 
 export const FORMATIONS = ['4-3-3', '4-4-2', '3-5-2', '3-4-3', '4-5-1', '5-3-2', '5-4-1'] as const;
 export class LineupIdDto {
