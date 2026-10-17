@@ -1,4 +1,4 @@
-﻿# POINT FFC Fantasy — fundação 1A e 1B
+# POINT FFC Fantasy — fundação 1A e 1B
 
 Implementação independente em `src/point-fantasy`, branch `codex/point-fantasy-foundation`.
 Não inclui escalações, pontuação, substituições, inscrições, cobrança, carteira ou orçamento de POINTCOINS.
@@ -118,3 +118,34 @@ Modificados: `prisma/schema.prisma` (quatro modelos), `src/app.module.ts` (regis
 - `git diff --check`: aprovado.
 
 Durante a validação, um erro de tipagem na tabela de casos do teste novo foi corrigido e a suíte completa foi executada novamente com sucesso. Um primeiro build encontrou DLL do Prisma bloqueada por processos de testes no Windows; o build completo passou após o término desses processos. Não houve mudança de dependências nem de configuração para contornar esses problemas.
+
+## Fase 2F.1 — consulta pública de inscritos
+
+`GET /point-fantasy/competicoes/:id/ranking?page=1&limit=50` lista somente
+escalações INSCRITA, por ID crescente. Paginação ocorre no banco; limite máximo
+100, página máxima 1000000. O total conta times, inclusive vários do mesmo dono.
+
+Segue a visibilidade pública existente: somente competição PUBLICADA; inexistente,
+rascunho, encerrada ou cancelada retorna 404. Acesso público aos estados encerrada
+e cancelada permanece pendente de política explícita.
+
+Autenticação é opcional pelo OptionalJwtAuthGuard. Sem credencial, meuTime é
+false; com JWT válido, é calculado pelo proprietário autenticado. Credencial
+inválida é rejeitada. usuarioId não é aceito na query nem exposto na resposta.
+O cabeçalho é `Cache-Control: private, no-store`.
+
+Resposta: `{ competicaoId, estadoPontuacao, items, total, page, limit }`.
+Cada item contém `{ posicao: null, escalacaoId, nomePublico, identidade,
+formacao, pontuacao: null, meuTime }`. Identidade contém identificadorPublico,
+nomeBase e sequencial; pode ser null nos legados, assim como nomePublico.
+Esses dados públicos permitem ao frontend derivar o brasão sem dados pessoais.
+
+NAO_INICIADA exige partidas presentes, todas AGENDADA, sem início real e com
+início previsto válido estritamente futuro. Nos demais casos, inclusive no
+instante previsto e após o início sem apuração, usa INDISPONIVEL. Não há
+pontuação, colocação competitiva nem critério de desempate nesta fase.
+
+A consulta usa um snapshot RepeatableRead para competição, página e total,
+com projeção explícita e sem carregar elencos, usuários ou operações financeiras.
+Não requer schema ou migration. Desempenho em grande volume deve ser medido
+antes de considerar um índice composto adicional.

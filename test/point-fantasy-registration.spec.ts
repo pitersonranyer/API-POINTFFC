@@ -23,6 +23,12 @@ describe('FREE registration transaction', () => {
       $queryRaw: jest.fn(), usuario: { findUnique: jest.fn(async () => ({ status: userStatus })) },
       fantasyCompeticao: { findUnique: jest.fn(async () => c) },
       fantasyCatalogoAtleta: { findMany: jest.fn(async () => athletes) },
+      fantasyEscalacaoAtleta: {
+        deleteMany: jest.fn(async ({ where }: any) => { rows.find(r => r.id === where.escalacaoId).atletas = []; }),
+        createMany: jest.fn(async ({ data }: any) => {
+          for (const row of data) rows.find(r => r.id === row.escalacaoId).atletas.push({ ...row, atleta: athletes.find(a => a.id === row.catalogoAtletaId) });
+        }),
+      },
       fantasyInscricaoOperacao: {
         findUnique: jest.fn(async ({ where }: any) => operations.find(o => o.chave === where.usuarioId_competicaoId_chave.chave) ?? null),
         create: jest.fn(async ({ data }: any) => { const op = { id: operations.length + 1, ...data }; operations.push(op); return op; }),
@@ -40,7 +46,7 @@ describe('FREE registration transaction', () => {
       },
     };
     db.$transaction = jest.fn(async (action: any) => {
-      const savedRows = rows.map(r => ({ ...r })); const savedOps = [...operations];
+      const savedRows = rows.map(r => ({ ...r, atletas: [...r.atletas] })); const savedOps = [...operations];
       try { return await action(db); } catch (error) { rows = savedRows; operations = savedOps; throw error; }
     });
     service = new LineupService(db);
@@ -97,12 +103,80 @@ describe('FREE registration transaction', () => {
     db.fantasyInscricaoOperacao.create.mockImplementation(async () => { c.fimInscricao = new Date(0); return { id: 1 }; });
     await expect(confirm()).rejects.toThrow('encerrado'); expect(rows[0].status).toBe('RASCUNHO');
   });
-  it('blocks update, duplication and deletion and retains owner read', async () => {
+  it('allows FREE update but blocks duplication, deletion and registration again', async () => {
     await confirm();
-    await expect(service.update(7, 1, { versao: 2, formacao: '4-4-2' })).rejects.toThrow('indisponivel');
-    await expect(service.remove(7, 1, 2)).rejects.toThrow('indisponivel');
-    await expect(service.duplicate(7, 1, 2)).rejects.toThrow('indisponivel');
+    const original = { ...rows[0] }, operation = { ...operations[0] };
+    const saved = await service.update(7, 1, { versao: 2, capitaoAtletaId: selection.titulares[1] });
+    expect(saved).toMatchObject({ id: 1, versao: 3, status: 'INSCRITA', confirmadaEm: original.confirmadaEm,
+      nomePublico: original.nomePublico, identidade: original.identidade, capitaoAtletaId: selection.titulares[1] });
+    expect(rows[0].inscricaoOperacaoId).toBe(original.inscricaoOperacaoId);
+    expect(operations).toEqual([operation]);
+    await expect(service.remove(7, 1, 3)).rejects.toThrow('indisponivel');
+    await expect(service.duplicate(7, 1, 3)).rejects.toThrow('indisponivel');
+    await expect(confirm([1], 'again')).rejects.toThrow('indisponivel');
     expect(await service.get(7, 1)).toMatchObject({ status: 'INSCRITA', confirmadaEm: expect.any(Date) });
+  });
+  it.each(['incomplete', 'invalid', 'owner', 'inactive', 'paid', 'stale', 'status', 'catalog', 'late', 'closed', 'scheduled', 'started'])('rejects registered edit without any mutation: %s', async reason => {
+    await confirm();
+    const before = { ...rows[0], atletas: [...rows[0].atletas] };
+    const patch: any = { versao: 2 };
+    if (reason === 'incomplete') patch.tecnico = null;
+    if (reason === 'invalid') patch.capitaoAtletaId = 999;
+    if (reason === 'inactive') userStatus = 'INATIVO';
+    if (reason === 'paid') c.tipoAcesso = 'PAGO';
+    if (reason === 'stale') patch.versao = 1;
+    if (reason === 'status') c.status = 'ENCERRADA';
+    if (reason === 'catalog') c.catalogo.status = 'RASCUNHO';
+    if (reason === 'late') c.fimInscricao = new Date(0);
+    if (reason === 'closed') c.fechamentoDefinitivoEm = new Date(0);
+    if (reason === 'scheduled') c.partidas[0].inicioPrevisto = new Date(0);
+    if (reason === 'started') c.partidas[0].inicioReal = new Date();
+    await expect(service.update(reason === 'owner' ? 99 : 7, 1, patch)).rejects.toThrow();
+    expect(rows[0]).toEqual(before);
+  });
+  it.each(['fimInscricao', 'fechamentoDefinitivoEm', 'inicioPrevisto'])('rejects exactly at %s', async field => {
+    await confirm();
+    jest.useFakeTimers().setSystemTime(new Date());
+    try {
+      if (field === 'inicioPrevisto') c.partidas[0][field] = new Date();
+      else c[field] = new Date();
+      await expect(service.update(7, 1, { versao: 2 })).rejects.toMatchObject({ status: 409 });
+      expect(rows[0].versao).toBe(2);
+    } finally { jest.useRealTimers(); }
+  });
+  it.each(['deadline', 'administrative', 'persistence'])('rolls back all edited fields after %s failure', async reason => {
+    await confirm();
+    const before = { ...rows[0], atletas: [...rows[0].atletas] };
+    const persist = db.fantasyEscalacaoAtleta.createMany.getMockImplementation();
+    db.fantasyEscalacaoAtleta.createMany.mockImplementation(async (args: any) => {
+      if (reason === 'persistence') throw new Error('Persistence failed');
+      await persist(args);
+      if (reason === 'deadline') c.fimInscricao = new Date(0);
+      else c = { ...c, status: 'ENCERRADA' };
+    });
+    await expect(service.update(7, 1, { versao: 2, capitaoAtletaId: selection.titulares[1] })).rejects.toThrow();
+    expect(rows[0]).toEqual(before);
+    expect(operations).toHaveLength(1);
+  });
+  it('rolls back when the clock reaches the deadline during persistence', async () => {
+    await confirm();
+    const before = { ...rows[0], atletas: [...rows[0].atletas] };
+    const persist = db.fantasyEscalacaoAtleta.createMany.getMockImplementation();
+    jest.useFakeTimers().setSystemTime(new Date());
+    try {
+      db.fantasyEscalacaoAtleta.createMany.mockImplementation(async (args: any) => {
+        await persist(args);
+        jest.setSystemTime(c.fimInscricao);
+      });
+      await expect(service.update(7, 1, { versao: 2, capitaoAtletaId: selection.titulares[1] })).rejects.toMatchObject({ status: 409 });
+      expect(rows[0]).toEqual(before);
+    } finally { jest.useRealTimers(); }
+  });
+  it('returns 409 when conditional update loses a race with another edit or confirmation', async () => {
+    await confirm();
+    db.fantasyEscalacao.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.update(7, 1, { versao: 2 })).rejects.toMatchObject({ status: 409 });
+    expect(db.fantasyEscalacaoAtleta.deleteMany).not.toHaveBeenCalled();
   });
   it('translates serialization conflict into retryable 409', async () => {
     db.$transaction.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('conflict', { code: 'P2034', clientVersion: '5.22.0' }));

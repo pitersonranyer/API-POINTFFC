@@ -242,10 +242,57 @@ integration('Fantasy lineups real MySQL integration (dedicated test database)', 
     expect(await request(winner.id, index === 0 ? 'race-a' : 'race-b')).toEqual(result);
     const saved = await service.get(owner, winner.id);
     expect(saved).toMatchObject({ status: 'INSCRITA', nomePublico: winner.nomePublico, sequencial: winner.sequencial, identidade: identityBefore, confirmadaEm: expect.any(Date) });
-    await expect(service.update(owner, winner.id, { versao: saved.versao })).rejects.toThrow();
+    const before = await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: winner.id } });
+    const edits = await Promise.allSettled([
+      service.update(owner, winner.id, { versao: saved.versao, capitaoAtletaId: saved.titulares[1] }),
+      service.update(owner, winner.id, { versao: saved.versao, capitaoAtletaId: saved.titulares[2] }),
+    ]);
+    expect(edits.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+    expect((edits.find(r => r.status === 'rejected') as PromiseRejectedResult).reason.status).toBe(409);
+    const after = await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: winner.id } });
+    expect(after).toMatchObject({ id: before.id, status: 'INSCRITA', confirmadaEm: before.confirmadaEm,
+      inscricaoOperacaoId: before.inscricaoOperacaoId, identidadeId: before.identidadeId,
+      nomePublico: before.nomePublico, versao: before.versao + 1 });
     await expect(service.remove(owner, winner.id, saved.versao)).rejects.toThrow();
     await expect(service.duplicate(owner, winner.id, saved.versao)).rejects.toThrow();
     expect(await db.movimentacaoCarteira.count()).toBe(financialBefore);
+  });
+  it('registered edit waits for administrative closure and rejects the closed competition', async () => {
+    const owner = await freshUser();
+    const draft = await service.create(owner, competition, complete());
+    await service.confirmFree(owner, competition, { escalacaoIds: [draft.id], chaveIdempotencia: 'admin-race' });
+    const before = await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: draft.id }, include: { atletas: true } });
+    let edit: Promise<unknown> | undefined;
+    try {
+      await db.$transaction(async tx => {
+        await tx.fantasyCompeticao.update({ where: { id: competition }, data: { fechamentoDefinitivoEm: new Date() } });
+        // Start PATCH while the administrator holds the competition write lock.
+        edit = service.update(owner, draft.id, { versao: before.versao });
+      });
+      await expect(edit).rejects.toMatchObject({ status: 409 });
+      expect(await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: draft.id }, include: { atletas: true } })).toEqual(before);
+    } finally {
+      await db.fantasyCompeticao.update({ where: { id: competition }, data: { fechamentoDefinitivoEm: null } });
+    }
+  });
+  it('edit concurrent with confirmation preserves enrollment and rejects subsequent partial edits', async () => {
+    const owner = await freshUser();
+    const draft = await service.create(owner, competition, complete());
+    const confirm = () => service.confirmFree(owner, competition, { escalacaoIds: [draft.id], chaveIdempotencia: 'edit-confirm' });
+    const results = await Promise.allSettled([
+      service.update(owner, draft.id, { versao: draft.versao, capitaoAtletaId: draft.titulares[1] }), confirm(),
+    ]);
+    for (const r of results) if (r.status === 'rejected') expect(r.reason.status).toBe(409);
+    await confirm();
+    const saved = await service.get(owner, draft.id);
+    expect(saved).toMatchObject({ status: 'INSCRITA', validacao: { completa: true } });
+    await expect(service.update(owner, draft.id, { versao: saved.versao, tecnico: null })).rejects.toMatchObject({ status: 400 });
+    const before = await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: draft.id }, include: { atletas: true } });
+    const injected = new Error('EDIT_ROLLBACK');
+    const proxy = { $transaction: (action: any, options: any) => db.$transaction(async tx => { await action(tx); throw injected; }, options) };
+    await expect(new LineupService(proxy as unknown as PrismaService).update(owner, draft.id,
+      { versao: saved.versao, capitaoAtletaId: saved.titulares[2] })).rejects.toBe(injected);
+    expect(await db.fantasyEscalacao.findUniqueOrThrow({ where: { id: draft.id }, include: { atletas: true } })).toEqual(before);
   });
   it('FREE rejects an incomplete batch without registering its valid draft', async () => {
     const owner = await freshUser();

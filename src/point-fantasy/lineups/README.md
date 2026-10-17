@@ -196,7 +196,8 @@ requisição e chave. A idempotência é restrita ao usuário e à competição.
 `GET /point-fantasy/competicoes/:id/escalacoes/minhas` e
 `GET /point-fantasy/escalacoes/:id` preservam seus campos e acrescentam
 `confirmadaEm` (null para rascunho). Escalações INSCRITA ficam bloqueadas para
-PATCH, DELETE e duplicação nesta versão conservadora, mantendo leitura privada.
+DELETE e duplicação, mantendo leitura privada. O PATCH de inscritos FREE segue
+as regras da Fase 2C abaixo.
 A janela de edição dos rascunhos existentes permanece a mesma; confirmação
 tem a verificação adicional obrigatória de fimInscricao.
 
@@ -212,3 +213,23 @@ Integração opt-in usa a infraestrutura e a validação de URL local já existe
 em `test/point-fantasy-lineup.integration.spec.ts`; requer banco dedicado com
 a migration 0027 aplicada. Sem `POINT_FANTASY_TEST_DATABASE_URL`, integrações
 são ignoradas. Testes unitários com fake não comprovam locks e rollback MySQL.
+
+## Fase 2C — edição de inscritos FREE
+
+O PATCH existente aceita inscritos somente em competição FREE com valor zero,
+por usuário ativo e proprietário, com a versão atual e elenco resultante completo
+e válido. Campos omitidos são preservados conforme o contrato existente.
+Somente seleção e versão são atualizadas; ID, status, confirmação, operação de
+inscrição, identidade, nome e código públicos permanecem intactos.
+
+A janela termina no primeiro entre fimInscricao, fechamento definitivo e início
+previsto ou real de qualquer partida. O instante exato já é bloqueado. Continuam
+valendo os bloqueios de status, catálogo, elegibilidade e partidas existentes.
+Rascunhos mantêm suas regras anteriores, inclusive quanto a fimInscricao.
+
+A edição usa transação Serializable, bloqueia a competição como na confirmação,
+e verifica novamente estado e prazo ao final. Leituras de catálogo e partidas
+nessa transação protegem contra escritas administrativas concorrentes. Conflitos
+de versão ou serialização retornam 409; falhas revertem também todos os atletas.
+Exclusão, duplicação e reinscrição permanecem proibidas para inscritos. Nenhum
+endpoint de inscrição, migration ou operação financeira foi alterado.

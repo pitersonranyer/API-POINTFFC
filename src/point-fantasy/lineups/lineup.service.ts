@@ -82,8 +82,8 @@ export class LineupService {
       ultimoSequencial: identity.ultimoSequencial };
   }
 
-  private version(lineup: StoredLineup, versao: number) {
-    if (lineup.status !== 'RASCUNHO' || lineup.versao !== versao || versao >= 4294967295) {
+  private version(lineup: StoredLineup, versao: number, allowRegistered = false) {
+    if ((lineup.status !== 'RASCUNHO' && !(allowRegistered && lineup.status === 'INSCRITA')) || lineup.versao !== versao || versao >= 4294967295) {
       throw new ConflictException('Versao desatualizada ou escalacao indisponivel');
     }
   }
@@ -245,9 +245,26 @@ export class LineupService {
     return this.atomic(async tx => {
       await this.active(tx, usuarioId);
       const lineup = await this.owned(tx, usuarioId, id);
-      this.version(lineup, dto.versao);
-      const c = await this.competition(tx, lineup.competicaoId);
-      assertLineupEditable(c);
+      const registered = lineup.status === 'INSCRITA';
+      this.version(lineup, dto.versao, true);
+      if (registered) {
+        // Same competition lock as confirmation. Serializable reads protect the
+        // catalog and match rows against administrative writes until commit.
+        await tx.$queryRaw`SELECT ID FROM FANTASY_COMPETICAO WHERE ID = ${lineup.competicaoId} FOR UPDATE`;
+      }
+      const check = async () => {
+        const current = await this.competition(tx, lineup.competicaoId);
+        assertLineupEditable(current);
+        if (registered) {
+          await this.active(tx, usuarioId);
+          if (current.tipoAcesso !== 'FREE' || !current.valorInscricao.isZero()) {
+            throw new ConflictException('Somente edicao de inscritos FREE disponivel');
+          }
+          if (new Date() >= current.fimInscricao) throw new ConflictException('Periodo de edicao encerrado');
+        }
+        return current;
+      };
+      const c = await check();
       const previous = this.selection(lineup);
       const selection: LineupSelection = {
         formacao: dto.formacao ?? previous.formacao, titulares: dto.titulares ?? previous.titulares,
@@ -255,8 +272,9 @@ export class LineupService {
         capitaoAtletaId: dto.capitaoAtletaId === undefined ? previous.capitaoAtletaId : dto.capitaoAtletaId,
         reservaMagoAtletaId: dto.reservaMagoAtletaId === undefined ? previous.reservaMagoAtletaId : dto.reservaMagoAtletaId,
       };
-      await this.validate(tx, c, selection);
-      const changed = await tx.fantasyEscalacao.updateMany({ where: { id, usuarioId, versao: dto.versao, status: 'RASCUNHO' },
+      const validation = await this.validate(tx, c, selection);
+      if (registered && !validation.completa) throw new BadRequestException('Escalacao inscrita deve permanecer completa');
+      const changed = await tx.fantasyEscalacao.updateMany({ where: { id, usuarioId, versao: dto.versao, status: lineup.status },
         data: { formacao: selection.formacao, capitaoAtletaId: selection.capitaoAtletaId,
           reservaMagoAtletaId: selection.reservaMagoAtletaId, versao: { increment: 1 } } });
       if (changed.count !== 1) throw new ConflictException('Versao desatualizada');
@@ -264,7 +282,8 @@ export class LineupService {
       const rows = this.rows(selection);
       if (rows.length) await tx.fantasyEscalacaoAtleta.createMany({ data: rows.map(row => ({ ...row, escalacaoId: id })) });
       const result = this.response(await this.owned(tx, usuarioId, id));
-      assertLineupEditable(c);
+      if (registered) await check();
+      else assertLineupEditable(c);
       return result;
     });
   }

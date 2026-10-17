@@ -5,6 +5,7 @@ import { CartolaMarketStatus } from '../cartola/cartola.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { CaptureCatalogDto, CreateFantasyCompetitionDto, FantasyPageDto } from './point-fantasy.dto';
 import { CatalogReferences, classifyAthlete, SnapshotMatch } from './point-fantasy.rules';
+import { LineupPageDto } from './lineups/lineup.dto';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadGatewayException('Objeto Cartola invalido');
@@ -182,6 +183,30 @@ export class PointFantasyService {
       include: { partidas: { orderBy: { id: 'asc' } } } });
     if (!competition) throw new NotFoundException('Competicao Fantasy nao encontrada');
     return competition;
+  }
+
+  async ranking(id: number, page: LineupPageDto, usuarioId?: number) {
+    // One read snapshot for visibility, entries and total, without write locks.
+    return this.prisma.$transaction(async tx => {
+      const competition = await this.competition(id, tx);
+      const where = { competicaoId: id, status: 'INSCRITA' };
+      const [items, total] = await Promise.all([
+        tx.fantasyEscalacao.findMany({ where, orderBy: { id: 'asc' },
+          skip: (page.page - 1) * page.limit, take: page.limit,
+          select: { id: true, usuarioId: true, nomePublico: true, sequencial: true, formacao: true,
+            identidade: { select: { identificadorPublico: true, nomeBase: true } } } }),
+        tx.fantasyEscalacao.count({ where }),
+      ]);
+      const now = new Date();
+      const notStarted = competition.partidas.length > 0 && competition.partidas.every(match =>
+        match.status === 'AGENDADA' && match.inicioReal === null
+        && Number.isFinite(match.inicioPrevisto.getTime()) && match.inicioPrevisto > now);
+      return { competicaoId: id, estadoPontuacao: notStarted ? 'NAO_INICIADA' : 'INDISPONIVEL',
+        items: items.map(item => ({ posicao: null, escalacaoId: item.id, nomePublico: item.nomePublico,
+          identidade: item.identidade ? { ...item.identidade, sequencial: item.sequencial } : null,
+          formacao: item.formacao, pontuacao: null, meuTime: usuarioId !== undefined && item.usuarioId === usuarioId })),
+        total, page: page.page, limit: page.limit };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
 
   async eligible(id: number, page: FantasyPageDto) {

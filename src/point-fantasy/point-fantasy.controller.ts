@@ -1,4 +1,8 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
+import { Usuario } from '@prisma/client';
+import { AuthenticatedUser } from '../auth/authenticated-user.decorator';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { LineupIdDto, LineupPageDto } from './lineups/lineup.dto';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../auth/admin.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -14,6 +18,12 @@ export class PointFantasyController {
   @Get('catalogos/:id/clubes') clubs(@Param('id', ParseIntPipe) id: number) { return this.service.references(id, 'clubes'); }
   @Get('catalogos/:id/posicoes') positions(@Param('id', ParseIntPipe) id: number) { return this.service.references(id, 'posicoes'); }
   @Get('competicoes') competitions(@Query() page: FantasyPageDto) { return this.service.competitions(page); }
+  @Get('competicoes/:id/ranking')
+  @UseGuards(OptionalJwtAuthGuard)
+  @Header('Cache-Control', 'private, no-store')
+  ranking(@Param() params: LineupIdDto, @Query() page: LineupPageDto, @AuthenticatedUser() user?: Usuario) {
+    return this.service.ranking(params.id, page, user?.idUsuario);
+  }
   @Get('competicoes/:id') competition(@Param('id', ParseIntPipe) id: number) { return this.service.competition(id); }
   @Get('competicoes/:id/partidas') async matches(@Param('id', ParseIntPipe) id: number) { return { items: (await this.service.competition(id)).partidas }; }
   @Get('competicoes/:id/atletas') eligible(@Param('id', ParseIntPipe) id: number, @Query() page: FantasyPageDto) { return this.service.eligible(id, page); }
