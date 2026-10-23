@@ -2,6 +2,249 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum FantasyEscritaModo {
+  LEGADO
+  BLOQUEADO
+  ATUAL
+}
+
+enum FantasyEscritaAcao {
+  INICIALIZAR
+  TRANSICIONAR
+  RECUPERAR
+}
+
+model FantasyEscritaControle {
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  modo FantasyEscritaModo @map("MODO")
+  geracao BigInt @default(0) @map("GERACAO") @db.UnsignedBigInt
+  atualJaHabilitado Boolean @default(false) @map("ATUAL_JA_HABILITADO")
+  ultimaTransicaoId String @map("ULTIMA_TRANSICAO_ID") @db.Char(36)
+  apuracao FantasyApuracaoRodada @relation(fields: [temporada,rodada], references: [temporada,rodada], onDelete: Restrict, onUpdate: Restrict)
+  ultimaTransicao FantasyEscritaTransicao @relation(fields: [ultimaTransicaoId], references: [operacaoId], onDelete: Restrict, onUpdate: Restrict)
+  @@id([temporada,rodada])
+  @@map("FANTASY_ESCRITA_CONTROLE")
+}
+
+model FantasyEscritaTransicao {
+  operacaoId String @id @map("OPERACAO_ID") @db.Char(36)
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  acao FantasyEscritaAcao @map("ACAO")
+  origem FantasyEscritaModo? @map("ORIGEM")
+  destino FantasyEscritaModo @map("DESTINO")
+  geracaoBase BigInt @map("GERACAO_BASE") @db.UnsignedBigInt
+  fenceBase BigInt @map("FENCE_BASE") @db.UnsignedBigInt
+  revisaoBase BigInt @map("REVISAO_BASE") @db.UnsignedBigInt
+  hashBase String? @map("HASH_BASE") @db.Char(64)
+  operador String @map("OPERADOR") @db.VarChar(100)
+  justificativa String @map("JUSTIFICATIVA") @db.VarChar(1000)
+  criadaEm DateTime @default(now()) @map("CRIADA_EM") @db.DateTime(3)
+  apuracao FantasyApuracaoRodada @relation(fields: [temporada,rodada], references: [temporada,rodada], onDelete: Restrict, onUpdate: Restrict)
+  controles FantasyEscritaControle[]
+  @@map("FANTASY_ESCRITA_TRANSICAO")
+}
+
+enum FantasyObservacaoEstado {
+  OBSERVANDO
+  AGUARDANDO_VALIDACAO
+  VALIDADA
+  EM_REVISAO
+}
+
+enum FantasyModeloPersistencia {
+  SNAPSHOT_LEGADO
+  ATUAL
+}
+
+enum FantasyResultadoAplicacao {
+  APLICADA
+  SEM_ALTERACAO
+  REJEITADA
+  NAO_APLICAVEL
+}
+
+enum FantasyCampoEstado {
+  AUSENTE
+  NULO
+  VALOR
+}
+
+enum FantasyParticipacaoObservada {
+  INFORMADA_TRUE
+  INFORMADA_FALSE
+  NAO_INFORMADA
+}
+
+enum FantasyColetaEstado {
+  EM_ANDAMENTO
+  SUCESSO
+  FALHA_HTTP
+  FALHA_REDE
+  RESPOSTA_INVALIDA
+  IDENTIDADE_PENDENTE
+  LEASE_OCUPADO
+  INTERROMPIDA
+}
+
+model FantasyApuracaoRodada {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  escritaControle FantasyEscritaControle?
+  escritaTransicoes FantasyEscritaTransicao[]
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  estado FantasyObservacaoEstado @default(OBSERVANDO) @map("ESTADO")
+  ultimaVersaoSnapshot Int @default(0) @map("ULTIMA_VERSAO_SNAPSHOT") @db.UnsignedInt
+  revisaoAtual BigInt @default(0) @map("REVISAO_ATUAL") @db.UnsignedBigInt
+  revisaoValidada BigInt? @map("REVISAO_VALIDADA") @db.UnsignedBigInt
+  hashConteudoAtual String? @map("HASH_CONTEUDO_ATUAL") @db.Char(64)
+  versaoNormalizador String? @map("VERSAO_NORMALIZADOR") @db.VarChar(32)
+  ultimaColetaAplicadaId Int? @map("ULTIMA_COLETA_APLICADA_ID") @db.UnsignedInt
+  coletaValidacaoId Int? @map("COLETA_VALIDACAO_ID") @db.UnsignedInt
+  validadaEm DateTime? @map("VALIDADA_EM") @db.DateTime(3)
+  lockToken String? @map("LOCK_TOKEN") @db.Char(36)
+  lockAte DateTime? @map("LOCK_ATE") @db.DateTime(3)
+  fence BigInt @default(0) @map("FENCE") @db.UnsignedBigInt
+  ultimoErroCodigo String? @map("ULTIMO_ERRO_CODIGO") @db.VarChar(80)
+  criadoEm DateTime @default(now()) @map("CRIADO_EM") @db.DateTime(3)
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM") @db.DateTime(3)
+  snapshots FantasyPontuacaoSnapshot[]
+  coletas FantasyPontuacaoColeta[] @relation("ColetasRodada")
+  pontuacoes FantasyPontuacaoAtleta[]
+  ultimaColetaAplicada FantasyPontuacaoColeta? @relation("UltimaColetaAplicada", fields: [ultimaColetaAplicadaId, id], references: [id, rodadaId], onDelete: Restrict, onUpdate: Restrict)
+  coletaValidacao FantasyPontuacaoColeta? @relation("ColetaValidacao", fields: [coletaValidacaoId, id], references: [id, rodadaId], onDelete: Restrict, onUpdate: Restrict)
+  @@index([ultimaColetaAplicadaId, id], map: "FAR_ULTIMA_COLETA_idx")
+  @@index([coletaValidacaoId, id], map: "FAR_VALIDACAO_idx")
+  @@unique([temporada, rodada], map: "FAR_TEMP_ROD_key")
+  @@unique([id, temporada, rodada], map: "FAR_IDENTIDADE_key")
+  @@index([estado, atualizadoEm], map: "FAR_ESTADO_idx")
+  @@map("FANTASY_APURACAO_RODADA")
+}
+
+model FantasyPontuacaoSnapshot {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  rodadaId Int @map("RODADA_ID") @db.UnsignedInt
+  versao Int @map("VERSAO") @db.UnsignedInt
+  hashConteudo String @map("HASH_CONTEUDO") @db.Char(64)
+  versaoNormalizador String @map("VERSAO_NORMALIZADOR") @db.VarChar(32)
+  fonte String @map("FONTE") @db.VarChar(32)
+  endpointOrigem String @map("ENDPOINT_ORIGEM") @db.VarChar(100)
+  payloadOriginal String @map("PAYLOAD_ORIGINAL") @db.LongText
+  hashPayload String @map("HASH_PAYLOAD") @db.Char(64)
+  coletadoEm DateTime @map("COLETADO_EM") @db.DateTime(3)
+  criadoEm DateTime @default(now()) @map("CRIADO_EM") @db.DateTime(3)
+  rodada FantasyApuracaoRodada @relation(fields: [rodadaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  atletas FantasyPontuacaoAtletaSnapshot[]
+  coletas FantasyPontuacaoColeta[]
+  @@unique([rodadaId, versao], map: "FPS_ROD_VERSAO_key")
+  @@unique([rodadaId, versaoNormalizador, hashConteudo], map: "FPS_CONTEUDO_key")
+  @@unique([id, rodadaId], map: "FPS_OWNER_key")
+  @@map("FANTASY_PONTUACAO_SNAPSHOT")
+}
+
+model FantasyPontuacaoAtletaSnapshot {
+  snapshotId Int @map("SNAPSHOT_ID") @db.UnsignedInt
+  atletaIdCartola Int @map("ATLETA_ID_CARTOLA") @db.UnsignedInt
+  clubeIdCartola Int? @map("CLUBE_ID_CARTOLA") @db.UnsignedInt
+  posicaoId Int? @map("POSICAO_ID") @db.UnsignedTinyInt
+  estadoClube FantasyCampoEstado @map("ESTADO_CLUBE")
+  estadoPosicao FantasyCampoEstado @map("ESTADO_POSICAO")
+  estadoPontuacao FantasyCampoEstado @map("ESTADO_PONTUACAO")
+  pontuacaoTokenOriginal String? @map("PONTUACAO_TOKEN_ORIGINAL") @db.VarChar(128)
+  pontuacao Decimal? @map("PONTUACAO") @db.Decimal(38,18)
+  estadoParticipacao FantasyCampoEstado @map("ESTADO_PARTICIPACAO")
+  entrouEmCampo Boolean? @map("ENTROU_EM_CAMPO")
+  participacaoObservada FantasyParticipacaoObservada @map("PARTICIPACAO_OBSERVADA")
+  estadoScouts FantasyCampoEstado @map("ESTADO_SCOUTS")
+  scouts Json? @map("SCOUTS")
+  hashConteudo String @map("HASH_CONTEUDO") @db.Char(64)
+  snapshot FantasyPontuacaoSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  @@id([snapshotId, atletaIdCartola])
+  @@index([snapshotId, clubeIdCartola], map: "FPAS_CLUBE_idx")
+  @@map("FANTASY_PONTUACAO_ATLETA_SNAPSHOT")
+}
+
+model FantasyPontuacaoColeta {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  operacaoId String @unique(map: "FPC_OPERACAO_key") @map("OPERACAO_ID") @db.Char(36)
+  rodadaId Int @map("RODADA_ID") @db.UnsignedInt
+  snapshotId Int? @map("SNAPSHOT_ID") @db.UnsignedInt
+  endpoint String @map("ENDPOINT") @db.VarChar(100)
+  estado FantasyColetaEstado @default(EM_ANDAMENTO) @map("ESTADO")
+  iniciadaEm DateTime @default(now()) @map("INICIADA_EM") @db.DateTime(3)
+  concluidaEm DateTime? @map("CONCLUIDA_EM") @db.DateTime(3)
+  httpStatus Int? @map("HTTP_STATUS") @db.UnsignedSmallInt
+  payloadRecebido String? @map("PAYLOAD_RECEBIDO") @db.LongText
+  hashPayload String? @map("HASH_PAYLOAD") @db.Char(64)
+  statusAntes Json? @map("STATUS_ANTES")
+  statusDepois Json? @map("STATUS_DEPOIS")
+  evidenciasPartidas Json? @map("EVIDENCIAS_PARTIDAS")
+  cabecalhos Json? @map("CABECALHOS")
+  limitacoes Json? @map("LIMITACOES")
+  erroCodigo String? @map("ERRO_CODIGO") @db.VarChar(80)
+  fence BigInt @default(0) @map("FENCE") @db.UnsignedBigInt
+  modeloPersistencia FantasyModeloPersistencia @default(SNAPSHOT_LEGADO) @map("MODELO_PERSISTENCIA")
+  revisaoBase BigInt? @map("REVISAO_BASE") @db.UnsignedBigInt
+  revisaoResultante BigInt? @map("REVISAO_RESULTANTE") @db.UnsignedBigInt
+  hashConteudo String? @map("HASH_CONTEUDO") @db.Char(64)
+  versaoNormalizador String? @map("VERSAO_NORMALIZADOR") @db.VarChar(32)
+  fonte String? @map("FONTE") @db.VarChar(32)
+  recebidaEm DateTime? @map("RECEBIDA_EM") @db.DateTime(3)
+  resultadoAplicacao FantasyResultadoAplicacao? @map("RESULTADO_APLICACAO")
+  qtdRecebidos Int? @map("QTD_RECEBIDOS") @db.UnsignedInt
+  qtdInseridos Int? @map("QTD_INSERIDOS") @db.UnsignedInt
+  qtdAlterados Int? @map("QTD_ALTERADOS") @db.UnsignedInt
+  qtdOmitidos Int? @map("QTD_OMITIDOS") @db.UnsignedInt
+  alteracoes Json? @map("ALTERACOES")
+  evidenciaEncerramento Json? @map("EVIDENCIA_ENCERRAMENTO")
+  versaoPoliticaValidacao String? @map("VERSAO_POLITICA_VALIDACAO") @db.VarChar(32)
+  motivo String? @map("MOTIVO") @db.VarChar(255)
+  rodada FantasyApuracaoRodada @relation("ColetasRodada", fields: [rodadaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pontuacoesAlteradas FantasyPontuacaoAtleta[]
+  aplicadaEmRodadas FantasyApuracaoRodada[] @relation("UltimaColetaAplicada")
+  validacaoDeRodadas FantasyApuracaoRodada[] @relation("ColetaValidacao")
+  snapshot FantasyPontuacaoSnapshot? @relation(fields: [snapshotId, rodadaId], references: [id, rodadaId], onDelete: Restrict, onUpdate: Restrict)
+  @@index([rodadaId, iniciadaEm], map: "FPC_ROD_INICIO_idx")
+  @@unique([id, rodadaId, snapshotId], map: "FPC_OWNER_key")
+  @@unique([id, rodadaId], map: "FPC_APURACAO_key")
+  @@map("FANTASY_PONTUACAO_COLETA")
+}
+
+model FantasyPontuacaoAtleta {
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  atletaIdCartola Int @map("ATLETA_ID_CARTOLA") @db.UnsignedInt
+  apuracaoId Int @map("APURACAO_ID") @db.UnsignedInt
+  clubeIdCartola Int? @map("CLUBE_ID_CARTOLA") @db.UnsignedInt
+  posicaoId Int? @map("POSICAO_ID") @db.UnsignedTinyInt
+  estadoClube FantasyCampoEstado @map("ESTADO_CLUBE")
+  estadoPosicao FantasyCampoEstado @map("ESTADO_POSICAO")
+  pontuacao Decimal? @map("PONTUACAO") @db.Decimal(38,18)
+  pontuacaoTokenOriginal String? @map("PONTUACAO_TOKEN_ORIGINAL") @db.VarChar(128)
+  estadoPontuacao FantasyCampoEstado @map("ESTADO_PONTUACAO")
+  entrouEmCampo Boolean? @map("ENTROU_EM_CAMPO")
+  estadoParticipacao FantasyCampoEstado @map("ESTADO_PARTICIPACAO")
+  participacaoObservada FantasyParticipacaoObservada @map("PARTICIPACAO_OBSERVADA")
+  scouts Json? @map("SCOUTS")
+  estadoScouts FantasyCampoEstado @map("ESTADO_SCOUTS")
+  presenteNaUltimaLista Boolean @map("PRESENTE_NA_ULTIMA_LISTA")
+  hashConteudo String @map("HASH_CONTEUDO") @db.Char(64)
+  versaoNormalizador String @map("VERSAO_NORMALIZADOR") @db.VarChar(32)
+  revisaoAlteracao BigInt @map("REVISAO_ALTERACAO") @db.UnsignedBigInt
+  coletaAlteracaoId Int @map("COLETA_ALTERACAO_ID") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM") @db.DateTime(3)
+  alteradoEm DateTime @updatedAt @map("ALTERADO_EM") @db.DateTime(3)
+  apuracao FantasyApuracaoRodada @relation(fields: [apuracaoId, temporada, rodada], references: [id, temporada, rodada], onDelete: Restrict, onUpdate: Restrict)
+  coletaAlteracao FantasyPontuacaoColeta @relation(fields: [coletaAlteracaoId, apuracaoId], references: [id, rodadaId], onDelete: Restrict, onUpdate: Restrict)
+  @@id([temporada, rodada, atletaIdCartola])
+  @@index([apuracaoId, temporada, rodada], map: "FPA_IDENTIDADE_idx")
+  @@index([coletaAlteracaoId, apuracaoId], map: "FPA_COLETA_idx")
+  @@index([apuracaoId, clubeIdCartola], map: "FPA_CLUBE_idx")
+  @@index([apuracaoId, revisaoAlteracao], map: "FPA_REVISAO_idx")
+  @@map("FANTASY_PONTUACAO_ATLETA")
+}
+
 model FutebolCompeticao {
   ultimoSyncEm DateTime? @map("ULTIMO_SYNC_EM")
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
@@ -788,6 +1031,7 @@ model FantasyCatalogoAtleta {
 }
 
 model FantasyCompeticao {
+  resultados FantasyEscalacaoResultado[]
   identidades FantasyTimeIdentidade[]
   escalacoes FantasyEscalacao[]
   id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
@@ -801,6 +1045,7 @@ model FantasyCompeticao {
   inicioInscricao DateTime @map("INICIO_INSCRICAO")
   fimInscricao DateTime @map("FIM_INSCRICAO")
   fechamentoDefinitivoEm DateTime? @map("FECHAMENTO_DEFINITIVO_EM")
+  fechamentoAuditoria FantasyFechamentoAuditoria?
   limiteEscalacoesUsuario Int? @map("LIMITE_ESCALACOES_USUARIO") @db.UnsignedInt
   criadoEm DateTime @default(now()) @map("CRIADO_EM")
   atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
@@ -809,6 +1054,13 @@ model FantasyCompeticao {
   @@index([status, temporada, rodada])
   @@index([catalogoId])
   @@map("FANTASY_COMPETICAO")
+}
+
+model FantasyFechamentoAuditoria {
+  competicaoId Int @id @map("COMPETICAO_ID") @db.UnsignedInt
+  dados Json @map("DADOS")
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "FFA_COMPETICAO_fkey")
+  @@map("FANTASY_FECHAMENTO_AUDITORIA")
 }
 
 model FantasyCompeticaoPartida {
@@ -832,6 +1084,8 @@ enum FantasyEscalacaoPapel {
 }
 
 model FantasyEscalacao {
+  resultado FantasyEscalacaoResultado?
+  @@unique([id, competicaoId], map: "FE_RESULTADO_OWNER_key")
   confirmadaEm DateTime? @map("CONFIRMADA_EM")
   inscricaoOperacaoId Int? @map("INSCRICAO_OPERACAO_ID") @db.UnsignedInt
   inscricaoOperacao FantasyInscricaoOperacao? @relation(fields: [inscricaoOperacaoId, usuarioId, competicaoId], references: [id, usuarioId, competicaoId], onDelete: Restrict, onUpdate: Restrict, map: "FE_INSCRICAO_OPERACAO_fkey")
@@ -862,6 +1116,26 @@ model FantasyEscalacao {
   @@index([capitaoAtletaId])
   @@index([reservaMagoAtletaId])
   @@map("FANTASY_ESCALACAO")
+}
+
+// One current result per lineup. Ranking is derived, substitutions live in auditoria.
+model FantasyEscalacaoResultado {
+  escalacaoId Int @id @map("ESCALACAO_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  revisao BigInt @map("REVISAO") @db.UnsignedBigInt
+  hashFonte String @map("HASH_FONTE") @db.Char(64)
+  versaoEscalacao Int @map("VERSAO_ESCALACAO") @db.UnsignedInt
+  versaoMotor String @map("VERSAO_MOTOR") @db.VarChar(32)
+  total Decimal? @map("TOTAL") @db.Decimal(40,18)
+  auditoria Json @map("AUDITORIA")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM") @db.DateTime(3)
+  escalacao FantasyEscalacao @relation(fields: [escalacaoId, competicaoId], references: [id, competicaoId], onDelete: Restrict, onUpdate: Restrict, map: "FER_ESCALACAO_fkey")
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "FER_COMPETICAO_fkey")
+  @@index([competicaoId, total], map: "FER_RANKING_idx")
+  @@unique([escalacaoId, competicaoId], map: "FER_OWNER_key")
+  @@map("FANTASY_ESCALACAO_RESULTADO")
 }
 
 model FantasyEscalacaoAtleta {

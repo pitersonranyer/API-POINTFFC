@@ -6,7 +6,7 @@ import { LineupIdDto, LineupPageDto } from './lineups/lineup.dto';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { AdminGuard } from '../auth/admin.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { CaptureCatalogDto, CreateFantasyCompetitionDto, FantasyPageDto } from './point-fantasy.dto';
+import { CaptureCatalogDto, CloseFantasyCompetitionDto, CreateFantasyCompetitionDto, FantasyPageDto } from './point-fantasy.dto';
 import { PointFantasyService } from './point-fantasy.service';
 
 @ApiTags('point-fantasy')
@@ -40,4 +40,6 @@ export class AdminPointFantasyController {
   @Post('competicoes') create(@Body() dto: CreateFantasyCompetitionDto) { return this.service.createCompetition(dto); }
   @Get('competicoes/:id') detail(@Param('id', ParseIntPipe) id: number) { return this.service.competition(id, undefined, true); }
   @Post('competicoes/:id/publicar') publish(@Param('id', ParseIntPipe) id: number) { return this.service.publish(id); }
+  @Post('competicoes/:id/fechar') close(@Param() params: LineupIdDto, @Body() dto: CloseFantasyCompetitionDto,
+    @AuthenticatedUser() user: Usuario) { return this.service.closeCompetition(params.id, user.idUsuario, dto); }
 }

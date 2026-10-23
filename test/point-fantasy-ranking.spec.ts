@@ -57,7 +57,7 @@ describe('POINT Fantasy public registered teams ranking', () => {
     expect(body.items[0].identidade).toEqual({ identificadorPublico: 'ABC2345', nomeBase: 'Time', sequencial: 1 });
     expect(body.items[1]).toMatchObject({ identidade: null, nomePublico: null });
     for (const item of body.items) {
-      expect(item).toMatchObject({ posicao: null, pontuacao: null, meuTime: false, formacao: '4-3-3' });
+      expect(item).toMatchObject({ posicao: null, pontuacao: null, meuTime: false, formacao: null });
       expect(Object.keys(item).sort()).toEqual(['posicao', 'pontuacao', 'meuTime', 'formacao', 'identidade', 'nomePublico', 'escalacaoId'].sort());
     }
     expect(db.fantasyEscalacao.findMany).toHaveBeenCalledTimes(1);
@@ -70,6 +70,7 @@ describe('POINT Fantasy public registered teams ranking', () => {
   it.each([['owner', [true, true, false]], ['other', [false, false, true]]])('marks ownership using only validated JWT: %s', async (token, expected) => {
     const res = await request('', token as string); const body = await res.json() as any;
     expect(body.items.map((r: any) => r.meuTime)).toEqual(expected);
+    expect(body.items.map((r: any) => r.formacao)).toEqual((expected as boolean[]).map(own => own ? '4-3-3' : null));
     expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(JSON.stringify(body)).not.toMatch(/usuarioId|email|telefone|Private Name/);
   });

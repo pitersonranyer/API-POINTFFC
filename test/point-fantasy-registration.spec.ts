@@ -20,6 +20,7 @@ describe('FREE registration transaction', () => {
       atletas: athletes.map(a => ({ catalogoAtletaId: a.id, atleta: a,
         papel: selection.titulares.includes(a.id) ? 'TITULAR' : selection.tecnico === a.id ? 'TECNICO' : 'RESERVA' })) }));
     db = {
+      fantasyApuracaoRodada: { findUnique: jest.fn().mockResolvedValue(null) },
       $queryRaw: jest.fn(), usuario: { findUnique: jest.fn(async () => ({ status: userStatus })) },
       fantasyCompeticao: { findUnique: jest.fn(async () => c) },
       fantasyCatalogoAtleta: { findMany: jest.fn(async () => athletes) },

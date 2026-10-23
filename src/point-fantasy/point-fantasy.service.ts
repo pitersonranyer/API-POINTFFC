@@ -1,11 +1,14 @@
-import { BadGatewayException, BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CartolaService } from '../cartola/cartola.service';
 import { CartolaMarketStatus } from '../cartola/cartola.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { CaptureCatalogDto, CreateFantasyCompetitionDto, FantasyPageDto } from './point-fantasy.dto';
+import { CaptureCatalogDto, CloseFantasyCompetitionDto, CreateFantasyCompetitionDto, FantasyPageDto } from './point-fantasy.dto';
+import { loadCartolaEvidence } from './scoring/cartola-evidence';
 import { CatalogReferences, classifyAthlete, SnapshotMatch } from './point-fantasy.rules';
 import { LineupPageDto } from './lineups/lineup.dto';
+import { rankScores } from './scoring/scoring-engine';
+import { isCurrentResult } from './scoring/result-readiness';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadGatewayException('Objeto Cartola invalido');
@@ -189,6 +192,27 @@ export class PointFantasyService {
     // One read snapshot for visibility, entries and total, without write locks.
     return this.prisma.$transaction(async tx => {
       const competition = await this.competition(id, tx);
+      if (competition.fechamentoDefinitivoEm && competition.fechamentoDefinitivoEm <= new Date()) {
+        const round = await tx.fantasyApuracaoRodada.findUnique({ where: {
+          temporada_rodada: { temporada: competition.temporada, rodada: competition.rodada },
+        } });
+        const entries = await tx.fantasyEscalacao.findMany({ where: { competicaoId: id, status: 'INSCRITA' },
+          include: { resultado: true, identidade: { select: { identificadorPublico: true, nomeBase: true } } },
+          orderBy: { id: 'asc' } });
+        const rows = rankScores(entries.map(entry => {
+          const result = entry.resultado;
+          const current = isCurrentResult(result, round, competition, entry.versao);
+          return { escalacaoId: entry.id, total: current ? result!.total?.toFixed() ?? null : null, entry };
+        }));
+        const complete = rows.length > 0 && rows.every(row => row.total !== null);
+        return { competicaoId: id, estadoPontuacao: complete ? 'PARCIAL' : 'INDISPONIVEL',
+          items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
+            posicao: complete ? posicao : null, escalacaoId: entry.id, nomePublico: entry.nomePublico,
+            identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
+            formacao: entry.formacao, pontuacao: complete ? total : null,
+            meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
+          })), total: entries.length, page: page.page, limit: page.limit };
+      }
       const where = { competicaoId: id, status: 'INSCRITA' };
       const [items, total] = await Promise.all([
         tx.fantasyEscalacao.findMany({ where, orderBy: { id: 'asc' },
@@ -204,7 +228,8 @@ export class PointFantasyService {
       return { competicaoId: id, estadoPontuacao: notStarted ? 'NAO_INICIADA' : 'INDISPONIVEL',
         items: items.map(item => ({ posicao: null, escalacaoId: item.id, nomePublico: item.nomePublico,
           identidade: item.identidade ? { ...item.identidade, sequencial: item.sequencial } : null,
-          formacao: item.formacao, pontuacao: null, meuTime: usuarioId !== undefined && item.usuarioId === usuarioId })),
+          formacao: usuarioId !== undefined && item.usuarioId === usuarioId ? item.formacao : null,
+          pontuacao: null, meuTime: usuarioId !== undefined && item.usuarioId === usuarioId })),
         total, page: page.page, limit: page.limit };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   }
@@ -225,6 +250,39 @@ export class PointFantasyService {
         throw new ConflictException('Competicao sem catalogo congelado, partidas ou janela valida');
       }
       return tx.fantasyCompeticao.update({ where: { id }, data: { status: 'PUBLICADA' }, include: { partidas: true } });
+    });
+  }
+
+  async closeCompetition(id: number, usuarioId: number, dto: CloseFantasyCompetitionDto) {
+    return this.atomic(async tx => {
+      const admin = await tx.usuario.findUnique({ where: { idUsuario: usuarioId }, select: { tipoUsuario: true, status: true } });
+      if (admin?.tipoUsuario !== 'PLATFORM_ADMIN' || admin.status !== 'ATIVO') throw new ForbiddenException('Administrador ativo obrigatorio');
+      await tx.$queryRaw`SELECT ID FROM FANTASY_COMPETICAO WHERE ID=${id} FOR UPDATE`;
+      const c = await tx.fantasyCompeticao.findUniqueOrThrow({ where: { id }, include: { catalogo: true, partidas: true, fechamentoAuditoria: true } });
+      if (c.temporada !== dto.temporada || c.rodada !== dto.rodada) throw new ConflictException('Identidade da competicao divergente');
+      const audit = c.fechamentoAuditoria?.dados as Prisma.JsonObject | undefined;
+      if (c.fechamentoDefinitivoEm) {
+        if (audit?.operacaoId !== dto.operacaoId || audit.revisao !== dto.revisao || audit.hashFonte !== dto.hashFonte
+          || audit.motivo !== dto.motivo || audit.usuarioId !== usuarioId) throw new ConflictException('Competicao ja fechada por outra operacao');
+        return { competicaoId: id, fechamentoDefinitivoEm: c.fechamentoDefinitivoEm, auditoria: audit };
+      }
+      const now = new Date();
+      if (c.status !== 'PUBLICADA' || c.catalogo.status !== 'CONGELADO' || c.catalogo.temporada !== c.temporada
+        || c.catalogo.rodada !== c.rodada || c.fimInscricao > now || !c.partidas.length) throw new ConflictException('Competicao indisponivel para fechamento');
+      await tx.$queryRaw`SELECT ID FROM FANTASY_APURACAO_RODADA WHERE TEMPORADA=${c.temporada} AND RODADA=${c.rodada} FOR UPDATE`;
+      const round = await tx.fantasyApuracaoRodada.findUniqueOrThrow({ where: { temporada_rodada: { temporada: c.temporada, rodada: c.rodada } } });
+      if (round.revisaoAtual.toString() !== dto.revisao || round.hashConteudoAtual !== dto.hashFonte) throw new ConflictException('Revisao ou hash alterados');
+      const points = await tx.fantasyPontuacaoAtleta.findMany({ where: { temporada: c.temporada, rodada: c.rodada, apuracaoId: round.id } });
+      const evidence = (await loadCartolaEvidence(tx, round, points, c.partidas)).assessment;
+      if (!evidence.eligible) throw new ConflictException({ message: 'Evidencias Cartola insuficientes para os confrontos selecionados', impedimentos: evidence.reasons });
+      const data = { operacaoId: dto.operacaoId, usuarioId, motivo: dto.motivo, temporada: c.temporada, rodada: c.rodada,
+        revisao: dto.revisao, hashFonte: dto.hashFonte, fechadoEm: now.toISOString(), evidencia: evidence,
+        partidas: c.partidas.map(m => ({ partidaIdExterno: m.partidaIdExterno, clubeMandanteId: m.clubeMandanteId, clubeVisitanteId: m.clubeVisitanteId })) };
+      await tx.fantasyFechamentoAuditoria.create({ data: { competicaoId: id, dados: data as unknown as Prisma.InputJsonValue } });
+      const updated = await tx.fantasyCompeticao.updateMany({ where: { id, fechamentoDefinitivoEm: null, atualizadoEm: c.atualizadoEm },
+        data: { fechamentoDefinitivoEm: now } });
+      if (updated.count !== 1) throw new ConflictException('Competicao alterada durante fechamento');
+      return { competicaoId: id, fechamentoDefinitivoEm: now, auditoria: data };
     });
   }
 }

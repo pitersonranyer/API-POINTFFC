@@ -5,10 +5,6 @@ export function deployMigrations(): void {
   if (process.env.NODE_ENV !== 'production') return;
 
   execFileSync(process.execPath, [
-    require.resolve('prisma'),
-    'migrate',
-    'deploy',
-    '--schema',
-    resolve(__dirname, '../../prisma/schema.prisma'),
+    resolve(__dirname, '../../scripts/deploy-migrations.cjs'),
   ], { stdio: 'inherit', env: process.env });
 }

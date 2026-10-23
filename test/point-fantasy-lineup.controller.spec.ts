@@ -24,6 +24,11 @@ describe('Lineup HTTP contract and JWT identity', () => {
   });
   afterAll(async () => { await app?.close(); });
   beforeEach(() => jest.clearAllMocks());
+  it.each(['competicoes/1/escalacoes/minhas', 'escalacoes/1'])('private no-store on %s', async route => {
+    const response = await request(route, 'GET');
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  });
   const request = (route: string, method: string, body?: unknown, token = 'valid') => fetch(base + '/point-fantasy/' + route, {
     method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),

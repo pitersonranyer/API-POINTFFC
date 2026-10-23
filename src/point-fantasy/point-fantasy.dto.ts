@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, ArrayUnique, IsArray, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 
 export class FantasyPageDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page = 1;
@@ -10,6 +10,14 @@ export class CaptureCatalogDto {
   @IsInt() @Min(1) @Max(38) rodada: number;
   // Explicit version makes retries idempotent; a new version must be deliberate.
   @IsInt() @Min(1) @Max(4294967295) versao: number;
+}
+export class CloseFantasyCompetitionDto {
+  @IsInt() @Min(2000) @Max(65535) temporada: number;
+  @IsInt() @Min(1) @Max(38) rodada: number;
+  @IsString() @Matches(/^[1-9]\d{0,19}$/) revisao: string;
+  @IsString() @Matches(/^[a-f0-9]{64}$/) hashFonte: string;
+  @IsUUID('4') operacaoId: string;
+  @IsString() @MinLength(5) @MaxLength(1000) @Matches(/\S/) motivo: string;
 }
 export class CreateFantasyCompetitionDto {
   @IsInt() @Min(1) @Max(4294967295) catalogoId: number;

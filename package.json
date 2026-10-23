@@ -5,6 +5,9 @@
   "description": "Api-Pointffc — backend do Fantasy Point do Jogador",
   "license": "UNLICENSED",
   "scripts": {
+    "fantasy:auto:local": "node scripts/point-fantasy-auto-local.cjs",
+    "fantasy:collect:local": "node scripts/point-fantasy-collect-local.cjs",
+    "fantasy:observe": "node scripts/point-fantasy-observe.cjs",
     "futebol:sync": "node scripts/sync-brasileirao.cjs",
     "futebol:sync:all": "node scripts/sync-competicoes.cjs",
     "build": "prisma generate && nest build",

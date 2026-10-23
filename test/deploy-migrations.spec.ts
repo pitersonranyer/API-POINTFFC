@@ -16,8 +16,7 @@ describe('deployMigrations', () => {
     process.env.NODE_ENV = 'production';
     deployMigrations();
     expect(execFileSync).toHaveBeenCalledWith(process.execPath, [
-      require.resolve('prisma'), 'migrate', 'deploy', '--schema',
-      expect.stringMatching(/prisma[/\\]schema\.prisma$/),
+      expect.stringMatching(/scripts[/\\]deploy-migrations\.cjs$/),
     ], { stdio: 'inherit', env: process.env });
   });
 

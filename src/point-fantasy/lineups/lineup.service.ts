@@ -5,6 +5,7 @@ import { generatePublicTeamCode, normalizeTeamName, PUBLIC_TEAM_CODE_ATTEMPTS, P
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfirmFreeLineupsDto, CreateLineupDto, LineupPageDto, UpdateLineupDto } from './lineup.dto';
 import { LineupSelection, selectionIds, validateSelection } from './lineup.rules';
+import { readResultDetail, readResultSummaries } from './lineup-result.read';
 
 const include = { identidade: true, atletas: { include: { atleta: true }, orderBy: { id: 'asc' as const } } };
 type StoredLineup = Prisma.FantasyEscalacaoGetPayload<{ include: typeof include }>;
@@ -220,7 +221,7 @@ export class LineupService {
   async list(usuarioId: number, competicaoId: number, page: LineupPageDto) {
     return this.atomic(async tx => {
       await this.active(tx, usuarioId);
-      await this.competition(tx, competicaoId);
+      const competition = await this.competition(tx, competicaoId);
       const where = { usuarioId, competicaoId };
       const [items, total] = await Promise.all([
         tx.fantasyEscalacao.findMany({ where, skip: (page.page - 1) * page.limit, take: page.limit, orderBy: { id: 'desc' }, include }),
@@ -228,16 +229,26 @@ export class LineupService {
       ]);
       const identity = await tx.fantasyTimeIdentidade.findUnique({ where: { usuarioId_competicaoId: { usuarioId, competicaoId } } });
       const legados = await tx.fantasyEscalacao.count({ where: { ...where, identidadeId: null } });
+      const results = items.length ? await readResultSummaries(tx, competition) : null;
       return { identidade: identity ? this.identityResponse(identity) : null,
         estadoIdentidade: identity ? 'DEFINIDA' : legados ? 'LEGADO' : 'NOVO', rascunhosLegados: legados,
-        items: items.map(item => this.response(item)), total, page: page.page, limit: page.limit };
+        items: items.map(item => ({ ...this.response(item),
+          ...(results?.summaries.has(item.id) ? { resultado: results.summaries.get(item.id) } : {}) })), total, page: page.page, limit: page.limit };
     });
   }
 
   async get(usuarioId: number, id: number) {
     return this.atomic(async tx => {
       await this.active(tx, usuarioId);
-      return this.response(await this.owned(tx, usuarioId, id));
+      const lineup = await tx.fantasyEscalacao.findFirst({ where: { id, usuarioId }, include })
+        ?? await tx.fantasyEscalacao.findFirst({ where: { id, status: 'INSCRITA', competicao: {
+          status: 'PUBLICADA', fechamentoDefinitivoEm: { not: null, lte: new Date() },
+        } }, include });
+      if (!lineup) throw new NotFoundException('Escalacao nao encontrada');
+      const competition = await this.competition(tx, lineup.competicaoId);
+      const context = await readResultSummaries(tx, competition);
+      const resultado = await readResultDetail(tx, competition, lineup, context);
+      return { ...this.response(lineup), ...(resultado ? { resultado } : {}) };
     });
   }
 

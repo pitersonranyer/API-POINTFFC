@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Usuario } from '@prisma/client';
 import { AuthenticatedUser } from '../../auth/authenticated-user.decorator';
@@ -21,10 +21,12 @@ export class LineupController {
     return this.service.create(user.idUsuario, p.id, dto);
   }
   @Get('competicoes/:id/escalacoes/minhas')
+  @Header('Cache-Control', 'private, no-store')
   list(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Query() page: LineupPageDto) {
     return this.service.list(user.idUsuario, p.id, page);
   }
   @Get('escalacoes/:id')
+  @Header('Cache-Control', 'private, no-store')
   get(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto) { return this.service.get(user.idUsuario, p.id); }
   @Patch('escalacoes/:id')
   update(@AuthenticatedUser() user: Usuario, @Param() p: LineupIdDto, @Body() dto: UpdateLineupDto) {

@@ -14,6 +14,7 @@ describe('Public team identity', () => {
     identities = []; lineups = []; operations = [];
     const match = (row: any, where: any) => Object.entries(where).every(([k, v]) => row[k] === v);
     tx = {
+      fantasyApuracaoRodada: { findUnique: jest.fn().mockResolvedValue(null) },
       usuario: { findUnique: jest.fn(async () => ({ status: 'ATIVO' })) },
       fantasyCompeticao: { findUnique: jest.fn(async ({ where }: any) => ({ id: where.id, status: 'PUBLICADA',
         temporada: 2026, rodada: 1, catalogoId: 1, catalogo: { temporada: 2026, rodada: 1, status: 'CONGELADO' },
