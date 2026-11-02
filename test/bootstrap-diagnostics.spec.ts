@@ -1,5 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { PrismaClient } from '@prisma/client';
+import { rmSync } from 'node:fs';
+import * as path from 'node:path';
+import { tmpdir } from 'node:os';
 
 jest.mock('node:child_process', () => ({ execFileSync: jest.fn() }));
 jest.mock('@prisma/client', () => ({ PrismaClient: jest.fn() }));
@@ -8,6 +11,7 @@ const { main, expectedHash, migration } = require('../scripts/deploy-migrations.
 
 describe('production bootstrap logging boundary', () => {
   const environment = process.env.NODE_ENV;
+  const databaseUrl = process.env.DATABASE_URL;
   let events: any[], db: any, output: jest.SpyInstance;
   beforeEach(() => {
     process.env.NODE_ENV = 'production';
@@ -28,6 +32,8 @@ describe('production bootstrap logging boundary', () => {
   afterEach(() => {
     if (environment === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = environment;
+    if (databaseUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = databaseUrl;
     output.mockRestore();
     jest.resetAllMocks();
   });
@@ -59,5 +65,48 @@ describe('production bootstrap logging boundary', () => {
     await expect(main()).rejects.toThrow('AUTOMATIC_PRODUCTION_BOOTSTRAP_ONLY');
     expect(events.filter(e => e.result === 'failed')).toHaveLength(1);
     expect(PrismaClient).not.toHaveBeenCalled();
+  });
+  it('passes normalized TLS paths only to all CLI children, including the temporary schema', async () => {
+    const original = 'mysql://fictional:secret@host/db?sslcert=ca.pem&sslidentity=identity.p12&sslaccept=strict';
+    process.env.DATABASE_URL = original;
+    let historyRead = 0;
+    db.$queryRawUnsafe.mockImplementation(async (sql: string) => {
+      if (sql.includes('GET_LOCK')) return [{ acquired: 1 }];
+      if (sql.includes('RELEASE_LOCK')) return [{ released: 1 }];
+      if (sql.includes('information_schema')) return [{ n: 1 }];
+      if (sql.startsWith('SELECT COUNT')) return [{ n: 0 }];
+      if (sql.includes('FROM _prisma_migrations')) return historyRead++ === 0 ? [] : [
+        { migration_name: '0029_point_fantasy_current_scoring', finished_at: true, rolled_back_at: null },
+      ];
+    });
+    db.$executeRawUnsafe = jest.fn(async () => 1);
+    try {
+      await main();
+      const calls = (execFileSync as jest.Mock).mock.calls;
+      expect(calls).toHaveLength(3);
+      expect(calls.map(call => call[1].slice(1, 3))).toEqual([
+        ['migrate', 'deploy'], ['db', 'execute'], ['migrate', 'deploy'],
+      ]);
+      for (const call of calls) {
+        const childEnvironment = call[2].env;
+        const url = new URL(childEnvironment.DATABASE_URL);
+        expect(url.searchParams.get('sslcert')).toBe(path.resolve('prisma/ca.pem'));
+        expect(url.searchParams.get('sslidentity')).toBe(path.resolve('prisma/identity.p12'));
+        expect(url.searchParams.get('sslaccept')).toBe('strict');
+        expect(childEnvironment).not.toBe(process.env);
+      }
+      expect(process.env.DATABASE_URL).toBe(original);
+      expect(PrismaClient).toHaveBeenCalledWith();
+      expect(JSON.stringify(events)).not.toMatch(/secret|mysql:|ca\.pem|identity\.p12/);
+    } finally {
+      const args = (execFileSync as jest.Mock).mock.calls[0]?.[1];
+      if (args) {
+        const directory = path.resolve(path.dirname(args.at(-1)));
+        if (path.dirname(directory) !== path.resolve(tmpdir()) || !path.basename(directory).startsWith('point-ffc-bootstrap-')) {
+          throw new Error('UNEXPECTED_TEST_CLEANUP_PATH');
+        }
+        rmSync(directory, { recursive: true, force: true });
+      }
+    }
   });
 });

@@ -47,3 +47,27 @@ delimita o ponto de interrupção, mas não comprova sua causa.
 A instrumentação não muda SQL, schema, histórico, sequência de comandos, locks,
 transações, conexões ou política de falhas. O diagnóstico exato de produção ainda
 depende dos eventos coletados no Render após uma publicação autorizada.
+
+## Caminhos TLS no CLI
+
+Antes de iniciar cada subprocesso Prisma CLI, o bootstrap cria uma cópia do
+ambiente e resolve valores relativos de `sslcert` e `sslidentity` em relação ao
+diretório do schema original (`prisma/`). Isso mantém o acesso aos mesmos arquivos
+quando o CLI usa o schema temporário. A variável global `DATABASE_URL` e o Prisma
+Client permanecem inalterados. Caminhos absolutos e URLs sem arquivos TLS são
+preservados; os demais trechos da URL, inclusive credenciais, `sslpassword`,
+`sslaccept`, opções repetidas e escaping, não são reserializados.
+
+O ajuste não cria certificados, não ignora arquivos ausentes e não altera a
+validação TLS. Um arquivo inexistente ou sem permissão continua sendo uma falha.
+Os testes usam arquivos fictícios e subprocessos sem banco para verificar que o
+schema temporário encontra os mesmos arquivos do schema original. Eles eliminam
+a condição de arquivo perdido reproduzida localmente, sem provar a causa do erro
+do Render nem testar um handshake TLS de produção.
+
+Na verificação adicional com `schema-engine` 5.22, comando
+`can-connect-to-database`, endereço `127.0.0.1` e credenciais fictícias, o mesmo
+contexto temporário retornou P1001 antes da normalização e P1011 depois dela.
+O arquivo passou a ser encontrado; a falha TLS própria do ambiente Windows local
+permaneceu. Isso não representa uma conexão completa bem-sucedida nem comprova
+a causa do incidente em produção. Nenhuma migration foi executada nesse teste.

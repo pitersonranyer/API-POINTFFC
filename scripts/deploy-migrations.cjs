@@ -31,6 +31,28 @@ function restrictedSchema(root) {
   return path.join(directory, 'schema.prisma');
 }
 
+function cliEnvironment(environment, originalSchema) {
+  const env = { ...environment };
+  const url = env.DATABASE_URL;
+  if (typeof url !== 'string') return env;
+  const queryStart = url.indexOf('?');
+  if (queryStart === -1) return env;
+  const fragmentStart = url.indexOf('#', queryStart);
+  const queryEnd = fragmentStart === -1 ? url.length : fragmentStart;
+  // Rewrite only file parameter values: reserializing the whole URL could change
+  // credentials, duplicate parameters, escaping or unrelated connection options.
+  const query = url.slice(queryStart + 1, queryEnd).split('&').map(parameter => {
+    const entry = new URLSearchParams(parameter).entries().next().value;
+    if (!entry) return parameter;
+    const [key, value] = entry;
+    if (!['sslcert', 'sslidentity'].includes(key) || !value || path.isAbsolute(value)) return parameter;
+    const equals = parameter.indexOf('=');
+    return parameter.slice(0, equals + 1) + encodeURIComponent(path.resolve(path.dirname(originalSchema), value));
+  }).join('&');
+  env.DATABASE_URL = url.slice(0, queryStart + 1) + query + url.slice(queryEnd);
+  return env;
+}
+
 async function deploy({ db, run, root = path.resolve(__dirname, '..'), makeRestrictedSchema = restrictedSchema, log = diagnostics() }) {
   const validation = log.begin('artifact_validation');
   const schema = path.join(root, 'prisma/schema.prisma');
@@ -119,7 +141,8 @@ async function main() {
     const db = new PrismaClient();
     try {
       await deploy({ db, log, run: (args, input) => execFileSync(process.execPath, [require.resolve('prisma'), ...args], {
-        env: process.env, maxBuffer: Infinity, stdio: ['pipe', 'pipe', 'pipe'], ...(input === undefined ? {} : { input }),
+        env: cliEnvironment(process.env, path.resolve(__dirname, '../prisma/schema.prisma')),
+        maxBuffer: Infinity, stdio: ['pipe', 'pipe', 'pipe'], ...(input === undefined ? {} : { input }),
       }) });
     } finally { await log.step('client_disconnect', () => db.$disconnect()); }
     log.end(bootstrap);
@@ -128,4 +151,4 @@ async function main() {
 if (require.main === module) main().catch(() => {
   process.exitCode = 1;
 });
-module.exports = { deploy, transport, restrictedSchema, migration, expectedHash, main };
+module.exports = { deploy, transport, restrictedSchema, cliEnvironment, migration, expectedHash, main };
