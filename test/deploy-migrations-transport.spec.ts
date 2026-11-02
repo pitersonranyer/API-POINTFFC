@@ -2,12 +2,17 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { deploy, transport, expectedHash, migration } = require('../scripts/deploy-migrations.cjs');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { diagnostics, errorMetadata } = require('../scripts/bootstrap-diagnostics.cjs');
 
 describe('automatic bootstrap DELIMITER compatibility', () => {
   let db: any, run: jest.Mock, history: any[], failed: boolean, nonempty: boolean;
+  let events: any[], log: any;
   const completed = (name: string) => ({ migration_name: name, checksum: expectedHash, finished_at: new Date(), rolled_back_at: null });
   beforeEach(() => {
     history = []; failed = false; nonempty = false;
+    events = [];
+    log = diagnostics((line: string) => events.push(JSON.parse(line)));
     db = {
       $transaction: jest.fn(async action => action(db)),
       $queryRawUnsafe: jest.fn(async (sql: string) => {
@@ -29,7 +34,77 @@ describe('automatic bootstrap DELIMITER compatibility', () => {
       if (args[0] === 'db' && failed) throw Error('CLI_FAILED');
     });
   });
-  const apply = () => deploy({ db, run, makeRestrictedSchema: () => 'restricted-schema' });
+  const apply = () => deploy({ db, run, log, makeRestrictedSchema: () => 'restricted-schema' });
+  it('records the ordered stages without changing the migration calls', async () => {
+    await apply();
+    expect(events.filter(e => e.result === 'succeeded').map(e => e.stage)).toEqual([
+      'artifact_validation', 'client_connection', 'lock_acquire', 'migration_history',
+      'temporary_schema', 'cli_through_0029', 'migration_boundary', 'observation_guard',
+      'migration_0030_history_start', 'cli_transport_0030', 'migration_0030_verify',
+      'migration_0030_history_complete', 'cli_post_0030', 'lock_release',
+    ]);
+    expect(events.every(e => e.duration_ms >= 0)).toBe(true);
+  });
+  it.each([0, 1, 2])('identifies CLI failure %i and suppresses all raw error fields', async index => {
+    const original = run.getMockImplementation()!;
+    let call = 0;
+    const error = Object.assign(new Error('mysql://user:secret@host/db certificate-secret'), {
+      stderr: Buffer.from('Error: P1001 mysql://user:secret@host/db certificate-secret'),
+      stdout: 'secret-output', stack: 'secret-stack', name: 'secret-type', code: 'secret-code',
+    });
+    run.mockImplementation((...args: any[]) => {
+      if (call++ === index) throw error;
+      return original(...args);
+    });
+    await expect(apply()).rejects.toBe(error);
+    const event = events.find(e => e.result === 'failed');
+    expect(event).toMatchObject({ stage: ['cli_through_0029', 'cli_transport_0030', 'cli_post_0030'][index],
+      error_code: 'P1001', error_type: 'UnknownError', previous_stage: { result: 'succeeded' } });
+    expect(JSON.stringify(events)).not.toMatch(/secret|mysql:|certificate|restricted-schema/);
+    expect(events.at(-1)).toMatchObject({ stage: 'lock_release', result: 'succeeded' });
+  });
+  it('reports initial connection failure without acquiring or releasing a lock', async () => {
+    const error = Object.assign(new Error('secret'), { errorCode: 'P1001', name: 'PrismaClientInitializationError' });
+    db.$transaction.mockRejectedValueOnce(error);
+    await expect(apply()).rejects.toBe(error);
+    expect(events.at(-1)).toMatchObject({ stage: 'client_connection', result: 'failed', error_code: 'P1001',
+      error_type: 'PrismaClientInitializationError', previous_stage: { stage: 'artifact_validation', result: 'succeeded' } });
+    expect(db.$queryRawUnsafe).not.toHaveBeenCalled();
+  });
+  it('reports temporary schema failure and still releases the lock', async () => {
+    await expect(deploy({ db, run, log, makeRestrictedSchema: () => { throw new Error('secret'); } })).rejects.toThrow('secret');
+    expect(events.find(e => e.result === 'failed')).toMatchObject({ stage: 'temporary_schema', error_code: 'UNKNOWN' });
+    expect(run).not.toHaveBeenCalled();
+    expect(events.at(-1).stage).toBe('lock_release');
+  });
+  it('sanitizes unknown errors and does not let a logging failure affect execution', async () => {
+    expect(errorMetadata({ code: 'secret', name: 'secret', message: 'secret', meta: { password: 'secret' } }))
+      .toEqual({ error_code: 'UNKNOWN', error_type: 'UnknownError' });
+    expect(errorMetadata(null)).toEqual({ error_code: 'UNKNOWN', error_type: 'UnknownError' });
+    expect(errorMetadata({ code: 'ENOTFOUND', name: 'Error', message: 'secret host' }))
+      .toEqual({ error_code: 'ENOTFOUND', error_type: 'Error' });
+    log = diagnostics(() => { throw new Error('logger unavailable'); });
+    await expect(apply()).resolves.toBeUndefined();
+  });
+  it('records elapsed time and the previous stage result on failure', async () => {
+    let clock = 10;
+    const local = diagnostics((line: string) => events.push(JSON.parse(line)), () => clock);
+    local.sync('first', () => { clock = 25; });
+    await expect(local.step('second', async () => { clock = 60; throw new Error('secret'); })).rejects.toThrow('secret');
+    expect(events.at(-1)).toMatchObject({ stage: 'second', result: 'failed', duration_ms: 35,
+      previous_stage: { stage: 'first', result: 'succeeded' } });
+  });
+  it.each(['lock_acquire', 'migration_history', 'lock_release'])('identifies %s failures', async stage => {
+    const original = db.$queryRawUnsafe.getMockImplementation();
+    db.$queryRawUnsafe.mockImplementation((sql: string) => {
+      const target = stage === 'lock_acquire' ? 'GET_LOCK' : stage === 'lock_release' ? 'RELEASE_LOCK' : 'information_schema';
+      if (sql.includes(target)) throw Object.assign(new Error('secret'), { code: 'P1001' });
+      return original(sql);
+    });
+    await expect(apply()).rejects.toThrow('secret');
+    expect(events.find(e => e.result === 'failed')).toMatchObject({ stage, error_code: 'P1001' });
+    expect(JSON.stringify(events)).not.toContain('secret');
+  });
   it('pins the original checksum and transforms only CLI separator lines', () => {
     const bytes = readFileSync('prisma/migrations/0030_point_fantasy_writer_admission/migration.sql');
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(expectedHash);
