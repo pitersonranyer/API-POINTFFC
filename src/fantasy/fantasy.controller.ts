@@ -1,9 +1,12 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { FantasyService } from './fantasy.service';
 
 @Controller('fantasy')
 export class FantasyController {
   constructor(private readonly service: FantasyService) {}
+  @Get('agenda')
+  agenda(@Query('temporada') temporada: string, @Query('rodada') rodada?: string) { return this.service.agenda(temporada, rodada); }
+
   @Get('partidas/:fixtureId/pre-jogo')
   preJogo(@Param('fixtureId') fixtureId: string) { return this.service.preJogo(fixtureId); }
 

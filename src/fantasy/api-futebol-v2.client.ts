@@ -20,6 +20,9 @@ export class ApiFutebolV2Client {
   eventos(id: number) { return this.get(id, '/eventos'); }
   lances(id: number) { return this.get(id, '/lances'); }
   estatisticas(id: number) { return this.get(id, '/estatisticas'); }
+  campeonato() { return this.get(0, '', '/campeonatos/1'); }
+  rodadas() { return this.get(0, '', '/campeonatos/1/rodadas'); }
+  rodada(numero: number) { return this.get(0, '', `/campeonatos/1/rodadas/${numero}?timezone=America%2FSao_Paulo`); }
 
   private setting(name: string, fallback: number): number {
     const value = Number(this.config.get(name) ?? fallback);
@@ -31,8 +34,8 @@ export class ApiFutebolV2Client {
     if (['andamento', 'suspenso'].includes(status ?? '')) return this.setting('API_FUTEBOL_V2_TTL_LIVE_MS', 60000);
     return this.setting('API_FUTEBOL_V2_TTL_PRE_MS', 300000);
   }
-  private async get(id: number, suffix: string): Promise<Registro> {
-    const path = `/partidas/${id}${suffix}`;
+  private async get(id: number, suffix: string, agendaPath?: string): Promise<Registro> {
+    const path = agendaPath ?? `/partidas/${id}${suffix}`;
     const cached = this.cache.get(path);
     if (cached && cached.expires > Date.now()) return structuredClone(cached.data);
     let work = this.pending.get(path);
@@ -40,13 +43,20 @@ export class ApiFutebolV2Client {
       work = this.request(path, id, suffix).then(data => {
         for (const [key, entry] of this.cache) if (entry.expires <= Date.now()) this.cache.delete(key);
         if (this.cache.size >= 500) this.cache.delete(this.cache.keys().next().value!);
-        this.cache.set(path, { data, expires: Date.now() + this.ttl(id) });
+        this.cache.set(path, { data, expires: Date.now() + (agendaPath ? this.agendaTtl(data) : this.ttl(id)) });
         return data;
       });
       this.pending.set(path, work);
     }
     try { return structuredClone(await work); }
     finally { if (this.pending.get(path) === work) this.pending.delete(path); }
+  }
+
+  private agendaTtl(data: Registro): number {
+    const partidas = Array.isArray(data.partidas) ? data.partidas.map(registro) : [];
+    if (partidas.length && partidas.every(p => ['finalizado', 'cancelado', 'abandonado', 'wo'].includes(String(p.status)))) return this.setting('API_FUTEBOL_V2_TTL_FINAL_MS', 3600000);
+    if (data.status === 'andamento' || data.itens || partidas.some(p => ['andamento', 'suspenso'].includes(String(p.status)))) return this.setting('API_FUTEBOL_V2_TTL_LIVE_MS', 60000);
+    return this.setting('API_FUTEBOL_V2_TTL_PRE_MS', 300000);
   }
 
   private async request(path: string, id: number, suffix: string): Promise<Registro> {
@@ -83,6 +93,7 @@ export class ApiFutebolV2Client {
         const metadataReset = typeof quota.reseta_em === 'number' ? quota.reseta_em * 1000 : 0;
         this.blockedUntil = Math.max(this.blockedUntil, metadataReset > Date.now() ? metadataReset : Date.now() + 60000);
       }
+      if (id === 0) return Array.isArray(body.data) ? { itens: body.data } : registro(body.data);
       const data = registro(body.data);
       if (data.id !== id) throw new BadGatewayException('Identidade da partida divergente');
       if (!suffix) {

@@ -59,3 +59,15 @@ Permanecem limitações: posições divergentes, coordenadas ausentes em prováv
 Fixtures em test/helpers/api-futebol-v2.fixture.ts são recortes baseados nos formatos/valores observados em 321 e 340, com campos não necessários omitidos ou anulados. Não são snapshots completos nem fallback público. Testes unitários não acessam rede, banco ou bootstrap. Não iniciar main.ts para testar: o bootstrap executa migrations.
 
 Verificação isolada do serviço compilado com cinco GETs reais: partida 321, 11 titulares mandantes, 17 eventos, 76 lances, posse mandante 67 e 23 atletas mandantes; partida futura 340 com escalações indisponíveis e nove desfalques. Sem inicializar AppModule ou acessar banco.
+
+## Agenda do Brasileir?o
+
+GET /fantasy/agenda?temporada=2026&rodada=34 ? p?blico. temporada ? obrigat?ria (1900?2100); rodada ? opcional (1?38). N?o exige login. Datas ISO com offset de America/Sao_Paulo, ordenadas pelo instante, com datas desconhecidas ao final. IDs s?o diretamente os IDs V2.
+
+A V2 documentada em /v2/openapi.json oferece /campeonatos/1, /campeonatos/1/rodadas e /campeonatos/1/rodadas/{rodada}, mas somente para a temporada atual, sem filtro por ano. A agenda verifica temporada_atual.ano_inicio antes de consultar jogos: outra temporada recebe 404, nunca dados de outro ano. Sem calend?rio, retorna 503.
+
+Sem rodada, usa a maior rodada com status andamento ou finalizado no calend?rio do provedor. Isso representa a rodada mais avan?ada j? iniciada, mesmo quando rodadas anteriores permanecem abertas por adiamentos. Antes do in?cio usa a primeira cadastrada; ap?s o t?rmino conserva a ?ltima. N?o ? uma indica??o de partida ao vivo e depende da atualiza??o dos estados pelo provedor. Em 03/11/2026, rodadas 21 e 34 estavam em andamento: resultado autom?tico 34.
+
+Reutiliza cache limitado, deduplica??o, fila e bloqueio de quota do cliente da Central. Lista de rodadas e rodadas em andamento: TTL LIVE (60 s); rodadas inteiramente encerradas/canceladas: FINAL (1 h); futuras/contexto: PRE (5 min). Estados futuros podem levar at? 5 min para atualizar. Cache em mem?ria por processo. Nenhuma consulta individual por partida para montar agenda.
+
+Fixtures em test/fixtures/api-futebol-v2 s?o dados reais consultados em 03/11/2026, sem metadata de quota ou credenciais. Resposta normalizada completa: docs/fantasy-agenda-2026-34.response.json. A rodada 34 retornou 10 partidas; fixtureId 335 abre a mesma partida na Central. Sem banco, migrations, bootstrap ou mudan?as nos quatro endpoints existentes.

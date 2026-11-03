@@ -1,10 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ApiFutebolV2Client } from './api-futebol-v2.client';
+import { consultarAgenda } from './agenda';
 import { mapEstatisticas, mapFormacao, mapPreJogo, mapSumario } from './api-futebol-v2.mapper';
 
 @Injectable()
 export class FantasyService {
   constructor(private readonly client: ApiFutebolV2Client) {}
+  agenda(temporada: string, rodada?: string) { return consultarAgenda(this.client, temporada, rodada); }
   async preJogo(fixtureId: string) { return mapPreJogo(await this.client.detalhe(this.id(fixtureId))); }
   async formacao(fixtureId: string) { return mapFormacao(await this.client.detalhe(this.id(fixtureId))); }
   async sumario(fixtureId: string) {
