@@ -106,9 +106,9 @@ Elas não precisam ser configuradas para a versão atual da API. Podem ser manti
 
 ## Observações
 
-- `API_FOOTBALL_KEY` é opcional no bootstrap e lida exclusivamente pelo `ConfigService`. Configure-a para consultar `GET /fantasy/partidas/:fixtureId/sumario` via API-SPORTS. Ausente ou vazia, a rota retorna 503. Não registre nem exponha a chave.
-- A rota Fantasy é pública temporariamente na POC. Antes da exposição pública real, revisar proteção e controle de consumo da API externa. A integração não usa cache, persistência ou retry.
-- Fixture de referência para validação manual: `1180729`. Não iniciar o bootstrap apenas para essa validação, pois ele executa migrations; instanciar o serviço isoladamente com `ConfigService` e `ApiFootballClient`.
+- `API_FUTEBOL_V2_KEY` é opcional no bootstrap e usada pelo ConfigService no módulo Fantasy. Ausente ou vazia retorna 503; nunca registrar a chave.
+- As rotas Fantasy continuam públicas. Cache compartilhado no processo e bloqueio por quota; antes de publicar, revisar autenticação e orçamento de consumo. Ver src/fantasy/README.md.
+- Referência V2: partida 321. TTLs configuráveis: API_FUTEBOL_V2_TTL_PRE_MS=300000, API_FUTEBOL_V2_TTL_LIVE_MS=60000, API_FUTEBOL_V2_TTL_FINAL_MS=3600000; timeout API_FUTEBOL_V2_TIMEOUT_MS=15000. Não iniciar bootstrap para testar, pois executa migrations.
 
 - Preserve os caracteres `\n` da `FIREBASE_PRIVATE_KEY` quando usar uma única linha. O código os converte em quebras de linha reais.
 - Não adicione o `.env` ao Git.

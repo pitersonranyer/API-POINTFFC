@@ -1,82 +1,34 @@
 export interface Participante { idExterno: number | null; nome: string | null }
 export interface Equipe extends Participante { logo: string | null }
-export interface Placar { mandante: number | null; visitante: number | null }
-export interface ApiFixture {
-  fixture: { id: number; date: string; status: { short: string }; venue: { name: string | null } };
-  league: { name: string; round: string | null };
-  teams: { home: { id: number; name: string; logo: string | null }; away: { id: number; name: string; logo: string | null } };
-  goals: { home: number | null; away: number | null };
+export interface Posicao { nome: string | null; codigo: string | null; categoria: string | null }
+export interface JogadorFormacao extends Participante {
+  numero: number | null; foto: string | null; posicao: string | null;
+  posicaoCadastral: Posicao | null; funcaoPartida: Posicao;
+  grid: string | null; coordenada: { linha: number | null; coluna: number | null } | null;
 }
-export interface ApiEvent {
-  time: { elapsed: number | null; extra: number | null };
-  team: { id: number | null; name: string | null; logo?: string | null };
-  player: { id: number | null; name: string | null };
-  assist: { id: number | null; name: string | null };
-  type: string; detail: string; comments: string | null;
+export interface Escalacao {
+  formacao: string | null; treinador: (Participante & { foto: string | null }) | null;
+  titulares: JogadorFormacao[]; reservas: JogadorFormacao[]; atualizadoEm: string | null;
 }
 export interface EventoSumario {
-  tipo: 'GOL' | 'CARTAO_AMARELO' | 'SUBSTITUICAO' | 'VAR_GOL_ANULADO' | 'DESCONHECIDO';
+  tipo: 'GOL' | 'CARTAO_AMARELO' | 'CARTAO_VERMELHO' | 'SUBSTITUICAO' | 'VAR'; periodo: string | null;
   tempo: { minuto: number | null; acrescimo: number | null; exibicao: string | null };
-  equipe: Equipe;
-  jogador?: Participante | null;
-  assistencia?: Participante | null;
-  jogadorSai?: Participante | null;
-  jogadorEntra?: Participante | null;
-  comentarios: string | null;
-  origem: { tipo: string; detalhe: string };
-  placarAposEvento?: Placar;
-}
-export interface SumarioPartida {
-  partida: { idExterno: number; campeonato: string; rodada: number | null; fase: string | null;
-    status: string; data: string; estadio: string | null; mandante: Equipe; visitante: Equipe; placar: Placar };
-  eventos: EventoSumario[];
-}
-
-export interface ApiTeamStatistics {
-  team: ApiFixture['teams']['home'];
-  statistics: { type: string; value: number | string | null }[];
+  equipe: Equipe; jogador: Participante | null; assistencia: Participante | null;
+  jogadorSai: Participante | null; jogadorEntra: Participante | null;
+  comissaoTecnica: Participante | null; comentarios: string | null;
+  origem: { tipo: string; detalhe: string | null };
 }
 export interface EstatisticasEquipe {
-  finalizacoesNoGol: number | null;
-  finalizacoesFora: number | null;
-  finalizacoes: number | null;
-  finalizacoesBloqueadas: number | null;
-  finalizacoesDentroArea: number | null;
-  finalizacoesForaArea: number | null;
-  faltas: number | null;
-  escanteios: number | null;
-  impedimentos: number | null;
-  posseBola: number | null;
-  cartoesAmarelos: number | null;
-  cartoesVermelhos: number | null;
-  defesasGoleiro: number | null;
-  passes: number | null;
-  passesCertos: number | null;
-  precisaoPasses: number | null;
-  golsEsperados: number | null;
-  golsEvitados: number | null;
-}
-export interface EstatisticasPartida {
-  partida: { idExterno: number };
-  mandante: Equipe & { estatisticas: EstatisticasEquipe };
-  visitante: Equipe & { estatisticas: EstatisticasEquipe };
+  finalizacoesNoGol: number | null; finalizacoesFora: number | null; finalizacoes: number | null;
+  finalizacoesBloqueadas: number | null; finalizacoesDentroArea: number | null; finalizacoesForaArea: number | null;
+  faltas: number | null; escanteios: number | null; impedimentos: number | null; posseBola: number | null;
+  cartoesAmarelos: number | null; cartoesVermelhos: number | null; defesasGoleiro: number | null;
+  passes: number | null; passesCertos: number | null; precisaoPasses: number | null;
+  golsEsperados: number | null; golsEvitados: number | null;
 }
 
-export interface TreinadorFormacao extends Participante { foto: string | null }
-export interface JogadorFormacao extends Participante {
-  idExterno: number;
-  numero: number | null;
-  posicao: string | null;
-  grid: string | null;
-}
-export interface EquipeFormacao extends Equipe {
-  formacao: string | null;
-  treinador: TreinadorFormacao | null;
-  titulares: JogadorFormacao[];
-  reservas: JogadorFormacao[];
-}
-export interface FormacaoPartida {
-  partida: { idExterno: number };
-  mandante: EquipeFormacao;
-  visitante: EquipeFormacao;
-}
+// Tipos públicos inferidos dos contratos normalizados, sem expor o envelope da fornecedora.
+export type PreJogoPartida = ReturnType<typeof import('./api-futebol-v2.mapper').mapPreJogo>;
+export type SumarioPartida = ReturnType<typeof import('./api-futebol-v2.mapper').mapSumario>;
+export type FormacaoPartida = ReturnType<typeof import('./api-futebol-v2.mapper').mapFormacao>;
+export type EstatisticasPartida = ReturnType<typeof import('./api-futebol-v2.mapper').mapEstatisticas>;

@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ApiFootballClient } from './api-football.client';
+import { ApiFutebolV2Client } from './api-futebol-v2.client';
 import { FantasyController } from './fantasy.controller';
 import { FantasyService } from './fantasy.service';
 
-@Module({ imports: [ConfigModule], controllers: [FantasyController], providers: [FantasyService, ApiFootballClient] })
+@Module({ imports: [ConfigModule], controllers: [FantasyController], providers: [FantasyService, ApiFutebolV2Client] })
 export class FantasyModule {}

@@ -1,0 +1,904 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+model FutebolCompeticao {
+  ultimoSyncEm DateTime? @map("ULTIMO_SYNC_EM")
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
+  codigo String @unique @map("CODIGO") @db.VarChar(10)
+  nome String @map("NOME") @db.VarChar(255)
+  pais String @map("PAIS") @db.VarChar(100)
+  tipo String @map("TIPO") @db.VarChar(50)
+  emblemaUrl String? @map("EMBLEMA_URL") @db.Text
+  temporadaAtual Int @map("TEMPORADA_ATUAL") @db.UnsignedSmallInt
+  ativa Boolean @default(true) @map("ATIVA")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  partidas FutebolPartida[]
+  @@map("FUTEBOL_COMPETICAO")
+}
+
+model FutebolTime {
+  cartolaClubeId Int? @map("CARTOLA_CLUBE_ID") @db.UnsignedInt
+  nomeOriginal String @map("NOME_ORIGINAL") @db.VarChar(255)
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  nomeCurto String? @map("NOME_CURTO") @db.VarChar(255)
+  sigla String? @map("SIGLA") @db.VarChar(10)
+  escudoUrl String? @map("ESCUDO_URL") @db.Text
+  pais String @map("PAIS") @db.VarChar(100)
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  partidasMandante FutebolPartida[] @relation("Mandante")
+  partidasVisitante FutebolPartida[] @relation("Visitante")
+  @@map("FUTEBOL_TIME")
+}
+
+model FutebolPartida {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  externalId Int @unique @map("EXTERNAL_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int? @map("RODADA") @db.UnsignedSmallInt
+  fase String? @map("FASE") @db.VarChar(100)
+  grupo String? @map("GRUPO") @db.VarChar(100)
+  timeMandanteId Int @map("TIME_MANDANTE_ID") @db.UnsignedInt
+  timeVisitanteId Int @map("TIME_VISITANTE_ID") @db.UnsignedInt
+  dataHoraUtc DateTime @map("DATA_HORA_UTC")
+  status String @map("STATUS") @db.VarChar(50)
+  vencedor String? @map("VENCEDOR") @db.VarChar(50)
+  placarMandante Int? @map("PLACAR_MANDANTE") @db.UnsignedSmallInt
+  placarVisitante Int? @map("PLACAR_VISITANTE") @db.UnsignedSmallInt
+  placarIntervaloMandante Int? @map("PLACAR_INTERVALO_MANDANTE") @db.UnsignedSmallInt
+  placarIntervaloVisitante Int? @map("PLACAR_INTERVALO_VISITANTE") @db.UnsignedSmallInt
+  ultimaAtualizacaoApi DateTime @map("ULTIMA_ATUALIZACAO_API")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  competicao FutebolCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  timeMandante FutebolTime @relation("Mandante", fields: [timeMandanteId], references: [id], onDelete: Restrict)
+  timeVisitante FutebolTime @relation("Visitante", fields: [timeVisitanteId], references: [id], onDelete: Restrict)
+  @@index([competicaoId, temporada, rodada])
+  @@index([timeMandanteId])
+  @@index([timeVisitanteId])
+  @@map("FUTEBOL_PARTIDA")
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserType {
+  PLAYER
+  ORGANIZER
+  PLATFORM_ADMIN
+}
+
+enum UserStatus {
+  ATIVO
+  INATIVO
+  BLOQUEADO
+}
+
+enum AuthProvider {
+  GOOGLE
+  APPLE
+}
+
+enum TimeRodadaStatus {
+  CAPTURADO
+}
+
+enum PontuacaoTimeRodadaStatus {
+  PARCIAL
+  FINAL
+}
+
+enum RodadaProcessamentoStatus {
+  AGUARDANDO_ESCALACOES
+  ESCALACOES_CARREGADAS
+  EM_ANDAMENTO
+  AGUARDANDO_CONSOLIDACAO
+  CONSOLIDADA
+}
+
+model RodadaProcessamento {
+  temporada Int @db.UnsignedSmallInt
+  rodada Int @db.UnsignedTinyInt
+  status RodadaProcessamentoStatus @default(AGUARDANDO_ESCALACOES)
+  timesPrevistos Json
+  falhasSnapshot Json
+  pontuados Json?
+  partidas Json?
+  erro String? @db.Text
+  lockToken String? @db.VarChar(36)
+  lockAte DateTime?
+  consolidadoEm DateTime?
+  atualizadoEm DateTime @updatedAt
+
+  @@id([temporada, rodada])
+  @@index([status, temporada, rodada])
+  @@map("RODADA_PROCESSAMENTO")
+}
+
+model Usuario {
+  fantasyEscalacoes FantasyEscalacao[]
+  fantasyIdentidades FantasyTimeIdentidade[]
+  idUsuario       Int        @id @default(autoincrement()) @map("id_usuario") @db.UnsignedInt
+  firebaseUid     String?    @unique @map("firebase_uid") @db.VarChar(128)
+  senhaHash       String?    @map("senha_hash") @db.VarChar(255)
+  nome            String?    @db.VarChar(255)
+  email           String     @unique @db.VarChar(255)
+  fotoUrl         String?    @map("foto_url") @db.Text
+  tipoUsuario     UserType   @default(PLAYER) @map("tipo_usuario")
+  status          UserStatus @default(ATIVO)
+  dataCriacao     DateTime   @default(now()) @map("data_criacao")
+  dataAtualizacao DateTime   @updatedAt @map("data_atualizacao")
+  authAccounts    AuthAccount[]
+  resetTokens     PasswordResetToken[]
+  times           TimeUsuario[]
+  carteira        Carteira?
+  inscricoesCompeticao InscricaoTimeCompeticao[]
+  lotesInscricao LoteInscricao[]
+
+  desafiosCriados Desafio[]
+  palpitesDesafio DesafioPalpite[]
+  inscricoesDesafio DesafioInscricao[]
+  telegramLink      TelegramAccountLink?
+  telegramWalletRequests TelegramWalletRequest[]
+
+  @@map("USUARIO")
+}
+
+enum CarteiraStatus {
+  ATIVA
+  BLOQUEADA
+}
+
+enum MovimentacaoCarteiraTipo {
+  CREDITO
+  DEBITO
+}
+
+enum MovimentacaoCarteiraOrigem {
+  RECARGA_PIX
+  INSCRICAO
+  ESTORNO
+  AJUSTE
+}
+
+enum MovimentacaoCarteiraStatus {
+  CONFIRMADA
+}
+
+model Carteira {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  usuarioId Int @unique @db.UnsignedInt
+  saldoDisponivel Decimal @default(0) @db.Decimal(12, 2)
+  saldoBloqueado Decimal @default(0) @db.Decimal(12, 2)
+  status CarteiraStatus @default(ATIVA)
+  criadoEm DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  movimentacoes MovimentacaoCarteira[]
+  recargas RecargaCarteira[]
+
+  @@map("CARTEIRA")
+}
+
+enum RecargaCarteiraStatus {
+  PENDENTE
+  PROCESSANDO
+  APROVADA
+  REJEITADA
+  CANCELADA
+  EXPIRADA
+  REEMBOLSADA
+}
+
+model RecargaCarteira {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  carteiraId Int @db.UnsignedInt
+  valor Decimal @db.Decimal(12, 2)
+  provedor String @db.VarChar(50)
+  idPagamentoExterno String? @unique @db.VarChar(255)
+  externalReference String @unique @db.VarChar(255)
+  status RecargaCarteiraStatus @default(PENDENTE)
+  pixCopiaCola String? @db.Text
+  qrCode String? @db.MediumText
+  expiracao DateTime?
+  criadoEm DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  aprovadoEm DateTime?
+  movimentacao MovimentacaoCarteira?
+  telegramWalletRequest TelegramWalletRequest?
+  carteira Carteira @relation(fields: [carteiraId], references: [id], onDelete: Restrict)
+
+  @@index([carteiraId])
+  @@map("RECARGA_CARTEIRA")
+}
+
+model TelegramWalletRequest {
+  id String @id @db.VarChar(36)
+  telegramUserId String @map("telegram_user_id") @db.VarChar(32)
+  usuarioId Int @map("usuario_id") @db.UnsignedInt
+  idempotencyKey String @unique @map("idempotency_key") @db.VarChar(36)
+  valor Decimal @db.Decimal(12, 2)
+  expiraEm DateTime @map("expira_em")
+  confirmadoEm DateTime? @map("confirmado_em")
+  recargaId Int? @unique @map("recarga_id") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Cascade)
+  recarga RecargaCarteira? @relation(fields: [recargaId], references: [id], onDelete: Restrict)
+
+  @@index([telegramUserId, usuarioId, criadoEm], map: "TG_WALLET_REQUEST_TELEGRAM_USUARIO_CRIADO_idx")
+  @@index([usuarioId, confirmadoEm, expiraEm], map: "TG_WALLET_REQUEST_USUARIO_CONFIRMADO_EXPIRA_idx")
+  @@map("TELEGRAM_WALLET_REQUEST")
+}
+
+model MovimentacaoCarteira {
+  id Int @id @default(autoincrement()) @db.UnsignedInt
+  recargaId Int? @unique @db.UnsignedInt
+  recarga RecargaCarteira? @relation(fields: [recargaId], references: [id], onDelete: Restrict)
+  carteiraId Int @db.UnsignedInt
+  tipo MovimentacaoCarteiraTipo
+  origem MovimentacaoCarteiraOrigem
+  valor Decimal @db.Decimal(12, 2)
+  saldoAnterior Decimal @db.Decimal(12, 2)
+  saldoPosterior Decimal @db.Decimal(12, 2)
+  referenciaId String? @db.VarChar(255)
+  descricao String? @db.Text
+  status MovimentacaoCarteiraStatus @default(CONFIRMADA)
+  criadoEm DateTime @default(now())
+  carteira Carteira @relation(fields: [carteiraId], references: [id], onDelete: Restrict)
+  loteInscricao LoteInscricao?
+  inscricaoDesafio DesafioInscricao?
+
+  @@index([carteiraId, criadoEm, id])
+  @@map("MOVIMENTACAO_CARTEIRA")
+}
+
+model TimeUsuario {
+  usuarioId   Int      @map("USUARIO_ID") @db.UnsignedInt
+  timeId      Int      @map("TIME_ID") @db.UnsignedInt
+  nome        String   @map("NOME") @db.VarChar(255)
+  nomeCartola String?  @map("NOME_CARTOLA") @db.VarChar(255)
+  slug        String?  @map("SLUG") @db.VarChar(255)
+  urlEscudoPng String? @map("URL_ESCUDO_PNG") @db.Text
+  fotoPerfil  String?  @map("FOTO_PERFIL") @db.Text
+  assinante   Boolean? @map("ASSINANTE")
+  criadoEm    DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario     Usuario  @relation(fields: [usuarioId], references: [idUsuario], onDelete: Cascade)
+
+  @@id([usuarioId, timeId])
+  @@unique([timeId], map: "TIME_USUARIO_TIME_ID_key")
+  @@map("TIME_USUARIO")
+}
+
+enum LigaTipo {
+  OFICIAL
+  PRIVADA
+}
+
+enum LigaStatus {
+  ATIVA
+  INATIVA
+}
+
+enum CompeticaoTipoAcesso {
+  FREE
+  PAGO
+}
+
+enum CompeticaoTipoTaxaPlataforma {
+  PERCENTUAL
+  VALOR_FIXO
+}
+
+enum CompeticaoLigaStatus {
+  RASCUNHO
+  INSCRICOES_ABERTAS
+  INSCRICOES_ENCERRADAS
+  EM_ANDAMENTO
+  ENCERRADA
+  CANCELADA
+}
+
+enum PremiacaoCompeticaoTipo {
+  VALOR_FIXO
+  PERCENTUAL
+}
+
+enum InscricaoTimeCompeticaoStatus {
+  ATIVA
+  CANCELADA
+  FINALIZADA
+}
+
+model Liga {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  slug String @unique @map("SLUG") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  imagemUrl String? @map("IMAGEM_URL") @db.Text
+  tipo LigaTipo @map("TIPO")
+  status LigaStatus @default(ATIVA) @map("STATUS")
+  visivelApp Boolean @default(true) @map("VISIVEL_APP")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  modalidades LigaModalidade[]
+
+  @@map("LIGA")
+}
+
+model ModalidadeCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  codigo String @unique @map("CODIGO") @db.VarChar(50)
+  nome String @map("NOME") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  ativa Boolean @default(true) @map("ATIVA")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  ligas LigaModalidade[]
+
+  @@map("MODALIDADE_COMPETICAO")
+}
+
+model LigaModalidade {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  ligaId Int @map("LIGA_ID") @db.UnsignedInt
+  modalidadeId Int @map("MODALIDADE_ID") @db.UnsignedInt
+  ativa Boolean @default(true) @map("ATIVA")
+  ordem Int @default(0) @map("ORDEM") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  liga Liga @relation(fields: [ligaId], references: [id], onDelete: Restrict)
+  modalidade ModalidadeCompeticao @relation(fields: [modalidadeId], references: [id], onDelete: Restrict)
+  competicoes CompeticaoLiga[]
+
+  @@unique([ligaId, modalidadeId])
+  @@index([modalidadeId])
+  @@map("LIGA_MODALIDADE")
+}
+
+model CompeticaoLiga {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  ligaModalidadeId Int @map("LIGA_MODALIDADE_ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  slug String @unique @map("SLUG") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  tipoAcesso CompeticaoTipoAcesso @default(FREE) @map("TIPO_ACESSO")
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  tipoTaxaPlataforma CompeticaoTipoTaxaPlataforma? @map("TIPO_TAXA_PLATAFORMA")
+  valorTaxaPlataforma Decimal? @map("VALOR_TAXA_PLATAFORMA") @db.Decimal(12, 2)
+  rodadaInicio Int? @map("RODADA_INICIO") @db.UnsignedTinyInt
+  rodadaFim Int? @map("RODADA_FIM") @db.UnsignedTinyInt
+  dataInicio DateTime? @map("DATA_INICIO")
+  dataFim DateTime? @map("DATA_FIM")
+  inicioInscricao DateTime? @map("INICIO_INSCRICAO")
+  fimInscricao DateTime? @map("FIM_INSCRICAO")
+  limiteTimesUsuario Int? @map("LIMITE_TIMES_USUARIO") @db.UnsignedInt
+  limiteParticipantes Int? @map("LIMITE_PARTICIPANTES") @db.UnsignedInt
+  status CompeticaoLigaStatus @default(RASCUNHO) @map("STATUS")
+  visivelApp Boolean @default(false) @map("VISIVEL_APP")
+  destaque Boolean @default(false) @map("DESTAQUE")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  ligaModalidade LigaModalidade @relation(fields: [ligaModalidadeId], references: [id], onDelete: Restrict)
+  premiacoes PremiacaoCompeticao[]
+  inscricoes InscricaoTimeCompeticao[]
+  lotesInscricao LoteInscricao[]
+
+  @@index([ligaModalidadeId, status, visivelApp])
+  @@index([rodadaInicio])
+  @@index([status, visivelApp])
+  @@map("COMPETICAO_LIGA")
+}
+
+model PremiacaoCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
+  posicaoInicio Int @map("POSICAO_INICIO") @db.UnsignedInt
+  posicaoFim Int @map("POSICAO_FIM") @db.UnsignedInt
+  tipoPremiacao PremiacaoCompeticaoTipo @map("TIPO_PREMIACAO")
+  valor Decimal? @map("VALOR") @db.Decimal(12, 2)
+  percentual Decimal? @map("PERCENTUAL") @db.Decimal(7, 4)
+  ordem Int @default(0) @map("ORDEM") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict)
+
+  @@index([competicaoLigaId, ordem])
+  @@map("PREMIACAO_COMPETICAO")
+}
+
+model LoteInscricao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
+  chaveIdempotenciaHash String @map("CHAVE_IDEMPOTENCIA_HASH") @db.Char(64)
+  requestHash String @map("REQUEST_HASH") @db.Char(64)
+  tipoAcesso CompeticaoTipoAcesso @map("TIPO_ACESSO")
+  quantidade Int @map("QUANTIDADE") @db.UnsignedInt
+  valorUnitario Decimal @map("VALOR_UNITARIO") @db.Decimal(12, 2)
+  valorTotal Decimal @map("VALOR_TOTAL") @db.Decimal(12, 2)
+  moeda String @default("BRL") @map("MOEDA") @db.Char(3)
+  movimentacaoDebitoId Int? @unique(map: "LOTE_INSCRICAO_DEBITO_key") @map("MOVIMENTACAO_DEBITO_ID") @db.UnsignedInt
+  respostaOriginal Json? @map("RESPOSTA_ORIGINAL")
+  // Nulo durante a montagem do lote; a confirmacao PAGO exige debito (CHECK na migration).
+  confirmadoEm DateTime? @map("CONFIRMADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict, map: "LOTE_INSCRICAO_USUARIO_fkey")
+  competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict, map: "LOTE_INSCRICAO_COMPETICAO_fkey")
+  movimentacaoDebito MovimentacaoCarteira? @relation(fields: [movimentacaoDebitoId], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "LOTE_INSCRICAO_DEBITO_fkey")
+  inscricoes InscricaoTimeCompeticao[]
+
+  @@unique([usuarioId, chaveIdempotenciaHash], map: "LOTE_INSCRICAO_USUARIO_CHAVE_key")
+  @@index([competicaoLigaId, confirmadoEm], map: "LOTE_INSCRICAO_COMPETICAO_CONFIRMACAO_idx")
+  @@map("LOTE_INSCRICAO")
+}
+
+model InscricaoTimeCompeticao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  competicaoLigaId Int @map("COMPETICAO_LIGA_ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  loteInscricaoId Int? @map("LOTE_INSCRICAO_ID") @db.UnsignedInt
+  timeIdCartola Int @map("TIME_ID_CARTOLA") @db.UnsignedInt
+  nomeTime String @map("NOME_TIME") @db.VarChar(255)
+  nomeCartoleiro String? @map("NOME_CARTOLEIRO") @db.VarChar(255)
+  escudoUrl String? @map("ESCUDO_URL") @db.Text
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  statusInscricao InscricaoTimeCompeticaoStatus @default(ATIVA) @map("STATUS_INSCRICAO")
+  pontuacao Decimal? @map("PONTUACAO") @db.Decimal(12, 2)
+  posicao Int? @map("POSICAO") @db.UnsignedInt
+  posicaoAnterior Int? @map("POSICAO_ANTERIOR") @db.UnsignedInt
+  premioApurado Decimal? @map("PREMIO_APURADO") @db.Decimal(12, 2)
+  dataInscricao DateTime @default(now()) @map("DATA_INSCRICAO")
+  canceladaEm DateTime? @map("CANCELADA_EM")
+  finalizadoEm DateTime? @map("FINALIZADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  competicaoLiga CompeticaoLiga @relation(fields: [competicaoLigaId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  loteInscricao LoteInscricao? @relation(fields: [loteInscricaoId], references: [id], onDelete: Restrict, map: "INSCRICAO_LOTE_fkey")
+
+  @@unique([competicaoLigaId, timeIdCartola])
+  @@index([loteInscricaoId], map: "INSCRICAO_LOTE_idx")
+  @@index([usuarioId, competicaoLigaId])
+  @@index([competicaoLigaId, statusInscricao, posicao])
+  @@map("INSCRICAO_TIME_COMPETICAO")
+}
+
+enum DesafioTipoAcesso {
+  FREE
+  PAGO
+}
+
+enum DesafioStatus {
+  RASCUNHO
+  ABERTO
+  EM_ANDAMENTO
+  ENCERRADO
+  CANCELADO
+}
+
+enum DesafioPartidaStatus {
+  AGENDADA
+  EM_ANDAMENTO
+  FINALIZADA
+  ANULADA
+}
+
+enum DesafioResultado {
+  CASA
+  EMPATE
+  FORA
+}
+
+enum DesafioInscricaoStatus {
+  RASCUNHO
+  ATIVA
+  CANCELADA
+}
+
+model Desafio {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  descricao String? @map("DESCRICAO") @db.Text
+  tipoAcesso DesafioTipoAcesso @default(FREE) @map("TIPO_ACESSO")
+  // FREE = 0 e PAGO > 0: CHECK na migration.
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  status DesafioStatus @default(RASCUNHO) @map("STATUS")
+  inicioInscricao DateTime @map("INICIO_INSCRICAO")
+  fimInscricao DateTime @map("FIM_INSCRICAO")
+  dataInicio DateTime @map("DATA_INICIO")
+  dataFim DateTime @map("DATA_FIM")
+  limiteParticipantes Int? @map("LIMITE_PARTICIPANTES") @db.UnsignedInt
+  limiteInscricoesPorUsuario Int @default(1) @map("LIMITE_INSCRICOES_POR_USUARIO") @db.UnsignedInt
+  criadoPorId Int @map("CRIADO_POR_ID") @db.UnsignedInt
+  publicadoEm DateTime? @map("PUBLICADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  criadoPor Usuario @relation(fields: [criadoPorId], references: [idUsuario], onDelete: Restrict)
+  partidas DesafioPartida[]
+  palpites DesafioPalpite[]
+  inscricoes DesafioInscricao[]
+
+  @@index([criadoPorId])
+  @@index([status, dataInicio])
+  @@map("DESAFIO")
+}
+
+model DesafioPartida {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
+  fixtureIdApiFootball Int @map("FIXTURE_ID_API_FOOTBALL") @db.UnsignedInt
+  leagueIdApiFootball Int @map("LEAGUE_ID_API_FOOTBALL") @db.UnsignedInt
+  nomeCompeticao String @map("NOME_COMPETICAO") @db.VarChar(255)
+  mandanteIdApiFootball Int @map("MANDANTE_ID_API_FOOTBALL") @db.UnsignedInt
+  nomeMandante String @map("NOME_MANDANTE") @db.VarChar(255)
+  logoMandanteUrl String? @map("LOGO_MANDANTE_URL") @db.Text
+  visitanteIdApiFootball Int @map("VISITANTE_ID_API_FOOTBALL") @db.UnsignedInt
+  nomeVisitante String @map("NOME_VISITANTE") @db.VarChar(255)
+  logoVisitanteUrl String? @map("LOGO_VISITANTE_URL") @db.Text
+  dataInicio DateTime @map("DATA_INICIO")
+  status DesafioPartidaStatus @default(AGENDADA) @map("STATUS")
+  // Resultado e gols consideram somente tempo regulamentar e acrescimos.
+  resultado DesafioResultado? @map("RESULTADO")
+  golsMandante Int? @map("GOLS_MANDANTE") @db.UnsignedSmallInt
+  golsVisitante Int? @map("GOLS_VISITANTE") @db.UnsignedSmallInt
+  ordem Int @default(0) @map("ORDEM") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
+  palpites DesafioPalpite[]
+
+  @@unique([desafioId, fixtureIdApiFootball])
+  // Alvo da FK composta: impede palpites com desafio diferente da partida.
+  @@unique([id, desafioId])
+  @@index([desafioId, ordem])
+  @@map("DESAFIO_PARTIDA")
+}
+
+model DesafioPalpite {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
+  desafioPartidaId Int @map("DESAFIO_PARTIDA_ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  inscricaoId Int @map("INSCRICAO_ID") @db.UnsignedInt
+  palpite DesafioResultado @map("PALPITE")
+  pontos Decimal? @map("PONTOS") @db.Decimal(12, 2)
+  apurado Boolean @default(false) @map("APURADO")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
+  desafioPartida DesafioPartida @relation(fields: [desafioPartidaId, desafioId], references: [id, desafioId], onDelete: Restrict, onUpdate: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  inscricao DesafioInscricao @relation(fields: [inscricaoId, desafioId, usuarioId], references: [id, desafioId, usuarioId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([inscricaoId, desafioPartidaId])
+  @@index([inscricaoId, desafioId, usuarioId])
+  @@index([desafioPartidaId, desafioId])
+  @@index([desafioId, apurado])
+  @@index([usuarioId, desafioId])
+  @@map("DESAFIO_PALPITE")
+}
+
+model DesafioInscricao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  desafioId Int @map("DESAFIO_ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  sequencia Int @default(1) @map("SEQUENCIA") @db.UnsignedInt
+  chaveIdempotencia String? @map("CHAVE_IDEMPOTENCIA") @db.VarChar(100)
+  status DesafioInscricaoStatus @default(ATIVA) @map("STATUS")
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  movimentacaoDebitoId Int? @unique @map("MOVIMENTACAO_DEBITO_ID") @db.UnsignedInt
+  dataInscricao DateTime @default(now()) @map("DATA_INSCRICAO")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  desafio Desafio @relation(fields: [desafioId], references: [id], onDelete: Restrict)
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  movimentacaoDebito MovimentacaoCarteira? @relation(fields: [movimentacaoDebitoId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  palpites DesafioPalpite[]
+
+  @@unique([desafioId, usuarioId, sequencia])
+  @@unique([desafioId, usuarioId, chaveIdempotencia])
+  @@unique([id, desafioId, usuarioId])
+  @@index([usuarioId])
+  @@index([desafioId, status])
+  @@map("DESAFIO_INSCRICAO")
+}
+
+model TimeCartola {
+  timeId         Int           @id @map("TIME_ID") @db.UnsignedInt
+  nomeTime       String        @map("NOME_TIME") @db.VarChar(255)
+  nomeCartoleiro String?       @map("NOME_CARTOLEIRO") @db.VarChar(255)
+  slug           String?       @map("SLUG") @db.VarChar(255)
+  escudoUrl      String?       @map("ESCUDO_URL") @db.Text
+  fotoPerfilUrl  String?       @map("FOTO_PERFIL_URL") @db.Text
+  assinante      Boolean?      @map("ASSINANTE")
+  criadoEm       DateTime      @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime      @updatedAt @map("ATUALIZADO_EM")
+  rodadas        TimeRodada[]
+
+  @@map("TIME_CARTOLA")
+}
+
+model TimeRodada {
+  id             Int                       @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  timeId         Int                       @map("TIME_ID") @db.UnsignedInt
+  temporada      Int                       @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada         Int                       @map("RODADA") @db.UnsignedTinyInt
+  esquemaTatico  Int?                      @map("ESQUEMA_TATICO") @db.UnsignedInt
+  patrimonio     Decimal?                  @map("PATRIMONIO") @db.Decimal(12, 2)
+  capitaoId      Int?                      @map("CAPITAO_ID") @db.UnsignedInt
+  reservaLuxoId  Int?                      @map("RESERVA_LUXO_ID") @db.UnsignedInt
+  status         TimeRodadaStatus          @default(CAPTURADO) @map("STATUS")
+  criadoEm       DateTime                  @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime                  @updatedAt @map("ATUALIZADO_EM")
+  time           TimeCartola               @relation(fields: [timeId], references: [timeId], onDelete: Restrict)
+  escalacao      EscalacaoTimeRodada[]
+  pontuacao      PontuacaoTimeRodada?
+  substituicoes  SubstituicaoTimeRodada[]
+
+  @@unique([timeId, temporada, rodada])
+  @@index([temporada, rodada])
+  @@map("TIME_RODADA")
+}
+
+model SubstituicaoTimeRodada {
+  id              Int         @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  timeRodadaId    Int         @map("TIME_RODADA_ID") @db.UnsignedInt
+  atletaSaiuId    Int         @map("ATLETA_SAIU_ID") @db.UnsignedInt
+  atletaEntrouId  Int         @map("ATLETA_ENTROU_ID") @db.UnsignedInt
+  posicaoId       Int         @map("POSICAO_ID") @db.UnsignedInt
+  ativa           Boolean     @default(true) @map("ATIVA")
+  criadoEm        DateTime    @default(now()) @map("CRIADO_EM")
+  atualizadoEm    DateTime    @updatedAt @map("ATUALIZADO_EM")
+  timeRodada      TimeRodada  @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
+
+  @@unique([timeRodadaId, atletaSaiuId, atletaEntrouId], map: "SUB_TR_PAIR_key")
+  @@index([atletaSaiuId])
+  @@index([atletaEntrouId])
+  @@map("SUBSTITUICAO_TIME_RODADA")
+}
+
+model PontuacaoTimeRodada {
+  id             Int                          @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  timeRodadaId   Int                          @unique @map("TIME_RODADA_ID") @db.UnsignedInt
+  pontuacao      Decimal                      @map("PONTUACAO") @db.Decimal(12, 2)
+  status         PontuacaoTimeRodadaStatus    @default(PARCIAL) @map("STATUS")
+  criadoEm       DateTime                     @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime                     @updatedAt @map("ATUALIZADO_EM")
+  consolidadoEm  DateTime?                    @map("CONSOLIDADO_EM")
+  timeRodada     TimeRodada                   @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
+
+  @@map("PONTUACAO_TIME_RODADA")
+}
+
+model EscalacaoTimeRodada {
+  id             Int         @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  timeRodadaId   Int         @map("TIME_RODADA_ID") @db.UnsignedInt
+  atletaId       Int         @map("ATLETA_ID") @db.UnsignedInt
+  posicaoId      Int         @map("POSICAO_ID") @db.UnsignedInt
+  clubeId        Int?        @map("CLUBE_ID") @db.UnsignedInt
+  titular        Boolean     @map("TITULAR")
+  reserva        Boolean     @map("RESERVA")
+  capitao        Boolean     @map("CAPITAO")
+  ordem          Int?        @map("ORDEM") @db.UnsignedTinyInt
+  preco          Decimal?    @map("PRECO") @db.Decimal(12, 2)
+  nome           String?     @map("NOME") @db.VarChar(255)
+  criadoEm       DateTime    @default(now()) @map("CRIADO_EM")
+  atualizadoEm   DateTime    @updatedAt @map("ATUALIZADO_EM")
+  timeRodada     TimeRodada  @relation(fields: [timeRodadaId], references: [id], onDelete: Cascade)
+
+  @@unique([timeRodadaId, atletaId])
+  @@index([atletaId])
+  @@index([clubeId, timeRodadaId])
+  @@map("ESCALACAO_TIME_RODADA")
+}
+
+model AuthAccount {
+  id                Int          @id @default(autoincrement()) @db.UnsignedInt
+  userId            Int          @map("user_id") @db.UnsignedInt
+  provider          AuthProvider
+  providerAccountId String       @map("provider_account_id") @db.VarChar(255)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  user              Usuario      @relation(fields: [userId], references: [idUsuario], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+  @@map("AUTH_ACCOUNT")
+}
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement()) @db.UnsignedInt
+  userId    Int       @map("user_id") @db.UnsignedInt
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      Usuario   @relation(fields: [userId], references: [idUsuario], onDelete: Cascade)
+  @@index([userId])
+  @@map("PASSWORD_RESET_TOKEN")
+}
+
+model TelegramAccountLink {
+  id              Int      @id @default(autoincrement()) @db.UnsignedInt
+  usuarioId       Int      @unique @map("usuario_id") @db.UnsignedInt
+  telegramUserId  String   @unique @map("telegram_user_id") @db.VarChar(32)
+  criadoEm        DateTime @default(now()) @map("criado_em")
+  usuario         Usuario  @relation(fields: [usuarioId], references: [idUsuario], onDelete: Cascade)
+
+  @@map("TELEGRAM_ACCOUNT_LINK")
+}
+
+model TelegramLinkRequest {
+  id             Int       @id @default(autoincrement()) @db.UnsignedInt
+  telegramUserId String    @map("telegram_user_id") @db.VarChar(32)
+  codigoHash     String    @unique @map("codigo_hash") @db.Char(64)
+  expiraEm       DateTime  @map("expira_em")
+  usadoEm        DateTime? @map("usado_em")
+  criadoEm       DateTime  @default(now()) @map("criado_em")
+
+  @@index([telegramUserId, criadoEm])
+  @@index([expiraEm, usadoEm])
+  @@map("TELEGRAM_LINK_REQUEST")
+}
+
+// Independent POINT FFC snapshots; external IDs belong exclusively to Cartola.
+model FantasyCatalogo {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  versao Int @map("VERSAO") @db.UnsignedInt
+  status String @default("CAPTURADO") @map("STATUS") @db.VarChar(20)
+  capturadoEm DateTime @map("CAPTURADO_EM")
+  congeladoEm DateTime? @map("CONGELADO_EM")
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  referencias Json @map("REFERENCIAS")
+  atletas FantasyCatalogoAtleta[]
+  competicoes FantasyCompeticao[]
+  @@unique([temporada, rodada, versao])
+  @@map("FANTASY_CATALOGO")
+}
+
+model FantasyCatalogoAtleta {
+  escalacoes FantasyEscalacaoAtleta[]
+  comoCapitao FantasyEscalacao[] @relation("FantasyCapitao")
+  comoReservaMago FantasyEscalacao[] @relation("FantasyMago")
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  catalogoId Int @map("CATALOGO_ID") @db.UnsignedInt
+  atletaIdExterno Int @map("ATLETA_ID_EXTERNO") @db.UnsignedInt
+  clubeIdExterno Int @map("CLUBE_ID_EXTERNO") @db.UnsignedInt
+  posicaoId Int @map("POSICAO_ID") @db.UnsignedInt
+  statusId Int @map("STATUS_ID") @db.UnsignedInt
+  apelido String @map("APELIDO") @db.VarChar(255)
+  precoCartola Decimal @map("PRECO_CARTOLA") @db.Decimal(12, 2)
+  categoriaId Int? @map("CATEGORIA_ID") @db.UnsignedTinyInt
+  pointcoins Int @map("POINTCOINS") @db.UnsignedSmallInt
+  catalogo FantasyCatalogo @relation(fields: [catalogoId], references: [id], onDelete: Restrict)
+  @@unique([catalogoId, atletaIdExterno])
+  @@index([catalogoId, clubeIdExterno, id])
+  @@map("FANTASY_CATALOGO_ATLETA")
+}
+
+model FantasyCompeticao {
+  identidades FantasyTimeIdentidade[]
+  escalacoes FantasyEscalacao[]
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  catalogoId Int @map("CATALOGO_ID") @db.UnsignedInt
+  nome String @map("NOME") @db.VarChar(255)
+  temporada Int @map("TEMPORADA") @db.UnsignedSmallInt
+  rodada Int @map("RODADA") @db.UnsignedTinyInt
+  tipoAcesso CompeticaoTipoAcesso @default(FREE) @map("TIPO_ACESSO")
+  valorInscricao Decimal @default(0) @map("VALOR_INSCRICAO") @db.Decimal(12, 2)
+  status String @default("RASCUNHO") @map("STATUS") @db.VarChar(30)
+  inicioInscricao DateTime @map("INICIO_INSCRICAO")
+  fimInscricao DateTime @map("FIM_INSCRICAO")
+  fechamentoDefinitivoEm DateTime? @map("FECHAMENTO_DEFINITIVO_EM")
+  limiteEscalacoesUsuario Int? @map("LIMITE_ESCALACOES_USUARIO") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  catalogo FantasyCatalogo @relation(fields: [catalogoId], references: [id], onDelete: Restrict)
+  partidas FantasyCompeticaoPartida[]
+  @@index([status, temporada, rodada])
+  @@index([catalogoId])
+  @@map("FANTASY_COMPETICAO")
+}
+
+model FantasyCompeticaoPartida {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  partidaIdExterno Int @map("PARTIDA_ID_EXTERNO") @db.UnsignedInt
+  clubeMandanteId Int @map("CLUBE_MANDANTE_ID") @db.UnsignedInt
+  clubeVisitanteId Int @map("CLUBE_VISITANTE_ID") @db.UnsignedInt
+  inicioPrevisto DateTime @map("INICIO_PREVISTO")
+  inicioReal DateTime? @map("INICIO_REAL")
+  status String @default("AGENDADA") @map("STATUS") @db.VarChar(30)
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  @@unique([competicaoId, partidaIdExterno])
+  @@map("FANTASY_COMPETICAO_PARTIDA")
+}
+
+enum FantasyEscalacaoPapel {
+  TITULAR
+  TECNICO
+  RESERVA
+}
+
+model FantasyEscalacao {
+  identidadeId Int? @map("IDENTIDADE_ID") @db.UnsignedInt
+  sequencial Int? @map("SEQUENCIAL") @db.UnsignedInt
+  nomePublico String? @map("NOME_PUBLICO") @db.VarChar(160)
+  identidade FantasyTimeIdentidade? @relation(fields: [identidadeId, usuarioId, competicaoId], references: [id, usuarioId, competicaoId], onDelete: Restrict, onUpdate: Restrict)
+  @@unique([identidadeId, sequencial], map: "FE_IDENTIDADE_SEQ_key")
+  @@unique([competicaoId, nomePublico], map: "FE_COMP_NOME_key")
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  formacao String @map("FORMACAO") @db.VarChar(5)
+  status String @default("RASCUNHO") @map("STATUS") @db.VarChar(20)
+  versao Int @default(1) @map("VERSAO") @db.UnsignedInt
+  capitaoAtletaId Int? @map("CAPITAO_ATLETA_ID") @db.UnsignedInt
+  reservaMagoAtletaId Int? @map("RESERVA_MAGO_ATLETA_ID") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  capitao FantasyCatalogoAtleta? @relation("FantasyCapitao", fields: [capitaoAtletaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reservaMago FantasyCatalogoAtleta? @relation("FantasyMago", fields: [reservaMagoAtletaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  atletas FantasyEscalacaoAtleta[]
+  @@index([usuarioId, competicaoId, id])
+  @@index([competicaoId])
+  @@index([capitaoAtletaId])
+  @@index([reservaMagoAtletaId])
+  @@map("FANTASY_ESCALACAO")
+}
+
+model FantasyEscalacaoAtleta {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  escalacaoId Int @map("ESCALACAO_ID") @db.UnsignedInt
+  catalogoAtletaId Int @map("CATALOGO_ATLETA_ID") @db.UnsignedInt
+  papel FantasyEscalacaoPapel @map("PAPEL")
+  escalacao FantasyEscalacao @relation(fields: [escalacaoId], references: [id], onDelete: Cascade)
+  atleta FantasyCatalogoAtleta @relation(fields: [catalogoAtletaId], references: [id], onDelete: Restrict)
+  @@unique([escalacaoId, catalogoAtletaId])
+  @@index([catalogoAtletaId])
+  @@map("FANTASY_ESCALACAO_ATLETA")
+}
+
+model FantasyTimeIdentidade {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  usuarioId Int @map("USUARIO_ID") @db.UnsignedInt
+  competicaoId Int @map("COMPETICAO_ID") @db.UnsignedInt
+  nomeBase String @map("NOME_BASE") @db.VarChar(60)
+  identificadorPublico String @unique @map("IDENTIFICADOR_PUBLICO") @db.VarChar(32)
+  ultimoSequencial Int @default(0) @map("ULTIMO_SEQUENCIAL") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  atualizadoEm DateTime @updatedAt @map("ATUALIZADO_EM")
+  usuario Usuario @relation(fields: [usuarioId], references: [idUsuario], onDelete: Restrict)
+  competicao FantasyCompeticao @relation(fields: [competicaoId], references: [id], onDelete: Restrict)
+  escalacoes FantasyEscalacao[]
+  operacoes FantasyTimeOperacao[]
+  @@unique([usuarioId, competicaoId], map: "FTI_USUARIO_COMP_key")
+  @@unique([id, usuarioId, competicaoId], map: "FTI_OWNER_key")
+  @@map("FANTASY_TIME_IDENTIDADE")
+}
+
+// Retained after deletion to prevent a retry from allocating another number.
+model FantasyTimeOperacao {
+  id Int @id @default(autoincrement()) @map("ID") @db.UnsignedInt
+  identidadeId Int @map("IDENTIDADE_ID") @db.UnsignedInt
+  chave String @map("CHAVE") @db.VarChar(100)
+  fingerprint String @map("FINGERPRINT") @db.Char(64)
+  escalacaoId Int @map("ESCALACAO_ID") @db.UnsignedInt
+  criadoEm DateTime @default(now()) @map("CRIADO_EM")
+  identidade FantasyTimeIdentidade @relation(fields: [identidadeId], references: [id], onDelete: Restrict)
+  @@unique([identidadeId, chave], map: "FTO_IDENTIDADE_CHAVE_key")
+  @@map("FANTASY_TIME_OPERACAO")
+}

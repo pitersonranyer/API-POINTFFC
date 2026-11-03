@@ -1,0 +1,1022 @@
+{
+  "phase": "VERIFIED",
+  "operationId": "67938906-71b3-4a40-92db-4f2eca37e47f",
+  "identity": {
+    "name": "fantasy_point_do_jogador",
+    "server": "d014da81-df4f-11eb-9ecf-548d06dd390e",
+    "port": 3306
+  },
+  "files": {
+    "0001_create_usuario": "50c59c59ae28dda8d43bdb76046ff108dea395d24699ebb5400aa197a58b9a77",
+    "0002_complete_authentication": "50a5bb49f5d66a0b1707416b65d410c4c2b9e61c9d378b37db16f044a5ed4554",
+    "0003_create_time_usuario": "88fc708cf7d1fc4e4d438175197c5d508e231e37aaa6232e75e1c73e2a94243f",
+    "0004_create_time_cartola_snapshot": "6e48e8c30471fee3ea6ed5bd17dd00fd78d3df0b475980ca96bde02fd18537fa",
+    "0005_create_pontuacao_time_rodada": "72d4ed9783c6c7364bed18965441337cae279207a3ebb055e8639997ac6be76e",
+    "0006_add_reserva_luxo_time_rodada": "a40bfbfe967978c7b5b5c5a3a8a40248277e8b3316b557ba8b02d3c438d4ae36",
+    "0007_create_substituicao_time_rodada": "e1e2b597345cb50da0d7729a6b7b2257ec7a24354df079f752a772c02a5fbf3a",
+    "0008_recreate_tables_with_integer_ids": "13b8d92c9a002efa8d8ec9f3319af934e015b057b9ead7f959d074410719dca6",
+    "0009_round_processing": "8503c5277ab0c03c67096577a25fca1d3ab407ebe6af6cbabf97204f3105572d",
+    "0010_create_carteira": "129b5232594b53e1f431cad62fa8ec6b8b5fdfb72a14fa25c3fcaf648609dc11",
+    "0011_create_recarga_carteira": "63d009e8190c0125f6b8ce9d6e192dedf265977c0a61bc0a5c319a4c50e567ef",
+    "0012_vincular_movimentacao_recarga": "a083ca8bd5cb672ee47eeceffd340fa646b1ca74d3e0354e01dc4b72aa03d066",
+    "0013_create_futebol": "fe3d9128bdeef797c7cc6012c348193f6e29ab6ae53eec6082d1e9f6565c62c3",
+    "0014_futebol_nome_original": "0242e63a3ffac1635e34589da0e9fa06f5e64592a83270b65206d19f8983a198",
+    "0015_futebol_cartola_clube": "a62a26e7ca9a1e58b1190ecf814298dc8176b8119f6fc5aa0370e09b0f8001dc",
+    "0016_futebol_ultimo_sync": "0a72c9e0544c5e1df2e0abca016cde3d20e745d70871799fe03ed8f9973bd880",
+    "0017_ligas_competicoes": "56cd54818260b887e1206f8e00b011462a32b3d5e3c00f70c2ff2cab42342a2a",
+    "0018_lote_inscricao": "1ec06cf0a21c5b55b36dfcadc65a9291781e61d0c86f1a6a3726ce3a4ee81040",
+    "0019_desafio": "abf606ae46b2c2726074db066270e12bc991e71290dfdcdfa964a6c0cb7806c0",
+    "0020_desafio_multiplas_inscricoes": "774f5e7e0c22e67b4931b662300f6eccb3a7e90719061b03519b0ef07e3ee821",
+    "0021_telegram_account_link": "612af6cc30c988b558d7774d370d3535a638759e59635ab0216eda6120123412",
+    "0022_unique_cartola_team_profile": "f13e833c25000f4668c86a0d9d91673caa7b04167d1796ad0185359c58721fde",
+    "0023_telegram_wallet_request": "facbdaf6886bde31864510141b7fc36d5c1172896d74df1af13b61ca7ea18b4e",
+    "0024_point_fantasy_foundation": "3ad34fcd32e9f0c8de1b992d1dc4cf0842156bdb5ca1bdd31bb77e94c9411eb0",
+    "0025_point_fantasy_lineups": "7fa6c71056791a429ecc57c9a33e4ff0cc84338f1f705a7f33266c294b1376e2",
+    "0026_point_fantasy_team_identity": "60543fa5710315f29660d53879a18e8b98cc8be0d4cf915a01bea117b3b74cc3",
+    "0027_point_fantasy_free_registration": "426221e89cebac9b3b37ea6addef8b1936b3472a06f6e91ad8bb48db5a16713a",
+    "0028_point_fantasy_scoring_observation": "d957effe85788abbf1a6df3b4035fe78ce66aad1071f8e7c58fe07cf3ccfb305",
+    "0029_point_fantasy_current_scoring": "df2a5744867641f015ed6e28d447d66ffd705f589ec7c6f2c270d12f913e9c48",
+    "0030_point_fantasy_writer_admission": "57b2cb49a10f6a33e6673196fed5986fee120431f3aebeb93f26b57b4d936bb8",
+    "0031_point_fantasy_lineup_results": "2a38f6a1856c12792106be5573dd465246277bfd7e2662d36f37f12fcb9dbdd7",
+    "0032_point_fantasy_closure_audit": "6967b83c7932cf4942b320cd9aa91435df0398924ac0208b05047af2630baeeb"
+  },
+  "oldHistory": {
+    "fb801042-0425-4b73-83df-103fcaa9c557": "912cd7ac49ad5613e1a0f237cedad9e8fc34657907137965116799da695ec636",
+    "f305bf30-e92f-4360-973a-51efb75ac5a6": "804b60ef6e24f6cd71d27e75ca29be6c6f7e97fb5544ae869d4c2dc966806a93",
+    "c9e29ef1-4d93-47c0-a3db-ccc3f5fff49d": "636923ba160a4f7ca091c1d3e41213e7e3a0364aa7861eb2972dc812eaf91d6a",
+    "3035140b-5882-4eca-9acf-61d0904dd354": "9ad3c2327eeca6b51bc17f7e6085fa0c76f136c5a0517d218d54e4bd50250cd2",
+    "623d09c7-1706-43ef-ac59-4fe94e7469b6": "926198aa33b135d0f563e305fc19a1e8c53f1ba34bf20768b51409ba3f83681b",
+    "4522858a-a783-4a72-9770-e96505dd0acb": "b2cb1b74d54bb3fdf25b05b4d38ffd2f8ea0c3bde76a629c98b4e596cd28ee09",
+    "99a1f1ee-e4c4-40c3-bb79-0e49993c522e": "7ec42d8d2708bfda5dfbd6515650a21c340a761b9475f3e20facf6e29c7739f3",
+    "dc754f7e-813c-4cda-8b83-b14df5d9b11b": "558974879be539ff04441bbaddcc3ad4591081113fe9842d9d4a303104728cf6",
+    "1b880eb1-9fb9-437a-96e6-57ebc894f9f4": "9c099a1b343f9fdfbb98afecb822661fb57e77c236a0486f63a21667ff42f446",
+    "34253328-c4ee-4ea6-91ba-985a636acb02": "84a048430222277b6cd1539af9dc606bb98f9c36f02789f83ed8b3626b29e1dd",
+    "2f39ec21-54b4-4629-97d0-34b82ff42005": "efe9ec8996286d6ef21dc5392475dad366f35a59dc57d669e7145b74a2968795",
+    "301d548c-085d-43c0-b065-221b0b613c8b": "7d3c68466949a504281bfaa0909ed6229530abb733372f0383b27a53d58b278b",
+    "fa134e79-c457-4728-992e-2659868240e7": "1b7cc62f5607ac0cc29ca1a9f520e4f4f8f04d3bff443ca716602e2c8ac8acb7",
+    "9080d5ac-47a7-4a06-8a1d-c5b7453a707b": "7dde8c2bab198a7249292d8e022be464a3bfe0b0eb8397bb7a5786f6d723a66c",
+    "53bbf622-a300-4a3b-8853-d88d9edccff6": "5248c0581ec4c1250f7a2c4f08cb7e692f1d50a78568b15ec5d7da9981064d16",
+    "58d39c1a-7010-4c8a-a1e0-e37549773e3e": "c298675e987a358218cdc78542a2fafb79759c2869d9621b04576e33c13f8c02",
+    "c54f7639-85d0-4b72-a75b-9daf7118faeb": "38c35a4e4aad1c6e7623d1fe9defcb772814fb21a72604c4fc5ac0a37a3c68cf",
+    "86f39532-5503-492f-9c87-bc822776801e": "ddad91700b2b9c6b1720e619f2cb5c5106ce20f1761c15134c2298402c7d7163",
+    "f14ea16b-d5eb-405d-bade-b6d7a1011c6c": "309cacd57faece050fdb2a60be60289fdf28592fba0e40499c65a01a09ccba5e",
+    "d1901b34-25be-4a97-a8f0-434814e19868": "c4ac4f460f57d518ec42604afa925c825a96349f752de2e6d7f24a3df39157de",
+    "1884d179-f5a4-4fbf-a902-f15a011528df": "cf75ed69e0b1255b9a3488a7c9bf670ba24e0013a33983c4c27f4101bf0c259e",
+    "9ad7c0d5-aea5-4855-a104-ab2c679226af": "47e97883bb6717cc27739071eab95dfe1fe6698a892d0faafd5850f4f3045464",
+    "7b719686-a4b2-449c-bf8f-9fb2496f5391": "818a3b03b5d1c30d9561da00bba879db3f985c0119055bc87b28e3aa0cba4dc9",
+    "a38a15a6-e2f1-448b-bdb4-9a239d9d35c1": "3b09cb2fb1b14957ceeceaef918e4af5b790b0cece471b688ff54de754009f1d",
+    "c31e5e25-d539-430a-b745-86b9849c2e2f": "076168cace28e7806334507fed23a55d202eb5b5efb822bc1dc443da121fd215",
+    "b719162c-0f7a-43bf-b0d0-014ed49f97b3": "899a7d1d46cca75626ae8308200af6355588d0aea21b27c6ae5d2ee0ddc1c56f",
+    "37d1cea7-f083-4c94-8e5f-cf822312bcc9": "6af9e7ca98e703eb966c6e15b23b0c8a7ec92bc2dc9742d6b5aaa550755ada23",
+    "3b5005e9-bdf8-4a69-8b59-aa8c487261c8": "959cdfd1ca1c7fb1daef01dceedcf3f5302cbc6bd5a590f267621ebea95d5dae",
+    "e56bc62c-c6fa-4f47-8e7e-18401ea890c0": "5e14f91e4c2a272a349cb0ce8270ea374d950bd515e23b420ab870e79d57a94f",
+    "01240964-cbc7-4771-a616-50e591869ae5": "8ea08a425e4509a6db543929bf36ba4aa4354e1468286026f6538f55b6331420",
+    "af528bef-7363-4273-9e4c-25b3b3cd0e67": "5e5fa2d6bae45df7eff0b407f7e91fde20eda634a48525a46f4f1086c709baf1",
+    "38f58a9b-12a3-468b-a1ba-6f0cce38e4bc": "449793c5aadfb2b4f47b8a5119eb61d23826cce5ea12eb99cc828dd2f8b15f5c"
+  },
+  "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+  "revision": "2",
+  "adminId": 1,
+  "protected": {
+    "tables": {
+      "AUTH_ACCOUNT": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "CARTEIRA": {
+        "count": 1,
+        "sha256": "c54b6034073a443244788992988e3556a03b829af81134b2b4b3237f26092851"
+      },
+      "COMPETICAO_LIGA": {
+        "count": 1,
+        "sha256": "42f409a6eff74a3360561452fa0647c628b9dc41bb69692dab585bca73d2a091"
+      },
+      "DESAFIO": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "DESAFIO_INSCRICAO": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "DESAFIO_PALPITE": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "DESAFIO_PARTIDA": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "ESCALACAO_TIME_RODADA": {
+        "count": 136,
+        "sha256": "72ac45fe7d791a8fb4f0d6ca85e649817a1850999a00c9d32fe169d0775da407"
+      },
+      "FANTASY_APURACAO_RODADA": {
+        "count": 1,
+        "sha256": "c4202a72b2e5ca9791ee5b0ce9d20e7f0d544e012ad9a96f5ba0c90d67d4960e"
+      },
+      "FANTASY_CATALOGO": {
+        "count": 1,
+        "sha256": "07cda58d19f65d90de93555f0aea7b761f92a5baddd3b76175dc075c47a15888"
+      },
+      "FANTASY_CATALOGO_ATLETA": {
+        "count": 787,
+        "sha256": "a5e8336ac0ea1358a8f6fc2b4702620111fac97532db5c91bc9ef43b784a6615"
+      },
+      "FANTASY_COMPETICAO": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "FANTASY_COMPETICAO_PARTIDA": {
+        "count": 3,
+        "sha256": "80a25eb588caac8073bc854a7257a9320933f6c7a7417c56aee574cb024f2c79"
+      },
+      "FANTASY_ESCALACAO": {
+        "count": 3,
+        "sha256": "95450f153bf3c9b529526a1466aebcd22895cab52684c6b30e5148f1f01f6fd5"
+      },
+      "FANTASY_ESCALACAO_ATLETA": {
+        "count": 51,
+        "sha256": "48d8a35677ff7b3b08dac17369e7e5b52860b331fb1caeedce669ed9d273c7d5"
+      },
+      "FANTASY_ESCRITA_CONTROLE": {
+        "count": 1,
+        "sha256": "1d0a24cebb664fb865a7dc86251602ad150802ca85bde2532c4642a8093fa3b0"
+      },
+      "FANTASY_ESCRITA_TRANSICAO": {
+        "count": 3,
+        "sha256": "a8200947d2f8fef9dadfe75a383cb8758dfba8b9e63438d9117efbc83d4ed8a3"
+      },
+      "FANTASY_INSCRICAO_OPERACAO": {
+        "count": 2,
+        "sha256": "62737430e046f91b0d1f32d4ad20cff3c23ba5b8a3fae21a0092653b9151e25c"
+      },
+      "FANTASY_PONTUACAO_ATLETA": {
+        "count": 306,
+        "sha256": "baacb7f1002379e17de57336e6bcb54ac4e5473e25369465ee2e59c11b2160ff"
+      },
+      "FANTASY_PONTUACAO_ATLETA_SNAPSHOT": {
+        "count": 275,
+        "sha256": "5e9f6b969aef41c5a0d72a8c2262c9db069e643749306955e0ca8eb123a542b0"
+      },
+      "FANTASY_PONTUACAO_COLETA": {
+        "count": 8,
+        "sha256": "0efcf1e947b46b7a2126a2181ae45a4b0adf0a8dcdf7f80c76b296f31549d4b1"
+      },
+      "FANTASY_PONTUACAO_SNAPSHOT": {
+        "count": 1,
+        "sha256": "09929a8221c106ff00012e59e120df608755bccf5cc018ac6557dbd9b49fe05d"
+      },
+      "FANTASY_TIME_IDENTIDADE": {
+        "count": 1,
+        "sha256": "ae3be55a74958793ccb80aa8f91642555da8742efe6eb7e8c03035364105f495"
+      },
+      "FANTASY_TIME_OPERACAO": {
+        "count": 3,
+        "sha256": "1ca038e0c4309596368adbaf0a05824e4e37adf266831baf87ecddd59f30e4a2"
+      },
+      "FUTEBOL_COMPETICAO": {
+        "count": 10,
+        "sha256": "1946013b1e14c28d30331329a2858b9c89b5c06f55c280f0236878d1a33163a4"
+      },
+      "FUTEBOL_PARTIDA": {
+        "count": 3440,
+        "sha256": "cb654be80a9dd76644450cd23d6bfe6a3969b331feb67f476ed61261cde7d18c"
+      },
+      "FUTEBOL_TIME": {
+        "count": 187,
+        "sha256": "cb4351338364d998aa7c18b538a7cdffb88b601253e4500f6fc34c7a8192adb3"
+      },
+      "INSCRICAO_TIME_COMPETICAO": {
+        "count": 3,
+        "sha256": "0633c0ef0b94f17acd2dce0e0c725522154f72a1548e24248ce63f3acc1c4b2f"
+      },
+      "LIGA": {
+        "count": 1,
+        "sha256": "c0b5cf3f9f0cbce1e786d49c58a29473726c87b8b8b9dc060ce579c08f0ee634"
+      },
+      "LIGA_MODALIDADE": {
+        "count": 1,
+        "sha256": "aa69264e593362c9576daaf9ab52d9faad6683a02375eb09093a5359c1e8ffb8"
+      },
+      "LOTE_INSCRICAO": {
+        "count": 1,
+        "sha256": "a195c20a7795ab75059ec57633af51efc01812624fee4b258b6611f8e0944e5b"
+      },
+      "MODALIDADE_COMPETICAO": {
+        "count": 1,
+        "sha256": "fe3446660fda8dff462b4afcaf940ff1677dd69bedab21b08bae7efb499621a1"
+      },
+      "MOVIMENTACAO_CARTEIRA": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "PASSWORD_RESET_TOKEN": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "PONTUACAO_TIME_RODADA": {
+        "count": 13,
+        "sha256": "3edb462a44b9e149936ea70780473bd2efcb30c88d701ea338075d13a1804b72"
+      },
+      "PREMIACAO_COMPETICAO": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "RECARGA_CARTEIRA": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "RODADA_PROCESSAMENTO": {
+        "count": 4,
+        "sha256": "04c58c9bead138d0af162e08cfb48d84b3a3d98abea86c64fe4d198d8e58c152"
+      },
+      "SUBSTITUICAO_TIME_RODADA": {
+        "count": 2,
+        "sha256": "3d681014c04bbf26e347c039f59f2de1e6421f346f43fc728d509d692c68331d"
+      },
+      "TELEGRAM_ACCOUNT_LINK": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "TELEGRAM_LINK_REQUEST": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "TELEGRAM_WALLET_REQUEST": {
+        "count": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "TIME_CARTOLA": {
+        "count": 17,
+        "sha256": "6eaca31cb4e9fe172d049e9625a377781bd26eadfce0ead5bf6be1b506036cd4"
+      },
+      "TIME_RODADA": {
+        "count": 13,
+        "sha256": "6e3d2dcfb7ef23380032b15b1dc835b3a3c9765d688d2f277b3e43b272e45a31"
+      },
+      "TIME_USUARIO": {
+        "count": 3,
+        "sha256": "056ce0c6df326c5f5bd7aad5c16ca2270e9c98f87c035eb37f8964d1d8013d96"
+      },
+      "USUARIO": {
+        "count": 1,
+        "sha256": "7829d53dacbd6d87c96245537756c1c1ec0ecbf8f406c15d6543d0658ee508df"
+      }
+    },
+    "competition1ProtectedFields": "819716d4be41dc87b659c63055f6fa7f96ecec51f23e57aebc567cc64985adc0"
+  },
+  "preview": [
+    {
+      "contributions": [
+        {
+          "athlete": 707,
+          "multiplier": 1,
+          "points": "9.01",
+          "starter": 707
+        },
+        {
+          "athlete": 394,
+          "multiplier": 1,
+          "points": "14.1",
+          "starter": 394
+        },
+        {
+          "athlete": 188,
+          "multiplier": 1,
+          "points": "7.6",
+          "starter": 188
+        },
+        {
+          "athlete": 396,
+          "multiplier": 1,
+          "points": "14.5",
+          "starter": 396
+        },
+        {
+          "athlete": 163,
+          "multiplier": 1,
+          "points": "9.2",
+          "starter": 163
+        },
+        {
+          "athlete": 407,
+          "multiplier": 1,
+          "points": "5.5",
+          "starter": 407
+        },
+        {
+          "athlete": 200,
+          "multiplier": 1,
+          "points": "2.7",
+          "starter": 200
+        },
+        {
+          "athlete": 704,
+          "multiplier": 1,
+          "points": "3.2",
+          "starter": 246
+        },
+        {
+          "athlete": 626,
+          "multiplier": 2,
+          "points": "5",
+          "starter": 626
+        },
+        {
+          "athlete": 403,
+          "multiplier": 1,
+          "points": "11",
+          "starter": 403
+        },
+        {
+          "athlete": 510,
+          "multiplier": 1,
+          "points": "2.4",
+          "starter": 510
+        },
+        {
+          "athlete": 617,
+          "multiplier": 1,
+          "points": "1.3",
+          "starter": 656
+        }
+      ],
+      "escalacaoId": 7,
+      "evidenciaAusencias": {
+        "collectionId": 8,
+        "eligible": true,
+        "historical": {
+          "collectionId": 3,
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ],
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "snapshotId": 1
+        },
+        "reasons": [],
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+      },
+      "fontes": [
+        {
+          "catalogoAtletaId": 163,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 188,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 394,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 396,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 403,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 407,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 615,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 617,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 656,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "missing": [],
+      "posicao": 1,
+      "substitutions": [
+        {
+          "contribution": "3.2",
+          "in": 704,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "3.2",
+          "out": 246
+        },
+        {
+          "contribution": "1.3",
+          "in": 617,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "1.3",
+          "out": 656
+        }
+      ],
+      "total": "85.51",
+      "versaoEscalacao": 2
+    },
+    {
+      "contributions": [
+        {
+          "athlete": 707,
+          "multiplier": 1,
+          "points": "9.01",
+          "starter": 707
+        },
+        {
+          "athlete": 493,
+          "multiplier": 1,
+          "points": "-2",
+          "starter": 493
+        },
+        {
+          "athlete": 172,
+          "multiplier": 2,
+          "points": "0",
+          "starter": 494
+        },
+        {
+          "athlete": 738,
+          "multiplier": 1,
+          "points": "0",
+          "starter": 738
+        },
+        {
+          "athlete": 449,
+          "multiplier": 1,
+          "points": "13.5",
+          "starter": 449
+        },
+        {
+          "athlete": 498,
+          "multiplier": 1,
+          "points": "0",
+          "starter": 498
+        },
+        {
+          "athlete": 200,
+          "multiplier": 1,
+          "points": "2.7",
+          "starter": 200
+        },
+        {
+          "athlete": 704,
+          "multiplier": 1,
+          "points": "3.2",
+          "starter": 246
+        },
+        {
+          "athlete": 626,
+          "multiplier": 1,
+          "points": "2.5",
+          "starter": 626
+        },
+        {
+          "athlete": 502,
+          "multiplier": 1,
+          "points": "2.6",
+          "starter": 147
+        },
+        {
+          "athlete": 243,
+          "multiplier": 1,
+          "points": "0.5",
+          "starter": 243
+        },
+        {
+          "athlete": 510,
+          "multiplier": 1,
+          "points": "2.4",
+          "starter": 510
+        }
+      ],
+      "escalacaoId": 5,
+      "evidenciaAusencias": {
+        "collectionId": 8,
+        "eligible": true,
+        "historical": {
+          "collectionId": 3,
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ],
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "snapshotId": 1
+        },
+        "reasons": [],
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+      },
+      "fontes": [
+        {
+          "catalogoAtletaId": 147,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "missing": [],
+      "posicao": 2,
+      "substitutions": [
+        {
+          "contribution": "0",
+          "in": 172,
+          "kind": "COMUM",
+          "multiplier": 2,
+          "officialPoints": "-0.2",
+          "out": 494
+        },
+        {
+          "contribution": "3.2",
+          "in": 704,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "3.2",
+          "out": 246
+        },
+        {
+          "contribution": "2.6",
+          "in": 502,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "2.6",
+          "out": 147
+        }
+      ],
+      "total": "34.41",
+      "versaoEscalacao": 3
+    },
+    {
+      "contributions": [
+        {
+          "athlete": 707,
+          "multiplier": 1,
+          "points": "9.01",
+          "starter": 707
+        },
+        {
+          "athlete": 493,
+          "multiplier": 1,
+          "points": "-2",
+          "starter": 493
+        },
+        {
+          "athlete": 172,
+          "multiplier": 1,
+          "points": "0",
+          "starter": 494
+        },
+        {
+          "athlete": 738,
+          "multiplier": 1,
+          "points": "0",
+          "starter": 738
+        },
+        {
+          "athlete": 449,
+          "multiplier": 1,
+          "points": "13.5",
+          "starter": 449
+        },
+        {
+          "athlete": 498,
+          "multiplier": 1,
+          "points": "0",
+          "starter": 498
+        },
+        {
+          "athlete": 200,
+          "multiplier": 1,
+          "points": "2.7",
+          "starter": 200
+        },
+        {
+          "athlete": 704,
+          "multiplier": 1,
+          "points": "3.2",
+          "starter": 246
+        },
+        {
+          "athlete": 573,
+          "multiplier": 1,
+          "points": "-2.1",
+          "starter": 573
+        },
+        {
+          "athlete": 502,
+          "multiplier": 1,
+          "points": "2.6",
+          "starter": 147
+        },
+        {
+          "athlete": 243,
+          "multiplier": 2,
+          "points": "1",
+          "starter": 243
+        },
+        {
+          "athlete": 510,
+          "multiplier": 1,
+          "points": "2.4",
+          "starter": 510
+        }
+      ],
+      "escalacaoId": 6,
+      "evidenciaAusencias": {
+        "collectionId": 8,
+        "eligible": true,
+        "historical": {
+          "collectionId": 3,
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ],
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "snapshotId": 1
+        },
+        "reasons": [],
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+      },
+      "fontes": [
+        {
+          "catalogoAtletaId": 147,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 573,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "missing": [],
+      "posicao": 3,
+      "substitutions": [
+        {
+          "contribution": "0",
+          "in": 172,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "-0.2",
+          "out": 494
+        },
+        {
+          "contribution": "3.2",
+          "in": 704,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "3.2",
+          "out": 246
+        },
+        {
+          "contribution": "2.6",
+          "in": 502,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "2.6",
+          "out": 147
+        }
+      ],
+      "total": "30.31",
+      "versaoEscalacao": 4
+    }
+  ],
+  "evidence": {
+    "eligible": true,
+    "reasons": [],
+    "collectionId": 8,
+    "revision": "2",
+    "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+    "historical": {
+      "collectionId": 3,
+      "snapshotId": 1,
+      "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+      "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+      "matchIds": [
+        346526,
+        346530,
+        346532
+      ]
+    }
+  },
+  "checkedAt": "2026-10-23T17:20:48.884Z",
+  "schema": {
+    "columns": [
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "ESCALACAO_ID",
+        "COLUMN_TYPE": "int unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "COMPETICAO_ID",
+        "COLUMN_TYPE": "int unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "TEMPORADA",
+        "COLUMN_TYPE": "smallint unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "RODADA",
+        "COLUMN_TYPE": "tinyint unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "REVISAO",
+        "COLUMN_TYPE": "bigint unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "HASH_FONTE",
+        "COLUMN_TYPE": "char(64)",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "VERSAO_ESCALACAO",
+        "COLUMN_TYPE": "int unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "VERSAO_MOTOR",
+        "COLUMN_TYPE": "varchar(32)",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "TOTAL",
+        "COLUMN_TYPE": "decimal(40,18)",
+        "IS_NULLABLE": "YES"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "AUDITORIA",
+        "COLUMN_TYPE": "json",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "COLUMN_NAME": "ATUALIZADO_EM",
+        "COLUMN_TYPE": "datetime(3)",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_fechamento_auditoria",
+        "COLUMN_NAME": "COMPETICAO_ID",
+        "COLUMN_TYPE": "int unsigned",
+        "IS_NULLABLE": "NO"
+      },
+      {
+        "TABLE_NAME": "fantasy_fechamento_auditoria",
+        "COLUMN_NAME": "DADOS",
+        "COLUMN_TYPE": "json",
+        "IS_NULLABLE": "NO"
+      }
+    ],
+    "indexes": [
+      {
+        "TABLE_NAME": "fantasy_escalacao",
+        "INDEX_NAME": "FE_RESULTADO_OWNER_key",
+        "NON_UNIQUE": "0",
+        "cols": "ID,COMPETICAO_ID"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "INDEX_NAME": "FER_OWNER_key",
+        "NON_UNIQUE": "0",
+        "cols": "ESCALACAO_ID,COMPETICAO_ID"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "INDEX_NAME": "FER_RANKING_idx",
+        "NON_UNIQUE": "1",
+        "cols": "COMPETICAO_ID,TOTAL"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": "0",
+        "cols": "ESCALACAO_ID"
+      },
+      {
+        "TABLE_NAME": "fantasy_fechamento_auditoria",
+        "INDEX_NAME": "PRIMARY",
+        "NON_UNIQUE": "0",
+        "cols": "COMPETICAO_ID"
+      }
+    ],
+    "keys": [
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "CONSTRAINT_NAME": "FER_COMPETICAO_fkey",
+        "COLUMN_NAME": "COMPETICAO_ID",
+        "REFERENCED_TABLE_NAME": "fantasy_competicao",
+        "REFERENCED_COLUMN_NAME": "ID",
+        "UPDATE_RULE": "RESTRICT",
+        "DELETE_RULE": "RESTRICT"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "CONSTRAINT_NAME": "FER_ESCALACAO_fkey",
+        "COLUMN_NAME": "ESCALACAO_ID",
+        "REFERENCED_TABLE_NAME": "fantasy_escalacao",
+        "REFERENCED_COLUMN_NAME": "ID",
+        "UPDATE_RULE": "RESTRICT",
+        "DELETE_RULE": "RESTRICT"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao_resultado",
+        "CONSTRAINT_NAME": "FER_ESCALACAO_fkey",
+        "COLUMN_NAME": "COMPETICAO_ID",
+        "REFERENCED_TABLE_NAME": "fantasy_escalacao",
+        "REFERENCED_COLUMN_NAME": "COMPETICAO_ID",
+        "UPDATE_RULE": "RESTRICT",
+        "DELETE_RULE": "RESTRICT"
+      },
+      {
+        "TABLE_NAME": "fantasy_fechamento_auditoria",
+        "CONSTRAINT_NAME": "FFA_COMPETICAO_fkey",
+        "COLUMN_NAME": "COMPETICAO_ID",
+        "REFERENCED_TABLE_NAME": "fantasy_competicao",
+        "REFERENCED_COLUMN_NAME": "ID",
+        "UPDATE_RULE": "RESTRICT",
+        "DELETE_RULE": "RESTRICT"
+      }
+    ]
+  },
+  "migratedAt": "2026-10-23T17:21:47.454Z",
+  "reportSerializationRecovered": true,
+  "persistedAt": "2026-10-23T17:21:54.249Z"
+}

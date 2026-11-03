@@ -1,0 +1,736 @@
+{
+  "closure": {
+    "competicaoId": 1,
+    "fechamentoDefinitivoEm": "2026-10-23T17:21:53.704Z",
+    "auditoria": {
+      "operacaoId": "67938906-71b3-4a40-92db-4f2eca37e47f",
+      "usuarioId": 1,
+      "motivo": "Fase 3G: fechamento e homologacao local expressamente autorizados pelo usuario.",
+      "temporada": 2026,
+      "rodada": 31,
+      "revisao": "2",
+      "hashFonte": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+      "fechadoEm": "2026-10-23T17:21:53.704Z",
+      "evidencia": {
+        "eligible": true,
+        "reasons": [],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+        "historical": {
+          "collectionId": 3,
+          "snapshotId": 1,
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ]
+        }
+      },
+      "partidas": [
+        {
+          "partidaIdExterno": 346526,
+          "clubeMandanteId": 263,
+          "clubeVisitanteId": 315
+        },
+        {
+          "partidaIdExterno": 346530,
+          "clubeMandanteId": 282,
+          "clubeVisitanteId": 294
+        },
+        {
+          "partidaIdExterno": 346532,
+          "clubeMandanteId": 293,
+          "clubeVisitanteId": 275
+        }
+      ]
+    }
+  },
+  "persisted": [
+    {
+      "escalacaoId": 5,
+      "competicaoId": 1,
+      "temporada": 2026,
+      "rodada": 31,
+      "revisao": "2",
+      "hashFonte": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+      "versaoEscalacao": 3,
+      "versaoMotor": "3F-1",
+      "total": "34.41",
+      "auditoria": {
+        "total": "34.41",
+        "fontes": [
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 147
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 172
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 200
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 241
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 243
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 246
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 256
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 449
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 493
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 494
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 498
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 502
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 510
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 626
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 704
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 707
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 738
+          }
+        ],
+        "missing": [],
+        "posicao": 2,
+        "escalacaoId": 5,
+        "contributions": [
+          {
+            "points": "9.01",
+            "athlete": 707,
+            "starter": 707,
+            "multiplier": 1
+          },
+          {
+            "points": "-2",
+            "athlete": 493,
+            "starter": 493,
+            "multiplier": 1
+          },
+          {
+            "points": "0",
+            "athlete": 172,
+            "starter": 494,
+            "multiplier": 2
+          },
+          {
+            "points": "0",
+            "athlete": 738,
+            "starter": 738,
+            "multiplier": 1
+          },
+          {
+            "points": "13.5",
+            "athlete": 449,
+            "starter": 449,
+            "multiplier": 1
+          },
+          {
+            "points": "0",
+            "athlete": 498,
+            "starter": 498,
+            "multiplier": 1
+          },
+          {
+            "points": "2.7",
+            "athlete": 200,
+            "starter": 200,
+            "multiplier": 1
+          },
+          {
+            "points": "3.2",
+            "athlete": 704,
+            "starter": 246,
+            "multiplier": 1
+          },
+          {
+            "points": "2.5",
+            "athlete": 626,
+            "starter": 626,
+            "multiplier": 1
+          },
+          {
+            "points": "2.6",
+            "athlete": 502,
+            "starter": 147,
+            "multiplier": 1
+          },
+          {
+            "points": "0.5",
+            "athlete": 243,
+            "starter": 243,
+            "multiplier": 1
+          },
+          {
+            "points": "2.4",
+            "athlete": 510,
+            "starter": 510,
+            "multiplier": 1
+          }
+        ],
+        "substitutions": [
+          {
+            "in": 172,
+            "out": 494,
+            "kind": "COMUM",
+            "multiplier": 2,
+            "contribution": "0",
+            "officialPoints": "-0.2"
+          },
+          {
+            "in": 704,
+            "out": 246,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "3.2",
+            "officialPoints": "3.2"
+          },
+          {
+            "in": 502,
+            "out": 147,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "2.6",
+            "officialPoints": "2.6"
+          }
+        ],
+        "versaoEscalacao": 3,
+        "evidenciaAusencias": {
+          "reasons": [],
+          "eligible": true,
+          "revision": "2",
+          "historical": {
+            "matchIds": [
+              346526,
+              346530,
+              346532
+            ],
+            "snapshotId": 1,
+            "collectionId": 3,
+            "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+            "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687"
+          },
+          "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+          "collectionId": 8
+        }
+      },
+      "atualizadoEm": "2026-10-23T17:21:54.068Z"
+    },
+    {
+      "escalacaoId": 6,
+      "competicaoId": 1,
+      "temporada": 2026,
+      "rodada": 31,
+      "revisao": "2",
+      "hashFonte": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+      "versaoEscalacao": 4,
+      "versaoMotor": "3F-1",
+      "total": "30.31",
+      "auditoria": {
+        "total": "30.31",
+        "fontes": [
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 147
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 172
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 200
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 241
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 243
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 246
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 256
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 449
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 493
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 494
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 498
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 502
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 510
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 573
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 704
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 707
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 738
+          }
+        ],
+        "missing": [],
+        "posicao": 3,
+        "escalacaoId": 6,
+        "contributions": [
+          {
+            "points": "9.01",
+            "athlete": 707,
+            "starter": 707,
+            "multiplier": 1
+          },
+          {
+            "points": "-2",
+            "athlete": 493,
+            "starter": 493,
+            "multiplier": 1
+          },
+          {
+            "points": "0",
+            "athlete": 172,
+            "starter": 494,
+            "multiplier": 1
+          },
+          {
+            "points": "0",
+            "athlete": 738,
+            "starter": 738,
+            "multiplier": 1
+          },
+          {
+            "points": "13.5",
+            "athlete": 449,
+            "starter": 449,
+            "multiplier": 1
+          },
+          {
+            "points": "0",
+            "athlete": 498,
+            "starter": 498,
+            "multiplier": 1
+          },
+          {
+            "points": "2.7",
+            "athlete": 200,
+            "starter": 200,
+            "multiplier": 1
+          },
+          {
+            "points": "3.2",
+            "athlete": 704,
+            "starter": 246,
+            "multiplier": 1
+          },
+          {
+            "points": "-2.1",
+            "athlete": 573,
+            "starter": 573,
+            "multiplier": 1
+          },
+          {
+            "points": "2.6",
+            "athlete": 502,
+            "starter": 147,
+            "multiplier": 1
+          },
+          {
+            "points": "1",
+            "athlete": 243,
+            "starter": 243,
+            "multiplier": 2
+          },
+          {
+            "points": "2.4",
+            "athlete": 510,
+            "starter": 510,
+            "multiplier": 1
+          }
+        ],
+        "substitutions": [
+          {
+            "in": 172,
+            "out": 494,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "0",
+            "officialPoints": "-0.2"
+          },
+          {
+            "in": 704,
+            "out": 246,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "3.2",
+            "officialPoints": "3.2"
+          },
+          {
+            "in": 502,
+            "out": 147,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "2.6",
+            "officialPoints": "2.6"
+          }
+        ],
+        "versaoEscalacao": 4,
+        "evidenciaAusencias": {
+          "reasons": [],
+          "eligible": true,
+          "revision": "2",
+          "historical": {
+            "matchIds": [
+              346526,
+              346530,
+              346532
+            ],
+            "snapshotId": 1,
+            "collectionId": 3,
+            "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+            "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687"
+          },
+          "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+          "collectionId": 8
+        }
+      },
+      "atualizadoEm": "2026-10-23T17:21:54.073Z"
+    },
+    {
+      "escalacaoId": 7,
+      "competicaoId": 1,
+      "temporada": 2026,
+      "rodada": 31,
+      "revisao": "2",
+      "hashFonte": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+      "versaoEscalacao": 2,
+      "versaoMotor": "3F-1",
+      "total": "85.51",
+      "auditoria": {
+        "total": "85.51",
+        "fontes": [
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 163
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 188
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 200
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 246
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 394
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 396
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 403
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 407
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 449
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 493
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 510
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 615
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 617
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 626
+          },
+          {
+            "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA",
+            "catalogoAtletaId": 656
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 704
+          },
+          {
+            "origem": "REGISTRO_OFICIAL",
+            "catalogoAtletaId": 707
+          }
+        ],
+        "missing": [],
+        "posicao": 1,
+        "escalacaoId": 7,
+        "contributions": [
+          {
+            "points": "9.01",
+            "athlete": 707,
+            "starter": 707,
+            "multiplier": 1
+          },
+          {
+            "points": "14.1",
+            "athlete": 394,
+            "starter": 394,
+            "multiplier": 1
+          },
+          {
+            "points": "7.6",
+            "athlete": 188,
+            "starter": 188,
+            "multiplier": 1
+          },
+          {
+            "points": "14.5",
+            "athlete": 396,
+            "starter": 396,
+            "multiplier": 1
+          },
+          {
+            "points": "9.2",
+            "athlete": 163,
+            "starter": 163,
+            "multiplier": 1
+          },
+          {
+            "points": "5.5",
+            "athlete": 407,
+            "starter": 407,
+            "multiplier": 1
+          },
+          {
+            "points": "2.7",
+            "athlete": 200,
+            "starter": 200,
+            "multiplier": 1
+          },
+          {
+            "points": "3.2",
+            "athlete": 704,
+            "starter": 246,
+            "multiplier": 1
+          },
+          {
+            "points": "5",
+            "athlete": 626,
+            "starter": 626,
+            "multiplier": 2
+          },
+          {
+            "points": "11",
+            "athlete": 403,
+            "starter": 403,
+            "multiplier": 1
+          },
+          {
+            "points": "2.4",
+            "athlete": 510,
+            "starter": 510,
+            "multiplier": 1
+          },
+          {
+            "points": "1.3",
+            "athlete": 617,
+            "starter": 656,
+            "multiplier": 1
+          }
+        ],
+        "substitutions": [
+          {
+            "in": 704,
+            "out": 246,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "3.2",
+            "officialPoints": "3.2"
+          },
+          {
+            "in": 617,
+            "out": 656,
+            "kind": "COMUM",
+            "multiplier": 1,
+            "contribution": "1.3",
+            "officialPoints": "1.3"
+          }
+        ],
+        "versaoEscalacao": 2,
+        "evidenciaAusencias": {
+          "reasons": [],
+          "eligible": true,
+          "revision": "2",
+          "historical": {
+            "matchIds": [
+              346526,
+              346530,
+              346532
+            ],
+            "snapshotId": 1,
+            "collectionId": 3,
+            "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+            "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687"
+          },
+          "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+          "collectionId": 8
+        }
+      },
+      "atualizadoEm": "2026-10-23T17:21:54.053Z"
+    }
+  ],
+  "evidence": {
+    "eligible": true,
+    "reasons": [],
+    "collectionId": 8,
+    "revision": "2",
+    "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+    "historical": {
+      "collectionId": 3,
+      "snapshotId": 1,
+      "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+      "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+      "matchIds": [
+        346526,
+        346530,
+        346532
+      ]
+    }
+  },
+  "ranking": {
+    "competicaoId": 1,
+    "estadoPontuacao": "PARCIAL",
+    "items": [
+      {
+        "posicao": 1,
+        "escalacaoId": 7,
+        "nomePublico": "#G2FKLZJ · chute de ouro 03",
+        "identidade": {
+          "identificadorPublico": "G2FKLZJ",
+          "nomeBase": "chute de ouro",
+          "sequencial": 3
+        },
+        "formacao": "4-3-3",
+        "pontuacao": "85.51",
+        "meuTime": false
+      },
+      {
+        "posicao": 2,
+        "escalacaoId": 5,
+        "nomePublico": "#G2FKLZJ · chute de ouro 01",
+        "identidade": {
+          "identificadorPublico": "G2FKLZJ",
+          "nomeBase": "chute de ouro",
+          "sequencial": 1
+        },
+        "formacao": "4-3-3",
+        "pontuacao": "34.41",
+        "meuTime": false
+      },
+      {
+        "posicao": 3,
+        "escalacaoId": 6,
+        "nomePublico": "#G2FKLZJ · chute de ouro 02",
+        "identidade": {
+          "identificadorPublico": "G2FKLZJ",
+          "nomeBase": "chute de ouro",
+          "sequencial": 2
+        },
+        "formacao": "4-3-3",
+        "pontuacao": "30.31",
+        "meuTime": false
+      }
+    ],
+    "total": 3,
+    "page": 1,
+    "limit": 50
+  },
+  "secondReadIdentical": true,
+  "protectedTablesUnchanged": 46,
+  "allOriginalMigrationRowsUnchanged": true,
+  "verifiedAt": "2026-10-23T17:22:00.097Z"
+}

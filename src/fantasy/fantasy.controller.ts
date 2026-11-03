@@ -4,6 +4,9 @@ import { FantasyService } from './fantasy.service';
 @Controller('fantasy')
 export class FantasyController {
   constructor(private readonly service: FantasyService) {}
+  @Get('partidas/:fixtureId/pre-jogo')
+  preJogo(@Param('fixtureId') fixtureId: string) { return this.service.preJogo(fixtureId); }
+
   @Get('partidas/:fixtureId/sumario')
   sumario(@Param('fixtureId') fixtureId: string) { return this.service.sumario(fixtureId); }
 

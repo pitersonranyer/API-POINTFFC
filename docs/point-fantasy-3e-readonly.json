@@ -1,0 +1,453 @@
+{
+  "date": "2026-10-23T15:02:22.928Z",
+  "database": "fantasy_point_do_jogador",
+  "mysqlVersion": "8.0.25",
+  "sourceRecords": 306,
+  "missingIdentities": [
+    {
+      "id": 246,
+      "atletaIdExterno": 72460,
+      "apelido": "Bernard",
+      "clubeIdExterno": 282,
+      "posicaoId": 4
+    },
+    {
+      "id": 498,
+      "atletaIdExterno": 85626,
+      "apelido": "Léo",
+      "clubeIdExterno": 293,
+      "posicaoId": 3
+    },
+    {
+      "id": 241,
+      "atletaIdExterno": 92087,
+      "apelido": "Lyanco",
+      "clubeIdExterno": 282,
+      "posicaoId": 3
+    },
+    {
+      "id": 147,
+      "atletaIdExterno": 92171,
+      "apelido": "Arthur Cabral",
+      "clubeIdExterno": 263,
+      "posicaoId": 5
+    },
+    {
+      "id": 494,
+      "atletaIdExterno": 110668,
+      "apelido": "Esquivel",
+      "clubeIdExterno": 293,
+      "posicaoId": 2
+    },
+    {
+      "id": 656,
+      "atletaIdExterno": 114802,
+      "apelido": "Vitor Roque",
+      "clubeIdExterno": 275,
+      "posicaoId": 5
+    }
+  ],
+  "collection": {
+    "id": 8,
+    "model": "ATUAL",
+    "status": "SUCESSO",
+    "revision": "2",
+    "hash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+    "payloadHash": "a7dbef7aa6a64ce8a2cf69d0f2341666b98e81bf6c29ec20b83fefe1c9209392",
+    "limitations": {
+      "reason": "Authorized single local current-season historical scoring collection for 2026/31.",
+      "codigos": [
+        "OBSERVATION_ONLY",
+        "PROVIDER_HTTP_CACHE_POSSIBLE",
+        "FINAL_COMPLETENESS_NOT_PROVEN",
+        "OFFICIAL_FRESHNESS_NOT_PROVEN",
+        "COMPLETENESS_NOT_PROVEN"
+      ],
+      "operator": "Piterson Ranyer",
+      "politica": {
+        "mode": "PARCIAL",
+        "version": "partial-v1",
+        "broadOmissionRatio": 0.5
+      },
+      "retencoes": [],
+      "modalidade": "PARCIAL",
+      "hashObservado": "3ba178d72ade252c67fd8729dcde81f82236421cbdaf755bb186c26ba79fea2f",
+      "evidenciaFonte": null,
+      "omitidosObservados": []
+    },
+    "matchEvidence": {
+      "error": null,
+      "httpStatus": 200,
+      "hashPayload": "4f08ef53b200fa6aa13de8ffc1262e4716951223fa410ffd888efd102646507e",
+      "historicalIdentity": {
+        "round": 31,
+        "method": "POINT_FFC_CURRENT_SEASON_ENDPOINT_PREMISE",
+        "season": 2026,
+        "marketSeasonAfter": 2026,
+        "marketSeasonBefore": 2026
+      }
+    }
+  },
+  "migration": {
+    "pending": [
+      "0031_point_fantasy_lineup_results",
+      "0032_point_fantasy_closure_audit"
+    ],
+    "idColumns": [
+      {
+        "TABLE_NAME": "fantasy_competicao",
+        "COLUMN_NAME": "ID",
+        "COLUMN_TYPE": "int unsigned"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao",
+        "COLUMN_NAME": "COMPETICAO_ID",
+        "COLUMN_TYPE": "int unsigned"
+      },
+      {
+        "TABLE_NAME": "fantasy_escalacao",
+        "COLUMN_NAME": "ID",
+        "COLUMN_TYPE": "int unsigned"
+      }
+    ],
+    "resultTableExists": false,
+    "closureAuditTableExists": false,
+    "migration0031Hash": "2a38f6a1856c12792106be5573dd465246277bfd7e2662d36f37f12fcb9dbdd7"
+  },
+  "competition": {
+    "id": 1,
+    "temporada": 2026,
+    "rodada": 31,
+    "fechamentoDefinitivoEm": null,
+    "matches": [
+      {
+        "id": 346526,
+        "home": 263,
+        "away": 315,
+        "status": "AGENDADA"
+      },
+      {
+        "id": 346530,
+        "home": 282,
+        "away": 294,
+        "status": "AGENDADA"
+      },
+      {
+        "id": 346532,
+        "home": 293,
+        "away": 275,
+        "status": "AGENDADA"
+      }
+    ]
+  },
+  "round": {
+    "revision": "2",
+    "hash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+  },
+  "completeness": {
+    "eligible": false,
+    "reasons": [
+      "COMPLETENESS_NOT_PROVEN",
+      "OFFICIAL_ROUND_COMPLETION_NOT_PROVEN",
+      "OFFICIAL_MATCH_EVIDENCE_INVALID",
+      "COMPETITION_MATCH_SCOPE_UNPROVEN"
+    ],
+    "collectionId": 8,
+    "revision": "2",
+    "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+  },
+  "previews": [
+    {
+      "escalacaoId": 5,
+      "versaoEscalacao": 3,
+      "total": null,
+      "missing": [
+        147,
+        241,
+        246,
+        494,
+        498
+      ],
+      "substitutions": [],
+      "contributions": [],
+      "fontes": [
+        {
+          "catalogoAtletaId": 147,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "evidenciaAusencias": {
+        "eligible": false,
+        "reasons": [
+          "COMPLETENESS_NOT_PROVEN",
+          "OFFICIAL_ROUND_COMPLETION_NOT_PROVEN",
+          "OFFICIAL_MATCH_EVIDENCE_INVALID",
+          "COMPETITION_MATCH_SCOPE_UNPROVEN"
+        ],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+      },
+      "posicao": null
+    },
+    {
+      "escalacaoId": 6,
+      "versaoEscalacao": 4,
+      "total": null,
+      "missing": [
+        147,
+        241,
+        246,
+        494,
+        498
+      ],
+      "substitutions": [],
+      "contributions": [],
+      "fontes": [
+        {
+          "catalogoAtletaId": 147,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 573,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "evidenciaAusencias": {
+        "eligible": false,
+        "reasons": [
+          "COMPLETENESS_NOT_PROVEN",
+          "OFFICIAL_ROUND_COMPLETION_NOT_PROVEN",
+          "OFFICIAL_MATCH_EVIDENCE_INVALID",
+          "COMPETITION_MATCH_SCOPE_UNPROVEN"
+        ],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+      },
+      "posicao": null
+    },
+    {
+      "escalacaoId": 7,
+      "versaoEscalacao": 2,
+      "total": null,
+      "missing": [
+        246,
+        656
+      ],
+      "substitutions": [],
+      "contributions": [],
+      "fontes": [
+        {
+          "catalogoAtletaId": 163,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 188,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 394,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 396,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 403,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 407,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 615,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 617,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 656,
+          "origem": "INFORMACAO_AUSENTE"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "evidenciaAusencias": {
+        "eligible": false,
+        "reasons": [
+          "COMPLETENESS_NOT_PROVEN",
+          "OFFICIAL_ROUND_COMPLETION_NOT_PROVEN",
+          "OFFICIAL_MATCH_EVIDENCE_INVALID",
+          "COMPETITION_MATCH_SCOPE_UNPROVEN"
+        ],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435"
+      },
+      "posicao": null
+    }
+  ],
+  "writesPerformed": false,
+  "closuresPerformed": 0,
+  "migrationsApplied": 0,
+  "persistedResults": 0
+}

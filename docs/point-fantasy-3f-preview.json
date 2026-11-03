@@ -1,0 +1,1051 @@
+{
+  "date": "2026-10-23T17:07:20.102Z",
+  "database": "fantasy_point_do_jogador",
+  "mysqlVersion": "8.0.25",
+  "sourceRecords": 306,
+  "migrations": [
+    {
+      "name": "0031_point_fantasy_lineup_results",
+      "sha256": "2a38f6a1856c12792106be5573dd465246277bfd7e2662d36f37f12fcb9dbdd7",
+      "additive": true
+    },
+    {
+      "name": "0032_point_fantasy_closure_audit",
+      "sha256": "6967b83c7932cf4942b320cd9aa91435df0398924ac0208b05047af2630baeeb",
+      "additive": true
+    }
+  ],
+  "pending": [
+    "0031_point_fantasy_lineup_results",
+    "0032_point_fantasy_closure_audit"
+  ],
+  "activeAdmins": 1,
+  "lineups": [
+    {
+      "id": 5,
+      "nome": "#G2FKLZJ · chute de ouro 01",
+      "versao": 3,
+      "capitao": 494,
+      "atletas": [
+        {
+          "id": 738,
+          "nome": "Claudinho",
+          "cartolaId": 147192,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 494,
+          "nome": "Esquivel",
+          "cartolaId": 110668,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 449,
+          "nome": "Ferraresi",
+          "cartolaId": 105300,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 498,
+          "nome": "Léo",
+          "cartolaId": 85626,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 493,
+          "nome": "Mycael",
+          "cartolaId": 110698,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 200,
+          "nome": "Danilo",
+          "cartolaId": 107231,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 246,
+          "nome": "Bernard",
+          "cartolaId": 72460,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 626,
+          "nome": "Luiz Gustavo",
+          "cartolaId": 71536,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 510,
+          "nome": "Viveros",
+          "cartolaId": 143193,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 147,
+          "nome": "Arthur Cabral",
+          "cartolaId": 92171,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 243,
+          "nome": "Cuello",
+          "cartolaId": 98909,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 707,
+          "nome": "Eduardo Domínguez",
+          "cartolaId": 92747,
+          "papel": "TECNICO"
+        },
+        {
+          "id": 502,
+          "nome": "Leozinho",
+          "cartolaId": 123101,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 704,
+          "nome": "Medina",
+          "cartolaId": 109987,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 241,
+          "nome": "Lyanco",
+          "cartolaId": 92087,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 172,
+          "nome": "Gilberto",
+          "cartolaId": 80313,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 256,
+          "nome": "Gabriel Delfim",
+          "cartolaId": 115674,
+          "papel": "RESERVA"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "nome": "#G2FKLZJ · chute de ouro 02",
+      "versao": 4,
+      "capitao": 243,
+      "atletas": [
+        {
+          "id": 738,
+          "nome": "Claudinho",
+          "cartolaId": 147192,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 494,
+          "nome": "Esquivel",
+          "cartolaId": 110668,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 449,
+          "nome": "Ferraresi",
+          "cartolaId": 105300,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 498,
+          "nome": "Léo",
+          "cartolaId": 85626,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 493,
+          "nome": "Mycael",
+          "cartolaId": 110698,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 200,
+          "nome": "Danilo",
+          "cartolaId": 107231,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 246,
+          "nome": "Bernard",
+          "cartolaId": 72460,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 510,
+          "nome": "Viveros",
+          "cartolaId": 143193,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 147,
+          "nome": "Arthur Cabral",
+          "cartolaId": 92171,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 243,
+          "nome": "Cuello",
+          "cartolaId": 98909,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 573,
+          "nome": "Andreas Pereira",
+          "cartolaId": 89274,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 707,
+          "nome": "Eduardo Domínguez",
+          "cartolaId": 92747,
+          "papel": "TECNICO"
+        },
+        {
+          "id": 502,
+          "nome": "Leozinho",
+          "cartolaId": 123101,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 704,
+          "nome": "Medina",
+          "cartolaId": 109987,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 241,
+          "nome": "Lyanco",
+          "cartolaId": 92087,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 172,
+          "nome": "Gilberto",
+          "cartolaId": 80313,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 256,
+          "nome": "Gabriel Delfim",
+          "cartolaId": 115674,
+          "papel": "RESERVA"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "nome": "#G2FKLZJ · chute de ouro 03",
+      "versao": 2,
+      "capitao": 626,
+      "atletas": [
+        {
+          "id": 403,
+          "nome": "Flaco López",
+          "cartolaId": 113103,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 656,
+          "nome": "Vitor Roque",
+          "cartolaId": 114802,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 510,
+          "nome": "Viveros",
+          "cartolaId": 143193,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 200,
+          "nome": "Danilo",
+          "cartolaId": 107231,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 246,
+          "nome": "Bernard",
+          "cartolaId": 72460,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 626,
+          "nome": "Luiz Gustavo",
+          "cartolaId": 71536,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 396,
+          "nome": "Piquerez",
+          "cartolaId": 102130,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 188,
+          "nome": "Alex Telles",
+          "cartolaId": 72493,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 163,
+          "nome": "Alexander Barboza",
+          "cartolaId": 99274,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 407,
+          "nome": "Bruno Fuchs",
+          "cartolaId": 104085,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 394,
+          "nome": "Carlos Miguel",
+          "cartolaId": 104084,
+          "papel": "TITULAR"
+        },
+        {
+          "id": 707,
+          "nome": "Eduardo Domínguez",
+          "cartolaId": 92747,
+          "papel": "TECNICO"
+        },
+        {
+          "id": 493,
+          "nome": "Mycael",
+          "cartolaId": 110698,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 615,
+          "nome": "Bruno Pacheco",
+          "cartolaId": 90061,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 449,
+          "nome": "Ferraresi",
+          "cartolaId": 105300,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 704,
+          "nome": "Medina",
+          "cartolaId": 109987,
+          "papel": "RESERVA"
+        },
+        {
+          "id": 617,
+          "nome": "Breno Lopes",
+          "cartolaId": 93988,
+          "papel": "RESERVA"
+        }
+      ]
+    }
+  ],
+  "revision": "2",
+  "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+  "evidence": {
+    "eligible": true,
+    "reasons": [],
+    "collectionId": 8,
+    "revision": "2",
+    "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+    "historical": {
+      "collectionId": 3,
+      "snapshotId": 1,
+      "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+      "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+      "matchIds": [
+        346526,
+        346530,
+        346532
+      ]
+    }
+  },
+  "fechamentoDefinitivoEm": null,
+  "closureReadyAfterMigrations": true,
+  "results": [
+    {
+      "escalacaoId": 7,
+      "versaoEscalacao": 2,
+      "total": "85.51",
+      "missing": [],
+      "substitutions": [
+        {
+          "out": 246,
+          "in": 704,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "3.2",
+          "contribution": "3.2",
+          "saiu": "Bernard",
+          "entrou": "Medina"
+        },
+        {
+          "out": 656,
+          "in": 617,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "1.3",
+          "contribution": "1.3",
+          "saiu": "Vitor Roque",
+          "entrou": "Breno Lopes"
+        }
+      ],
+      "contributions": [
+        {
+          "starter": 707,
+          "athlete": 707,
+          "multiplier": 1,
+          "points": "9.01",
+          "titular": "Eduardo Domínguez",
+          "atleta": "Eduardo Domínguez"
+        },
+        {
+          "starter": 394,
+          "athlete": 394,
+          "multiplier": 1,
+          "points": "14.1",
+          "titular": "Carlos Miguel",
+          "atleta": "Carlos Miguel"
+        },
+        {
+          "starter": 188,
+          "athlete": 188,
+          "multiplier": 1,
+          "points": "7.6",
+          "titular": "Alex Telles",
+          "atleta": "Alex Telles"
+        },
+        {
+          "starter": 396,
+          "athlete": 396,
+          "multiplier": 1,
+          "points": "14.5",
+          "titular": "Piquerez",
+          "atleta": "Piquerez"
+        },
+        {
+          "starter": 163,
+          "athlete": 163,
+          "multiplier": 1,
+          "points": "9.2",
+          "titular": "Alexander Barboza",
+          "atleta": "Alexander Barboza"
+        },
+        {
+          "starter": 407,
+          "athlete": 407,
+          "multiplier": 1,
+          "points": "5.5",
+          "titular": "Bruno Fuchs",
+          "atleta": "Bruno Fuchs"
+        },
+        {
+          "starter": 200,
+          "athlete": 200,
+          "multiplier": 1,
+          "points": "2.7",
+          "titular": "Danilo",
+          "atleta": "Danilo"
+        },
+        {
+          "starter": 246,
+          "athlete": 704,
+          "multiplier": 1,
+          "points": "3.2",
+          "titular": "Bernard",
+          "atleta": "Medina"
+        },
+        {
+          "starter": 626,
+          "athlete": 626,
+          "multiplier": 2,
+          "points": "5",
+          "titular": "Luiz Gustavo",
+          "atleta": "Luiz Gustavo"
+        },
+        {
+          "starter": 403,
+          "athlete": 403,
+          "multiplier": 1,
+          "points": "11",
+          "titular": "Flaco López",
+          "atleta": "Flaco López"
+        },
+        {
+          "starter": 510,
+          "athlete": 510,
+          "multiplier": 1,
+          "points": "2.4",
+          "titular": "Viveros",
+          "atleta": "Viveros"
+        },
+        {
+          "starter": 656,
+          "athlete": 617,
+          "multiplier": 1,
+          "points": "1.3",
+          "titular": "Vitor Roque",
+          "atleta": "Breno Lopes"
+        }
+      ],
+      "fontes": [
+        {
+          "catalogoAtletaId": 163,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 188,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 394,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 396,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 403,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 407,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 615,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 617,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 656,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "evidenciaAusencias": {
+        "eligible": true,
+        "reasons": [],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+        "historical": {
+          "collectionId": 3,
+          "snapshotId": 1,
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ]
+        }
+      },
+      "posicao": 1,
+      "nome": "#G2FKLZJ · chute de ouro 03",
+      "somaConferida": "85.51"
+    },
+    {
+      "escalacaoId": 5,
+      "versaoEscalacao": 3,
+      "total": "34.41",
+      "missing": [],
+      "substitutions": [
+        {
+          "out": 494,
+          "in": 172,
+          "kind": "COMUM",
+          "multiplier": 2,
+          "officialPoints": "-0.2",
+          "contribution": "0",
+          "saiu": "Esquivel",
+          "entrou": "Gilberto"
+        },
+        {
+          "out": 246,
+          "in": 704,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "3.2",
+          "contribution": "3.2",
+          "saiu": "Bernard",
+          "entrou": "Medina"
+        },
+        {
+          "out": 147,
+          "in": 502,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "2.6",
+          "contribution": "2.6",
+          "saiu": "Arthur Cabral",
+          "entrou": "Leozinho"
+        }
+      ],
+      "contributions": [
+        {
+          "starter": 707,
+          "athlete": 707,
+          "multiplier": 1,
+          "points": "9.01",
+          "titular": "Eduardo Domínguez",
+          "atleta": "Eduardo Domínguez"
+        },
+        {
+          "starter": 493,
+          "athlete": 493,
+          "multiplier": 1,
+          "points": "-2",
+          "titular": "Mycael",
+          "atleta": "Mycael"
+        },
+        {
+          "starter": 494,
+          "athlete": 172,
+          "multiplier": 2,
+          "points": "0",
+          "titular": "Esquivel",
+          "atleta": "Gilberto"
+        },
+        {
+          "starter": 738,
+          "athlete": 738,
+          "multiplier": 1,
+          "points": "0",
+          "titular": "Claudinho",
+          "atleta": "Claudinho"
+        },
+        {
+          "starter": 449,
+          "athlete": 449,
+          "multiplier": 1,
+          "points": "13.5",
+          "titular": "Ferraresi",
+          "atleta": "Ferraresi"
+        },
+        {
+          "starter": 498,
+          "athlete": 498,
+          "multiplier": 1,
+          "points": "0",
+          "titular": "Léo",
+          "atleta": "Léo"
+        },
+        {
+          "starter": 200,
+          "athlete": 200,
+          "multiplier": 1,
+          "points": "2.7",
+          "titular": "Danilo",
+          "atleta": "Danilo"
+        },
+        {
+          "starter": 246,
+          "athlete": 704,
+          "multiplier": 1,
+          "points": "3.2",
+          "titular": "Bernard",
+          "atleta": "Medina"
+        },
+        {
+          "starter": 626,
+          "athlete": 626,
+          "multiplier": 1,
+          "points": "2.5",
+          "titular": "Luiz Gustavo",
+          "atleta": "Luiz Gustavo"
+        },
+        {
+          "starter": 147,
+          "athlete": 502,
+          "multiplier": 1,
+          "points": "2.6",
+          "titular": "Arthur Cabral",
+          "atleta": "Leozinho"
+        },
+        {
+          "starter": 243,
+          "athlete": 243,
+          "multiplier": 1,
+          "points": "0.5",
+          "titular": "Cuello",
+          "atleta": "Cuello"
+        },
+        {
+          "starter": 510,
+          "athlete": 510,
+          "multiplier": 1,
+          "points": "2.4",
+          "titular": "Viveros",
+          "atleta": "Viveros"
+        }
+      ],
+      "fontes": [
+        {
+          "catalogoAtletaId": 147,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "evidenciaAusencias": {
+        "eligible": true,
+        "reasons": [],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+        "historical": {
+          "collectionId": 3,
+          "snapshotId": 1,
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ]
+        }
+      },
+      "posicao": 2,
+      "nome": "#G2FKLZJ · chute de ouro 01",
+      "somaConferida": "34.41"
+    },
+    {
+      "escalacaoId": 6,
+      "versaoEscalacao": 4,
+      "total": "30.31",
+      "missing": [],
+      "substitutions": [
+        {
+          "out": 494,
+          "in": 172,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "-0.2",
+          "contribution": "0",
+          "saiu": "Esquivel",
+          "entrou": "Gilberto"
+        },
+        {
+          "out": 246,
+          "in": 704,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "3.2",
+          "contribution": "3.2",
+          "saiu": "Bernard",
+          "entrou": "Medina"
+        },
+        {
+          "out": 147,
+          "in": 502,
+          "kind": "COMUM",
+          "multiplier": 1,
+          "officialPoints": "2.6",
+          "contribution": "2.6",
+          "saiu": "Arthur Cabral",
+          "entrou": "Leozinho"
+        }
+      ],
+      "contributions": [
+        {
+          "starter": 707,
+          "athlete": 707,
+          "multiplier": 1,
+          "points": "9.01",
+          "titular": "Eduardo Domínguez",
+          "atleta": "Eduardo Domínguez"
+        },
+        {
+          "starter": 493,
+          "athlete": 493,
+          "multiplier": 1,
+          "points": "-2",
+          "titular": "Mycael",
+          "atleta": "Mycael"
+        },
+        {
+          "starter": 494,
+          "athlete": 172,
+          "multiplier": 1,
+          "points": "0",
+          "titular": "Esquivel",
+          "atleta": "Gilberto"
+        },
+        {
+          "starter": 738,
+          "athlete": 738,
+          "multiplier": 1,
+          "points": "0",
+          "titular": "Claudinho",
+          "atleta": "Claudinho"
+        },
+        {
+          "starter": 449,
+          "athlete": 449,
+          "multiplier": 1,
+          "points": "13.5",
+          "titular": "Ferraresi",
+          "atleta": "Ferraresi"
+        },
+        {
+          "starter": 498,
+          "athlete": 498,
+          "multiplier": 1,
+          "points": "0",
+          "titular": "Léo",
+          "atleta": "Léo"
+        },
+        {
+          "starter": 200,
+          "athlete": 200,
+          "multiplier": 1,
+          "points": "2.7",
+          "titular": "Danilo",
+          "atleta": "Danilo"
+        },
+        {
+          "starter": 246,
+          "athlete": 704,
+          "multiplier": 1,
+          "points": "3.2",
+          "titular": "Bernard",
+          "atleta": "Medina"
+        },
+        {
+          "starter": 573,
+          "athlete": 573,
+          "multiplier": 1,
+          "points": "-2.1",
+          "titular": "Andreas Pereira",
+          "atleta": "Andreas Pereira"
+        },
+        {
+          "starter": 147,
+          "athlete": 502,
+          "multiplier": 1,
+          "points": "2.6",
+          "titular": "Arthur Cabral",
+          "atleta": "Leozinho"
+        },
+        {
+          "starter": 243,
+          "athlete": 243,
+          "multiplier": 2,
+          "points": "1",
+          "titular": "Cuello",
+          "atleta": "Cuello"
+        },
+        {
+          "starter": 510,
+          "athlete": 510,
+          "multiplier": 1,
+          "points": "2.4",
+          "titular": "Viveros",
+          "atleta": "Viveros"
+        }
+      ],
+      "fontes": [
+        {
+          "catalogoAtletaId": 147,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "origem": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 573,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "origem": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "origem": "REGISTRO_OFICIAL"
+        }
+      ],
+      "evidenciaAusencias": {
+        "eligible": true,
+        "reasons": [],
+        "collectionId": 8,
+        "revision": "2",
+        "sourceHash": "125a24de4479be5b5f37013a1370e2630465f40186d89686dab708b36bbef435",
+        "historical": {
+          "collectionId": 3,
+          "snapshotId": 1,
+          "scorePayloadHash": "351d4cabdac15af4b02436da44ff2b01800fbed56e5249837826d81ec9be6687",
+          "matchPayloadHash": "976f3db71fd3d6cb8bc3b5dcf3ab437563a7a5faca7988979973ab67d3f3f633",
+          "matchIds": [
+            346526,
+            346530,
+            346532
+          ]
+        }
+      },
+      "posicao": 3,
+      "nome": "#G2FKLZJ · chute de ouro 02",
+      "somaConferida": "30.31"
+    }
+  ],
+  "databaseWrites": 0
+}

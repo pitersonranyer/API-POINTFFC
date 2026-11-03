@@ -1,0 +1,3133 @@
+{
+  "verifiedAt": "2026-10-23T18:43:37.893Z",
+  "database": "fantasy_point_do_jogador",
+  "unchangedFingerprint": "e3961ff6bde6c7325638aa7d44cb3a508f42d9c9f469a33192e429c85899cf89",
+  "meusTimes": {
+    "identidade": {
+      "nomeBase": "chute de ouro",
+      "identificadorPublico": "G2FKLZJ",
+      "ultimoSequencial": 3
+    },
+    "estadoIdentidade": "DEFINIDA",
+    "rascunhosLegados": 0,
+    "items": [
+      {
+        "id": 7,
+        "competicaoId": 1,
+        "status": "INSCRITA",
+        "versao": 2,
+        "confirmadaEm": "2026-10-17T20:33:43.046Z",
+        "nomePublico": "#G2FKLZJ · chute de ouro 03",
+        "sequencial": 3,
+        "legado": false,
+        "identidade": {
+          "nomeBase": "chute de ouro",
+          "identificadorPublico": "G2FKLZJ",
+          "ultimoSequencial": 3
+        },
+        "criadoEm": "2026-10-17T20:33:42.575Z",
+        "atualizadoEm": "2026-10-17T20:33:43.106Z",
+        "formacao": "4-3-3",
+        "titulares": [
+          403,
+          656,
+          510,
+          200,
+          246,
+          626,
+          396,
+          188,
+          163,
+          407,
+          394
+        ],
+        "tecnico": 707,
+        "reservas": [
+          493,
+          615,
+          449,
+          704,
+          617
+        ],
+        "capitaoAtletaId": 626,
+        "reservaMagoAtletaId": 617,
+        "atletas": [
+          {
+            "catalogoAtletaId": 403,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 403,
+              "catalogoId": 3,
+              "atletaIdExterno": 113103,
+              "clubeIdExterno": 275,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Flaco López",
+              "precoCartola": "13.41",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 656,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 656,
+              "catalogoId": 3,
+              "atletaIdExterno": 114802,
+              "clubeIdExterno": 275,
+              "posicaoId": 5,
+              "statusId": 2,
+              "apelido": "Vitor Roque",
+              "precoCartola": "14.81",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 510,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 510,
+              "catalogoId": 3,
+              "atletaIdExterno": 143193,
+              "clubeIdExterno": 293,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Viveros",
+              "precoCartola": "14.96",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 200,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 200,
+              "catalogoId": 3,
+              "atletaIdExterno": 107231,
+              "clubeIdExterno": 263,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Danilo",
+              "precoCartola": "14.18",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 246,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 246,
+              "catalogoId": 3,
+              "atletaIdExterno": 72460,
+              "clubeIdExterno": 282,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Bernard",
+              "precoCartola": "6.34",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 626,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 626,
+              "catalogoId": 3,
+              "atletaIdExterno": 71536,
+              "clubeIdExterno": 293,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Luiz Gustavo",
+              "precoCartola": "7.41",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 396,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 396,
+              "catalogoId": 3,
+              "atletaIdExterno": 102130,
+              "clubeIdExterno": 275,
+              "posicaoId": 2,
+              "statusId": 7,
+              "apelido": "Piquerez",
+              "precoCartola": "10.65",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 188,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 188,
+              "catalogoId": 3,
+              "atletaIdExterno": 72493,
+              "clubeIdExterno": 263,
+              "posicaoId": 2,
+              "statusId": 7,
+              "apelido": "Alex Telles",
+              "precoCartola": "9.42",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 163,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 163,
+              "catalogoId": 3,
+              "atletaIdExterno": 99274,
+              "clubeIdExterno": 275,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Alexander Barboza",
+              "precoCartola": "11.4",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 407,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 407,
+              "catalogoId": 3,
+              "atletaIdExterno": 104085,
+              "clubeIdExterno": 275,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Bruno Fuchs",
+              "precoCartola": "7.21",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 394,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 394,
+              "catalogoId": 3,
+              "atletaIdExterno": 104084,
+              "clubeIdExterno": 275,
+              "posicaoId": 1,
+              "statusId": 7,
+              "apelido": "Carlos Miguel",
+              "precoCartola": "8.13",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 707,
+            "papel": "TECNICO",
+            "atleta": {
+              "id": 707,
+              "catalogoId": 3,
+              "atletaIdExterno": 92747,
+              "clubeIdExterno": 282,
+              "posicaoId": 6,
+              "statusId": 7,
+              "apelido": "Eduardo Domínguez",
+              "precoCartola": "10.38",
+              "categoriaId": null,
+              "pointcoins": 10
+            }
+          },
+          {
+            "catalogoAtletaId": 493,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 493,
+              "catalogoId": 3,
+              "atletaIdExterno": 110698,
+              "clubeIdExterno": 293,
+              "posicaoId": 1,
+              "statusId": 7,
+              "apelido": "Mycael",
+              "precoCartola": "9.53",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 615,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 615,
+              "catalogoId": 3,
+              "atletaIdExterno": 90061,
+              "clubeIdExterno": 315,
+              "posicaoId": 2,
+              "statusId": 7,
+              "apelido": "Bruno Pacheco",
+              "precoCartola": "6.92",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 449,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 449,
+              "catalogoId": 3,
+              "atletaIdExterno": 105300,
+              "clubeIdExterno": 263,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Ferraresi",
+              "precoCartola": "6.49",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 704,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 704,
+              "catalogoId": 3,
+              "atletaIdExterno": 109987,
+              "clubeIdExterno": 263,
+              "posicaoId": 4,
+              "statusId": 2,
+              "apelido": "Medina",
+              "precoCartola": "7.78",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 617,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 617,
+              "catalogoId": 3,
+              "atletaIdExterno": 93988,
+              "clubeIdExterno": 294,
+              "posicaoId": 5,
+              "statusId": 2,
+              "apelido": "Breno Lopes",
+              "precoCartola": "8.22",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          }
+        ],
+        "validacao": {
+          "completa": true,
+          "pendencias": []
+        },
+        "resultado": {
+          "pontuacao": "85.51",
+          "estadoPontuacao": "PARCIAL",
+          "revisao": "2",
+          "atualizadoEm": "2026-10-23T17:21:54.053Z",
+          "posicao": 1
+        }
+      },
+      {
+        "id": 6,
+        "competicaoId": 1,
+        "status": "INSCRITA",
+        "versao": 4,
+        "confirmadaEm": "2026-10-16T20:28:16.001Z",
+        "nomePublico": "#G2FKLZJ · chute de ouro 02",
+        "sequencial": 2,
+        "legado": false,
+        "identidade": {
+          "nomeBase": "chute de ouro",
+          "identificadorPublico": "G2FKLZJ",
+          "ultimoSequencial": 3
+        },
+        "criadoEm": "2026-10-16T18:07:18.694Z",
+        "atualizadoEm": "2026-10-17T20:16:40.157Z",
+        "formacao": "4-3-3",
+        "titulares": [
+          738,
+          494,
+          449,
+          498,
+          493,
+          200,
+          246,
+          510,
+          147,
+          243,
+          573
+        ],
+        "tecnico": 707,
+        "reservas": [
+          502,
+          704,
+          241,
+          172,
+          256
+        ],
+        "capitaoAtletaId": 243,
+        "reservaMagoAtletaId": 502,
+        "atletas": [
+          {
+            "catalogoAtletaId": 738,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 738,
+              "catalogoId": 3,
+              "atletaIdExterno": 147192,
+              "clubeIdExterno": 293,
+              "posicaoId": 2,
+              "statusId": 2,
+              "apelido": "Claudinho",
+              "precoCartola": "6.33",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 494,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 494,
+              "catalogoId": 3,
+              "atletaIdExterno": 110668,
+              "clubeIdExterno": 293,
+              "posicaoId": 2,
+              "statusId": 2,
+              "apelido": "Esquivel",
+              "precoCartola": "6.9",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 449,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 449,
+              "catalogoId": 3,
+              "atletaIdExterno": 105300,
+              "clubeIdExterno": 263,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Ferraresi",
+              "precoCartola": "6.49",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 498,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 498,
+              "catalogoId": 3,
+              "atletaIdExterno": 85626,
+              "clubeIdExterno": 293,
+              "posicaoId": 3,
+              "statusId": 2,
+              "apelido": "Léo",
+              "precoCartola": "6.13",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 493,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 493,
+              "catalogoId": 3,
+              "atletaIdExterno": 110698,
+              "clubeIdExterno": 293,
+              "posicaoId": 1,
+              "statusId": 7,
+              "apelido": "Mycael",
+              "precoCartola": "9.53",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 200,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 200,
+              "catalogoId": 3,
+              "atletaIdExterno": 107231,
+              "clubeIdExterno": 263,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Danilo",
+              "precoCartola": "14.18",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 246,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 246,
+              "catalogoId": 3,
+              "atletaIdExterno": 72460,
+              "clubeIdExterno": 282,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Bernard",
+              "precoCartola": "6.34",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 510,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 510,
+              "catalogoId": 3,
+              "atletaIdExterno": 143193,
+              "clubeIdExterno": 293,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Viveros",
+              "precoCartola": "14.96",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 147,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 147,
+              "catalogoId": 3,
+              "atletaIdExterno": 92171,
+              "clubeIdExterno": 263,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Arthur Cabral",
+              "precoCartola": "9.05",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 243,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 243,
+              "catalogoId": 3,
+              "atletaIdExterno": 98909,
+              "clubeIdExterno": 282,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Cuello",
+              "precoCartola": "9.41",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 573,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 573,
+              "catalogoId": 3,
+              "atletaIdExterno": 89274,
+              "clubeIdExterno": 275,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Andreas Pereira",
+              "precoCartola": "11.79",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 707,
+            "papel": "TECNICO",
+            "atleta": {
+              "id": 707,
+              "catalogoId": 3,
+              "atletaIdExterno": 92747,
+              "clubeIdExterno": 282,
+              "posicaoId": 6,
+              "statusId": 7,
+              "apelido": "Eduardo Domínguez",
+              "precoCartola": "10.38",
+              "categoriaId": null,
+              "pointcoins": 10
+            }
+          },
+          {
+            "catalogoAtletaId": 502,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 502,
+              "catalogoId": 3,
+              "atletaIdExterno": 123101,
+              "clubeIdExterno": 293,
+              "posicaoId": 5,
+              "statusId": 2,
+              "apelido": "Leozinho",
+              "precoCartola": "7.54",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 704,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 704,
+              "catalogoId": 3,
+              "atletaIdExterno": 109987,
+              "clubeIdExterno": 263,
+              "posicaoId": 4,
+              "statusId": 2,
+              "apelido": "Medina",
+              "precoCartola": "7.78",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 241,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 241,
+              "catalogoId": 3,
+              "atletaIdExterno": 92087,
+              "clubeIdExterno": 282,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Lyanco",
+              "precoCartola": "8.7",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 172,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 172,
+              "catalogoId": 3,
+              "atletaIdExterno": 80313,
+              "clubeIdExterno": 293,
+              "posicaoId": 2,
+              "statusId": 7,
+              "apelido": "Gilberto",
+              "precoCartola": "8.1",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 256,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 256,
+              "catalogoId": 3,
+              "atletaIdExterno": 115674,
+              "clubeIdExterno": 282,
+              "posicaoId": 1,
+              "statusId": 7,
+              "apelido": "Gabriel Delfim",
+              "precoCartola": "3.25",
+              "categoriaId": 1,
+              "pointcoins": 10
+            }
+          }
+        ],
+        "validacao": {
+          "completa": true,
+          "pendencias": []
+        },
+        "resultado": {
+          "pontuacao": "30.31",
+          "estadoPontuacao": "PARCIAL",
+          "revisao": "2",
+          "atualizadoEm": "2026-10-23T17:21:54.073Z",
+          "posicao": 3
+        }
+      },
+      {
+        "id": 5,
+        "competicaoId": 1,
+        "status": "INSCRITA",
+        "versao": 3,
+        "confirmadaEm": "2026-10-16T20:28:16.001Z",
+        "nomePublico": "#G2FKLZJ · chute de ouro 01",
+        "sequencial": 1,
+        "legado": false,
+        "identidade": {
+          "nomeBase": "chute de ouro",
+          "identificadorPublico": "G2FKLZJ",
+          "ultimoSequencial": 3
+        },
+        "criadoEm": "2026-10-16T18:06:23.260Z",
+        "atualizadoEm": "2026-10-16T20:28:16.393Z",
+        "formacao": "4-3-3",
+        "titulares": [
+          738,
+          494,
+          449,
+          498,
+          493,
+          200,
+          246,
+          626,
+          510,
+          147,
+          243
+        ],
+        "tecnico": 707,
+        "reservas": [
+          502,
+          704,
+          241,
+          172,
+          256
+        ],
+        "capitaoAtletaId": 494,
+        "reservaMagoAtletaId": 502,
+        "atletas": [
+          {
+            "catalogoAtletaId": 738,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 738,
+              "catalogoId": 3,
+              "atletaIdExterno": 147192,
+              "clubeIdExterno": 293,
+              "posicaoId": 2,
+              "statusId": 2,
+              "apelido": "Claudinho",
+              "precoCartola": "6.33",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 494,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 494,
+              "catalogoId": 3,
+              "atletaIdExterno": 110668,
+              "clubeIdExterno": 293,
+              "posicaoId": 2,
+              "statusId": 2,
+              "apelido": "Esquivel",
+              "precoCartola": "6.9",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 449,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 449,
+              "catalogoId": 3,
+              "atletaIdExterno": 105300,
+              "clubeIdExterno": 263,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Ferraresi",
+              "precoCartola": "6.49",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 498,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 498,
+              "catalogoId": 3,
+              "atletaIdExterno": 85626,
+              "clubeIdExterno": 293,
+              "posicaoId": 3,
+              "statusId": 2,
+              "apelido": "Léo",
+              "precoCartola": "6.13",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 493,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 493,
+              "catalogoId": 3,
+              "atletaIdExterno": 110698,
+              "clubeIdExterno": 293,
+              "posicaoId": 1,
+              "statusId": 7,
+              "apelido": "Mycael",
+              "precoCartola": "9.53",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 200,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 200,
+              "catalogoId": 3,
+              "atletaIdExterno": 107231,
+              "clubeIdExterno": 263,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Danilo",
+              "precoCartola": "14.18",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 246,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 246,
+              "catalogoId": 3,
+              "atletaIdExterno": 72460,
+              "clubeIdExterno": 282,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Bernard",
+              "precoCartola": "6.34",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 626,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 626,
+              "catalogoId": 3,
+              "atletaIdExterno": 71536,
+              "clubeIdExterno": 293,
+              "posicaoId": 4,
+              "statusId": 7,
+              "apelido": "Luiz Gustavo",
+              "precoCartola": "7.41",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 510,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 510,
+              "catalogoId": 3,
+              "atletaIdExterno": 143193,
+              "clubeIdExterno": 293,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Viveros",
+              "precoCartola": "14.96",
+              "categoriaId": 3,
+              "pointcoins": 30
+            }
+          },
+          {
+            "catalogoAtletaId": 147,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 147,
+              "catalogoId": 3,
+              "atletaIdExterno": 92171,
+              "clubeIdExterno": 263,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Arthur Cabral",
+              "precoCartola": "9.05",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 243,
+            "papel": "TITULAR",
+            "atleta": {
+              "id": 243,
+              "catalogoId": 3,
+              "atletaIdExterno": 98909,
+              "clubeIdExterno": 282,
+              "posicaoId": 5,
+              "statusId": 7,
+              "apelido": "Cuello",
+              "precoCartola": "9.41",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 707,
+            "papel": "TECNICO",
+            "atleta": {
+              "id": 707,
+              "catalogoId": 3,
+              "atletaIdExterno": 92747,
+              "clubeIdExterno": 282,
+              "posicaoId": 6,
+              "statusId": 7,
+              "apelido": "Eduardo Domínguez",
+              "precoCartola": "10.38",
+              "categoriaId": null,
+              "pointcoins": 10
+            }
+          },
+          {
+            "catalogoAtletaId": 502,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 502,
+              "catalogoId": 3,
+              "atletaIdExterno": 123101,
+              "clubeIdExterno": 293,
+              "posicaoId": 5,
+              "statusId": 2,
+              "apelido": "Leozinho",
+              "precoCartola": "7.54",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 704,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 704,
+              "catalogoId": 3,
+              "atletaIdExterno": 109987,
+              "clubeIdExterno": 263,
+              "posicaoId": 4,
+              "statusId": 2,
+              "apelido": "Medina",
+              "precoCartola": "7.78",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 241,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 241,
+              "catalogoId": 3,
+              "atletaIdExterno": 92087,
+              "clubeIdExterno": 282,
+              "posicaoId": 3,
+              "statusId": 7,
+              "apelido": "Lyanco",
+              "precoCartola": "8.7",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 172,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 172,
+              "catalogoId": 3,
+              "atletaIdExterno": 80313,
+              "clubeIdExterno": 293,
+              "posicaoId": 2,
+              "statusId": 7,
+              "apelido": "Gilberto",
+              "precoCartola": "8.1",
+              "categoriaId": 2,
+              "pointcoins": 20
+            }
+          },
+          {
+            "catalogoAtletaId": 256,
+            "papel": "RESERVA",
+            "atleta": {
+              "id": 256,
+              "catalogoId": 3,
+              "atletaIdExterno": 115674,
+              "clubeIdExterno": 282,
+              "posicaoId": 1,
+              "statusId": 7,
+              "apelido": "Gabriel Delfim",
+              "precoCartola": "3.25",
+              "categoriaId": 1,
+              "pointcoins": 10
+            }
+          }
+        ],
+        "validacao": {
+          "completa": true,
+          "pendencias": []
+        },
+        "resultado": {
+          "pontuacao": "34.41",
+          "estadoPontuacao": "PARCIAL",
+          "revisao": "2",
+          "atualizadoEm": "2026-10-23T17:21:54.068Z",
+          "posicao": 2
+        }
+      }
+    ],
+    "total": 3,
+    "page": 1,
+    "limit": 50
+  },
+  "escalacao5": {
+    "id": 5,
+    "competicaoId": 1,
+    "status": "INSCRITA",
+    "versao": 3,
+    "confirmadaEm": "2026-10-16T20:28:16.001Z",
+    "nomePublico": "#G2FKLZJ · chute de ouro 01",
+    "sequencial": 1,
+    "legado": false,
+    "identidade": {
+      "nomeBase": "chute de ouro",
+      "identificadorPublico": "G2FKLZJ",
+      "ultimoSequencial": 3
+    },
+    "criadoEm": "2026-10-16T18:06:23.260Z",
+    "atualizadoEm": "2026-10-16T20:28:16.393Z",
+    "formacao": "4-3-3",
+    "titulares": [
+      738,
+      494,
+      449,
+      498,
+      493,
+      200,
+      246,
+      626,
+      510,
+      147,
+      243
+    ],
+    "tecnico": 707,
+    "reservas": [
+      502,
+      704,
+      241,
+      172,
+      256
+    ],
+    "capitaoAtletaId": 494,
+    "reservaMagoAtletaId": 502,
+    "atletas": [
+      {
+        "catalogoAtletaId": 738,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 738,
+          "catalogoId": 3,
+          "atletaIdExterno": 147192,
+          "clubeIdExterno": 293,
+          "posicaoId": 2,
+          "statusId": 2,
+          "apelido": "Claudinho",
+          "precoCartola": "6.33",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 494,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 494,
+          "catalogoId": 3,
+          "atletaIdExterno": 110668,
+          "clubeIdExterno": 293,
+          "posicaoId": 2,
+          "statusId": 2,
+          "apelido": "Esquivel",
+          "precoCartola": "6.9",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 449,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 449,
+          "catalogoId": 3,
+          "atletaIdExterno": 105300,
+          "clubeIdExterno": 263,
+          "posicaoId": 3,
+          "statusId": 7,
+          "apelido": "Ferraresi",
+          "precoCartola": "6.49",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 498,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 498,
+          "catalogoId": 3,
+          "atletaIdExterno": 85626,
+          "clubeIdExterno": 293,
+          "posicaoId": 3,
+          "statusId": 2,
+          "apelido": "Léo",
+          "precoCartola": "6.13",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 493,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 493,
+          "catalogoId": 3,
+          "atletaIdExterno": 110698,
+          "clubeIdExterno": 293,
+          "posicaoId": 1,
+          "statusId": 7,
+          "apelido": "Mycael",
+          "precoCartola": "9.53",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 200,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 200,
+          "catalogoId": 3,
+          "atletaIdExterno": 107231,
+          "clubeIdExterno": 263,
+          "posicaoId": 4,
+          "statusId": 7,
+          "apelido": "Danilo",
+          "precoCartola": "14.18",
+          "categoriaId": 3,
+          "pointcoins": 30
+        }
+      },
+      {
+        "catalogoAtletaId": 246,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 246,
+          "catalogoId": 3,
+          "atletaIdExterno": 72460,
+          "clubeIdExterno": 282,
+          "posicaoId": 4,
+          "statusId": 7,
+          "apelido": "Bernard",
+          "precoCartola": "6.34",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 626,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 626,
+          "catalogoId": 3,
+          "atletaIdExterno": 71536,
+          "clubeIdExterno": 293,
+          "posicaoId": 4,
+          "statusId": 7,
+          "apelido": "Luiz Gustavo",
+          "precoCartola": "7.41",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 510,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 510,
+          "catalogoId": 3,
+          "atletaIdExterno": 143193,
+          "clubeIdExterno": 293,
+          "posicaoId": 5,
+          "statusId": 7,
+          "apelido": "Viveros",
+          "precoCartola": "14.96",
+          "categoriaId": 3,
+          "pointcoins": 30
+        }
+      },
+      {
+        "catalogoAtletaId": 147,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 147,
+          "catalogoId": 3,
+          "atletaIdExterno": 92171,
+          "clubeIdExterno": 263,
+          "posicaoId": 5,
+          "statusId": 7,
+          "apelido": "Arthur Cabral",
+          "precoCartola": "9.05",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 243,
+        "papel": "TITULAR",
+        "atleta": {
+          "id": 243,
+          "catalogoId": 3,
+          "atletaIdExterno": 98909,
+          "clubeIdExterno": 282,
+          "posicaoId": 5,
+          "statusId": 7,
+          "apelido": "Cuello",
+          "precoCartola": "9.41",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 707,
+        "papel": "TECNICO",
+        "atleta": {
+          "id": 707,
+          "catalogoId": 3,
+          "atletaIdExterno": 92747,
+          "clubeIdExterno": 282,
+          "posicaoId": 6,
+          "statusId": 7,
+          "apelido": "Eduardo Domínguez",
+          "precoCartola": "10.38",
+          "categoriaId": null,
+          "pointcoins": 10
+        }
+      },
+      {
+        "catalogoAtletaId": 502,
+        "papel": "RESERVA",
+        "atleta": {
+          "id": 502,
+          "catalogoId": 3,
+          "atletaIdExterno": 123101,
+          "clubeIdExterno": 293,
+          "posicaoId": 5,
+          "statusId": 2,
+          "apelido": "Leozinho",
+          "precoCartola": "7.54",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 704,
+        "papel": "RESERVA",
+        "atleta": {
+          "id": 704,
+          "catalogoId": 3,
+          "atletaIdExterno": 109987,
+          "clubeIdExterno": 263,
+          "posicaoId": 4,
+          "statusId": 2,
+          "apelido": "Medina",
+          "precoCartola": "7.78",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 241,
+        "papel": "RESERVA",
+        "atleta": {
+          "id": 241,
+          "catalogoId": 3,
+          "atletaIdExterno": 92087,
+          "clubeIdExterno": 282,
+          "posicaoId": 3,
+          "statusId": 7,
+          "apelido": "Lyanco",
+          "precoCartola": "8.7",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 172,
+        "papel": "RESERVA",
+        "atleta": {
+          "id": 172,
+          "catalogoId": 3,
+          "atletaIdExterno": 80313,
+          "clubeIdExterno": 293,
+          "posicaoId": 2,
+          "statusId": 7,
+          "apelido": "Gilberto",
+          "precoCartola": "8.1",
+          "categoriaId": 2,
+          "pointcoins": 20
+        }
+      },
+      {
+        "catalogoAtletaId": 256,
+        "papel": "RESERVA",
+        "atleta": {
+          "id": 256,
+          "catalogoId": 3,
+          "atletaIdExterno": 115674,
+          "clubeIdExterno": 282,
+          "posicaoId": 1,
+          "statusId": 7,
+          "apelido": "Gabriel Delfim",
+          "precoCartola": "3.25",
+          "categoriaId": 1,
+          "pointcoins": 10
+        }
+      }
+    ],
+    "validacao": {
+      "completa": true,
+      "pendencias": []
+    },
+    "resultado": {
+      "pontuacao": "34.41",
+      "estadoPontuacao": "PARCIAL",
+      "revisao": "2",
+      "atualizadoEm": "2026-10-23T17:21:54.068Z",
+      "posicao": 2,
+      "capitaoOriginalAtletaId": 494,
+      "capitaoEfetivoAtletaId": 172,
+      "reservaMagoAtletaId": 502,
+      "reservasUtilizados": [
+        172,
+        704,
+        502
+      ],
+      "titularesSubstituidos": [
+        494,
+        246,
+        147
+      ],
+      "contribuicoes": [
+        {
+          "titularOriginalAtletaId": 707,
+          "catalogoAtletaId": 707,
+          "pontuacaoContabilizada": "9.01",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 493,
+          "catalogoAtletaId": 493,
+          "pontuacaoContabilizada": "-2",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 494,
+          "catalogoAtletaId": 172,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 2
+        },
+        {
+          "titularOriginalAtletaId": 738,
+          "catalogoAtletaId": 738,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 449,
+          "catalogoAtletaId": 449,
+          "pontuacaoContabilizada": "13.5",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 498,
+          "catalogoAtletaId": 498,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 200,
+          "catalogoAtletaId": 200,
+          "pontuacaoContabilizada": "2.7",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 246,
+          "catalogoAtletaId": 704,
+          "pontuacaoContabilizada": "3.2",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 626,
+          "catalogoAtletaId": 626,
+          "pontuacaoContabilizada": "2.5",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 147,
+          "catalogoAtletaId": 502,
+          "pontuacaoContabilizada": "2.6",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 243,
+          "catalogoAtletaId": 243,
+          "pontuacaoContabilizada": "0.5",
+          "multiplicador": 1
+        },
+        {
+          "titularOriginalAtletaId": 510,
+          "catalogoAtletaId": 510,
+          "pontuacaoContabilizada": "2.4",
+          "multiplicador": 1
+        }
+      ],
+      "atletas": [
+        {
+          "catalogoAtletaId": 147,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": null,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": false,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": false,
+          "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 172,
+          "papelOriginal": "RESERVA",
+          "pontuacaoOficial": "-0.2",
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 2,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": true,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": true,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 200,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "2.7",
+          "pontuacaoContabilizada": "2.7",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 241,
+          "papelOriginal": "RESERVA",
+          "pontuacaoOficial": null,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": false,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": false,
+          "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 243,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "0.5",
+          "pontuacaoContabilizada": "0.5",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 246,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": null,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": false,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": false,
+          "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 256,
+          "papelOriginal": "RESERVA",
+          "pontuacaoOficial": "8.9",
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": false,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 449,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "13.5",
+          "pontuacaoContabilizada": "13.5",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 493,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "-2",
+          "pontuacaoContabilizada": "-2",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 494,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": null,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": false,
+          "capitaoOriginal": true,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": false,
+          "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 498,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": null,
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": false,
+          "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+        },
+        {
+          "catalogoAtletaId": 502,
+          "papelOriginal": "RESERVA",
+          "pontuacaoOficial": "2.6",
+          "pontuacaoContabilizada": "2.6",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": true,
+          "reservaUtilizado": true,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 510,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "2.4",
+          "pontuacaoContabilizada": "2.4",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 626,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "2.5",
+          "pontuacaoContabilizada": "2.5",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 704,
+          "papelOriginal": "RESERVA",
+          "pontuacaoOficial": "3.2",
+          "pontuacaoContabilizada": "3.2",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": true,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 707,
+          "papelOriginal": "TECNICO",
+          "pontuacaoOficial": "9.01",
+          "pontuacaoContabilizada": "9.01",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        },
+        {
+          "catalogoAtletaId": 738,
+          "papelOriginal": "TITULAR",
+          "pontuacaoOficial": "0",
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 1,
+          "titularEfetivo": true,
+          "capitaoOriginal": false,
+          "capitaoEfetivo": false,
+          "reservaMagoDesignado": false,
+          "reservaUtilizado": false,
+          "utilizadoComoMago": false,
+          "entrouEmCampo": true,
+          "origemParticipacao": "REGISTRO_OFICIAL"
+        }
+      ],
+      "substituicoes": [
+        {
+          "titularSaiuId": 494,
+          "reservaEntrouId": 172,
+          "regra": "COMUM",
+          "pontuacaoOficial": "-0.2",
+          "pontuacaoContabilizada": "0",
+          "multiplicador": 2,
+          "herdouCapitao": true
+        },
+        {
+          "titularSaiuId": 246,
+          "reservaEntrouId": 704,
+          "regra": "COMUM",
+          "pontuacaoOficial": "3.2",
+          "pontuacaoContabilizada": "3.2",
+          "multiplicador": 1,
+          "herdouCapitao": false
+        },
+        {
+          "titularSaiuId": 147,
+          "reservaEntrouId": 502,
+          "regra": "COMUM",
+          "pontuacaoOficial": "2.6",
+          "pontuacaoContabilizada": "2.6",
+          "multiplicador": 1,
+          "herdouCapitao": false
+        }
+      ]
+    }
+  },
+  "outrasEscalacoes": [
+    {
+      "id": 6,
+      "competicaoId": 1,
+      "status": "INSCRITA",
+      "versao": 4,
+      "confirmadaEm": "2026-10-16T20:28:16.001Z",
+      "nomePublico": "#G2FKLZJ · chute de ouro 02",
+      "sequencial": 2,
+      "legado": false,
+      "identidade": {
+        "nomeBase": "chute de ouro",
+        "identificadorPublico": "G2FKLZJ",
+        "ultimoSequencial": 3
+      },
+      "criadoEm": "2026-10-16T18:07:18.694Z",
+      "atualizadoEm": "2026-10-17T20:16:40.157Z",
+      "formacao": "4-3-3",
+      "titulares": [
+        738,
+        494,
+        449,
+        498,
+        493,
+        200,
+        246,
+        510,
+        147,
+        243,
+        573
+      ],
+      "tecnico": 707,
+      "reservas": [
+        502,
+        704,
+        241,
+        172,
+        256
+      ],
+      "capitaoAtletaId": 243,
+      "reservaMagoAtletaId": 502,
+      "atletas": [
+        {
+          "catalogoAtletaId": 738,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 738,
+            "catalogoId": 3,
+            "atletaIdExterno": 147192,
+            "clubeIdExterno": 293,
+            "posicaoId": 2,
+            "statusId": 2,
+            "apelido": "Claudinho",
+            "precoCartola": "6.33",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 494,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 494,
+            "catalogoId": 3,
+            "atletaIdExterno": 110668,
+            "clubeIdExterno": 293,
+            "posicaoId": 2,
+            "statusId": 2,
+            "apelido": "Esquivel",
+            "precoCartola": "6.9",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 449,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 449,
+            "catalogoId": 3,
+            "atletaIdExterno": 105300,
+            "clubeIdExterno": 263,
+            "posicaoId": 3,
+            "statusId": 7,
+            "apelido": "Ferraresi",
+            "precoCartola": "6.49",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 498,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 498,
+            "catalogoId": 3,
+            "atletaIdExterno": 85626,
+            "clubeIdExterno": 293,
+            "posicaoId": 3,
+            "statusId": 2,
+            "apelido": "Léo",
+            "precoCartola": "6.13",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 493,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 493,
+            "catalogoId": 3,
+            "atletaIdExterno": 110698,
+            "clubeIdExterno": 293,
+            "posicaoId": 1,
+            "statusId": 7,
+            "apelido": "Mycael",
+            "precoCartola": "9.53",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 200,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 200,
+            "catalogoId": 3,
+            "atletaIdExterno": 107231,
+            "clubeIdExterno": 263,
+            "posicaoId": 4,
+            "statusId": 7,
+            "apelido": "Danilo",
+            "precoCartola": "14.18",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 246,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 246,
+            "catalogoId": 3,
+            "atletaIdExterno": 72460,
+            "clubeIdExterno": 282,
+            "posicaoId": 4,
+            "statusId": 7,
+            "apelido": "Bernard",
+            "precoCartola": "6.34",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 510,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 510,
+            "catalogoId": 3,
+            "atletaIdExterno": 143193,
+            "clubeIdExterno": 293,
+            "posicaoId": 5,
+            "statusId": 7,
+            "apelido": "Viveros",
+            "precoCartola": "14.96",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 147,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 147,
+            "catalogoId": 3,
+            "atletaIdExterno": 92171,
+            "clubeIdExterno": 263,
+            "posicaoId": 5,
+            "statusId": 7,
+            "apelido": "Arthur Cabral",
+            "precoCartola": "9.05",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 243,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 243,
+            "catalogoId": 3,
+            "atletaIdExterno": 98909,
+            "clubeIdExterno": 282,
+            "posicaoId": 5,
+            "statusId": 7,
+            "apelido": "Cuello",
+            "precoCartola": "9.41",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 573,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 573,
+            "catalogoId": 3,
+            "atletaIdExterno": 89274,
+            "clubeIdExterno": 275,
+            "posicaoId": 4,
+            "statusId": 7,
+            "apelido": "Andreas Pereira",
+            "precoCartola": "11.79",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 707,
+          "papel": "TECNICO",
+          "atleta": {
+            "id": 707,
+            "catalogoId": 3,
+            "atletaIdExterno": 92747,
+            "clubeIdExterno": 282,
+            "posicaoId": 6,
+            "statusId": 7,
+            "apelido": "Eduardo Domínguez",
+            "precoCartola": "10.38",
+            "categoriaId": null,
+            "pointcoins": 10
+          }
+        },
+        {
+          "catalogoAtletaId": 502,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 502,
+            "catalogoId": 3,
+            "atletaIdExterno": 123101,
+            "clubeIdExterno": 293,
+            "posicaoId": 5,
+            "statusId": 2,
+            "apelido": "Leozinho",
+            "precoCartola": "7.54",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 704,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 704,
+            "catalogoId": 3,
+            "atletaIdExterno": 109987,
+            "clubeIdExterno": 263,
+            "posicaoId": 4,
+            "statusId": 2,
+            "apelido": "Medina",
+            "precoCartola": "7.78",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 241,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 241,
+            "catalogoId": 3,
+            "atletaIdExterno": 92087,
+            "clubeIdExterno": 282,
+            "posicaoId": 3,
+            "statusId": 7,
+            "apelido": "Lyanco",
+            "precoCartola": "8.7",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 172,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 172,
+            "catalogoId": 3,
+            "atletaIdExterno": 80313,
+            "clubeIdExterno": 293,
+            "posicaoId": 2,
+            "statusId": 7,
+            "apelido": "Gilberto",
+            "precoCartola": "8.1",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 256,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 256,
+            "catalogoId": 3,
+            "atletaIdExterno": 115674,
+            "clubeIdExterno": 282,
+            "posicaoId": 1,
+            "statusId": 7,
+            "apelido": "Gabriel Delfim",
+            "precoCartola": "3.25",
+            "categoriaId": 1,
+            "pointcoins": 10
+          }
+        }
+      ],
+      "validacao": {
+        "completa": true,
+        "pendencias": []
+      },
+      "resultado": {
+        "pontuacao": "30.31",
+        "estadoPontuacao": "PARCIAL",
+        "revisao": "2",
+        "atualizadoEm": "2026-10-23T17:21:54.073Z",
+        "posicao": 3,
+        "capitaoOriginalAtletaId": 243,
+        "capitaoEfetivoAtletaId": 243,
+        "reservaMagoAtletaId": 502,
+        "reservasUtilizados": [
+          172,
+          704,
+          502
+        ],
+        "titularesSubstituidos": [
+          494,
+          246,
+          147
+        ],
+        "contribuicoes": [
+          {
+            "titularOriginalAtletaId": 707,
+            "catalogoAtletaId": 707,
+            "pontuacaoContabilizada": "9.01",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 493,
+            "catalogoAtletaId": 493,
+            "pontuacaoContabilizada": "-2",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 494,
+            "catalogoAtletaId": 172,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 738,
+            "catalogoAtletaId": 738,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 449,
+            "catalogoAtletaId": 449,
+            "pontuacaoContabilizada": "13.5",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 498,
+            "catalogoAtletaId": 498,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 200,
+            "catalogoAtletaId": 200,
+            "pontuacaoContabilizada": "2.7",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 246,
+            "catalogoAtletaId": 704,
+            "pontuacaoContabilizada": "3.2",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 573,
+            "catalogoAtletaId": 573,
+            "pontuacaoContabilizada": "-2.1",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 147,
+            "catalogoAtletaId": 502,
+            "pontuacaoContabilizada": "2.6",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 243,
+            "catalogoAtletaId": 243,
+            "pontuacaoContabilizada": "1",
+            "multiplicador": 2
+          },
+          {
+            "titularOriginalAtletaId": 510,
+            "catalogoAtletaId": 510,
+            "pontuacaoContabilizada": "2.4",
+            "multiplicador": 1
+          }
+        ],
+        "atletas": [
+          {
+            "catalogoAtletaId": 147,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 172,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "-0.2",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": true,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 200,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "2.7",
+            "pontuacaoContabilizada": "2.7",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 241,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 243,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "0.5",
+            "pontuacaoContabilizada": "1",
+            "multiplicador": 2,
+            "titularEfetivo": true,
+            "capitaoOriginal": true,
+            "capitaoEfetivo": true,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 246,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 256,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "8.9",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 449,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "13.5",
+            "pontuacaoContabilizada": "13.5",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 493,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "-2",
+            "pontuacaoContabilizada": "-2",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 494,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 498,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 502,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "2.6",
+            "pontuacaoContabilizada": "2.6",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": true,
+            "reservaUtilizado": true,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 510,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "2.4",
+            "pontuacaoContabilizada": "2.4",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 573,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "-2.1",
+            "pontuacaoContabilizada": "-2.1",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 704,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "3.2",
+            "pontuacaoContabilizada": "3.2",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": true,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 707,
+            "papelOriginal": "TECNICO",
+            "pontuacaoOficial": "9.01",
+            "pontuacaoContabilizada": "9.01",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 738,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "0",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          }
+        ],
+        "substituicoes": [
+          {
+            "titularSaiuId": 494,
+            "reservaEntrouId": 172,
+            "regra": "COMUM",
+            "pontuacaoOficial": "-0.2",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "herdouCapitao": false
+          },
+          {
+            "titularSaiuId": 246,
+            "reservaEntrouId": 704,
+            "regra": "COMUM",
+            "pontuacaoOficial": "3.2",
+            "pontuacaoContabilizada": "3.2",
+            "multiplicador": 1,
+            "herdouCapitao": false
+          },
+          {
+            "titularSaiuId": 147,
+            "reservaEntrouId": 502,
+            "regra": "COMUM",
+            "pontuacaoOficial": "2.6",
+            "pontuacaoContabilizada": "2.6",
+            "multiplicador": 1,
+            "herdouCapitao": false
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "competicaoId": 1,
+      "status": "INSCRITA",
+      "versao": 2,
+      "confirmadaEm": "2026-10-17T20:33:43.046Z",
+      "nomePublico": "#G2FKLZJ · chute de ouro 03",
+      "sequencial": 3,
+      "legado": false,
+      "identidade": {
+        "nomeBase": "chute de ouro",
+        "identificadorPublico": "G2FKLZJ",
+        "ultimoSequencial": 3
+      },
+      "criadoEm": "2026-10-17T20:33:42.575Z",
+      "atualizadoEm": "2026-10-17T20:33:43.106Z",
+      "formacao": "4-3-3",
+      "titulares": [
+        403,
+        656,
+        510,
+        200,
+        246,
+        626,
+        396,
+        188,
+        163,
+        407,
+        394
+      ],
+      "tecnico": 707,
+      "reservas": [
+        493,
+        615,
+        449,
+        704,
+        617
+      ],
+      "capitaoAtletaId": 626,
+      "reservaMagoAtletaId": 617,
+      "atletas": [
+        {
+          "catalogoAtletaId": 403,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 403,
+            "catalogoId": 3,
+            "atletaIdExterno": 113103,
+            "clubeIdExterno": 275,
+            "posicaoId": 5,
+            "statusId": 7,
+            "apelido": "Flaco López",
+            "precoCartola": "13.41",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 656,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 656,
+            "catalogoId": 3,
+            "atletaIdExterno": 114802,
+            "clubeIdExterno": 275,
+            "posicaoId": 5,
+            "statusId": 2,
+            "apelido": "Vitor Roque",
+            "precoCartola": "14.81",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 510,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 510,
+            "catalogoId": 3,
+            "atletaIdExterno": 143193,
+            "clubeIdExterno": 293,
+            "posicaoId": 5,
+            "statusId": 7,
+            "apelido": "Viveros",
+            "precoCartola": "14.96",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 200,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 200,
+            "catalogoId": 3,
+            "atletaIdExterno": 107231,
+            "clubeIdExterno": 263,
+            "posicaoId": 4,
+            "statusId": 7,
+            "apelido": "Danilo",
+            "precoCartola": "14.18",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 246,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 246,
+            "catalogoId": 3,
+            "atletaIdExterno": 72460,
+            "clubeIdExterno": 282,
+            "posicaoId": 4,
+            "statusId": 7,
+            "apelido": "Bernard",
+            "precoCartola": "6.34",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 626,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 626,
+            "catalogoId": 3,
+            "atletaIdExterno": 71536,
+            "clubeIdExterno": 293,
+            "posicaoId": 4,
+            "statusId": 7,
+            "apelido": "Luiz Gustavo",
+            "precoCartola": "7.41",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 396,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 396,
+            "catalogoId": 3,
+            "atletaIdExterno": 102130,
+            "clubeIdExterno": 275,
+            "posicaoId": 2,
+            "statusId": 7,
+            "apelido": "Piquerez",
+            "precoCartola": "10.65",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 188,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 188,
+            "catalogoId": 3,
+            "atletaIdExterno": 72493,
+            "clubeIdExterno": 263,
+            "posicaoId": 2,
+            "statusId": 7,
+            "apelido": "Alex Telles",
+            "precoCartola": "9.42",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 163,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 163,
+            "catalogoId": 3,
+            "atletaIdExterno": 99274,
+            "clubeIdExterno": 275,
+            "posicaoId": 3,
+            "statusId": 7,
+            "apelido": "Alexander Barboza",
+            "precoCartola": "11.4",
+            "categoriaId": 3,
+            "pointcoins": 30
+          }
+        },
+        {
+          "catalogoAtletaId": 407,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 407,
+            "catalogoId": 3,
+            "atletaIdExterno": 104085,
+            "clubeIdExterno": 275,
+            "posicaoId": 3,
+            "statusId": 7,
+            "apelido": "Bruno Fuchs",
+            "precoCartola": "7.21",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 394,
+          "papel": "TITULAR",
+          "atleta": {
+            "id": 394,
+            "catalogoId": 3,
+            "atletaIdExterno": 104084,
+            "clubeIdExterno": 275,
+            "posicaoId": 1,
+            "statusId": 7,
+            "apelido": "Carlos Miguel",
+            "precoCartola": "8.13",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 707,
+          "papel": "TECNICO",
+          "atleta": {
+            "id": 707,
+            "catalogoId": 3,
+            "atletaIdExterno": 92747,
+            "clubeIdExterno": 282,
+            "posicaoId": 6,
+            "statusId": 7,
+            "apelido": "Eduardo Domínguez",
+            "precoCartola": "10.38",
+            "categoriaId": null,
+            "pointcoins": 10
+          }
+        },
+        {
+          "catalogoAtletaId": 493,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 493,
+            "catalogoId": 3,
+            "atletaIdExterno": 110698,
+            "clubeIdExterno": 293,
+            "posicaoId": 1,
+            "statusId": 7,
+            "apelido": "Mycael",
+            "precoCartola": "9.53",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 615,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 615,
+            "catalogoId": 3,
+            "atletaIdExterno": 90061,
+            "clubeIdExterno": 315,
+            "posicaoId": 2,
+            "statusId": 7,
+            "apelido": "Bruno Pacheco",
+            "precoCartola": "6.92",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 449,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 449,
+            "catalogoId": 3,
+            "atletaIdExterno": 105300,
+            "clubeIdExterno": 263,
+            "posicaoId": 3,
+            "statusId": 7,
+            "apelido": "Ferraresi",
+            "precoCartola": "6.49",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 704,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 704,
+            "catalogoId": 3,
+            "atletaIdExterno": 109987,
+            "clubeIdExterno": 263,
+            "posicaoId": 4,
+            "statusId": 2,
+            "apelido": "Medina",
+            "precoCartola": "7.78",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        },
+        {
+          "catalogoAtletaId": 617,
+          "papel": "RESERVA",
+          "atleta": {
+            "id": 617,
+            "catalogoId": 3,
+            "atletaIdExterno": 93988,
+            "clubeIdExterno": 294,
+            "posicaoId": 5,
+            "statusId": 2,
+            "apelido": "Breno Lopes",
+            "precoCartola": "8.22",
+            "categoriaId": 2,
+            "pointcoins": 20
+          }
+        }
+      ],
+      "validacao": {
+        "completa": true,
+        "pendencias": []
+      },
+      "resultado": {
+        "pontuacao": "85.51",
+        "estadoPontuacao": "PARCIAL",
+        "revisao": "2",
+        "atualizadoEm": "2026-10-23T17:21:54.053Z",
+        "posicao": 1,
+        "capitaoOriginalAtletaId": 626,
+        "capitaoEfetivoAtletaId": 626,
+        "reservaMagoAtletaId": 617,
+        "reservasUtilizados": [
+          704,
+          617
+        ],
+        "titularesSubstituidos": [
+          246,
+          656
+        ],
+        "contribuicoes": [
+          {
+            "titularOriginalAtletaId": 707,
+            "catalogoAtletaId": 707,
+            "pontuacaoContabilizada": "9.01",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 394,
+            "catalogoAtletaId": 394,
+            "pontuacaoContabilizada": "14.1",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 188,
+            "catalogoAtletaId": 188,
+            "pontuacaoContabilizada": "7.6",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 396,
+            "catalogoAtletaId": 396,
+            "pontuacaoContabilizada": "14.5",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 163,
+            "catalogoAtletaId": 163,
+            "pontuacaoContabilizada": "9.2",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 407,
+            "catalogoAtletaId": 407,
+            "pontuacaoContabilizada": "5.5",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 200,
+            "catalogoAtletaId": 200,
+            "pontuacaoContabilizada": "2.7",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 246,
+            "catalogoAtletaId": 704,
+            "pontuacaoContabilizada": "3.2",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 626,
+            "catalogoAtletaId": 626,
+            "pontuacaoContabilizada": "5",
+            "multiplicador": 2
+          },
+          {
+            "titularOriginalAtletaId": 403,
+            "catalogoAtletaId": 403,
+            "pontuacaoContabilizada": "11",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 510,
+            "catalogoAtletaId": 510,
+            "pontuacaoContabilizada": "2.4",
+            "multiplicador": 1
+          },
+          {
+            "titularOriginalAtletaId": 656,
+            "catalogoAtletaId": 617,
+            "pontuacaoContabilizada": "1.3",
+            "multiplicador": 1
+          }
+        ],
+        "atletas": [
+          {
+            "catalogoAtletaId": 163,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "9.2",
+            "pontuacaoContabilizada": "9.2",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 188,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "7.6",
+            "pontuacaoContabilizada": "7.6",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 200,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "2.7",
+            "pontuacaoContabilizada": "2.7",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 246,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 394,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "14.1",
+            "pontuacaoContabilizada": "14.1",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 396,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "14.5",
+            "pontuacaoContabilizada": "14.5",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 403,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "11",
+            "pontuacaoContabilizada": "11",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 407,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "5.5",
+            "pontuacaoContabilizada": "5.5",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 449,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "13.5",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 493,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "-2",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 510,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "2.4",
+            "pontuacaoContabilizada": "2.4",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 615,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "6.7",
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 617,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "1.3",
+            "pontuacaoContabilizada": "1.3",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": true,
+            "reservaUtilizado": true,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 626,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": "2.5",
+            "pontuacaoContabilizada": "5",
+            "multiplicador": 2,
+            "titularEfetivo": true,
+            "capitaoOriginal": true,
+            "capitaoEfetivo": true,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 656,
+            "papelOriginal": "TITULAR",
+            "pontuacaoOficial": null,
+            "pontuacaoContabilizada": "0",
+            "multiplicador": 1,
+            "titularEfetivo": false,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": false,
+            "origemParticipacao": "NAO_PARTICIPACAO_INFERIDA_CARTOLA"
+          },
+          {
+            "catalogoAtletaId": 704,
+            "papelOriginal": "RESERVA",
+            "pontuacaoOficial": "3.2",
+            "pontuacaoContabilizada": "3.2",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": true,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          },
+          {
+            "catalogoAtletaId": 707,
+            "papelOriginal": "TECNICO",
+            "pontuacaoOficial": "9.01",
+            "pontuacaoContabilizada": "9.01",
+            "multiplicador": 1,
+            "titularEfetivo": true,
+            "capitaoOriginal": false,
+            "capitaoEfetivo": false,
+            "reservaMagoDesignado": false,
+            "reservaUtilizado": false,
+            "utilizadoComoMago": false,
+            "entrouEmCampo": true,
+            "origemParticipacao": "REGISTRO_OFICIAL"
+          }
+        ],
+        "substituicoes": [
+          {
+            "titularSaiuId": 246,
+            "reservaEntrouId": 704,
+            "regra": "COMUM",
+            "pontuacaoOficial": "3.2",
+            "pontuacaoContabilizada": "3.2",
+            "multiplicador": 1,
+            "herdouCapitao": false
+          },
+          {
+            "titularSaiuId": 656,
+            "reservaEntrouId": 617,
+            "regra": "COMUM",
+            "pontuacaoOficial": "1.3",
+            "pontuacaoContabilizada": "1.3",
+            "multiplicador": 1,
+            "herdouCapitao": false
+          }
+        ]
+      }
+    }
+  ],
+  "ranking": {
+    "competicaoId": 1,
+    "estadoPontuacao": "PARCIAL",
+    "items": [
+      {
+        "posicao": 1,
+        "escalacaoId": 7,
+        "nomePublico": "#G2FKLZJ · chute de ouro 03",
+        "identidade": {
+          "identificadorPublico": "G2FKLZJ",
+          "nomeBase": "chute de ouro",
+          "sequencial": 3
+        },
+        "formacao": "4-3-3",
+        "pontuacao": "85.51",
+        "meuTime": true
+      },
+      {
+        "posicao": 2,
+        "escalacaoId": 5,
+        "nomePublico": "#G2FKLZJ · chute de ouro 01",
+        "identidade": {
+          "identificadorPublico": "G2FKLZJ",
+          "nomeBase": "chute de ouro",
+          "sequencial": 1
+        },
+        "formacao": "4-3-3",
+        "pontuacao": "34.41",
+        "meuTime": true
+      },
+      {
+        "posicao": 3,
+        "escalacaoId": 6,
+        "nomePublico": "#G2FKLZJ · chute de ouro 02",
+        "identidade": {
+          "identificadorPublico": "G2FKLZJ",
+          "nomeBase": "chute de ouro",
+          "sequencial": 2
+        },
+        "formacao": "4-3-3",
+        "pontuacao": "30.31",
+        "meuTime": true
+      }
+    ],
+    "total": 3,
+    "page": 1,
+    "limit": 50
+  }
+}
