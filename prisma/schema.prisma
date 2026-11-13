@@ -367,6 +367,7 @@ model RodadaProcessamento {
 }
 
 model Usuario {
+  fantasyBrasaoId String? @map("fantasy_brasao_id") @db.VarChar(40)
   fantasyEscalacoes FantasyEscalacao[]
   fantasyIdentidades FantasyTimeIdentidade[]
   idUsuario       Int        @id @default(autoincrement()) @map("id_usuario") @db.UnsignedInt

@@ -58,14 +58,24 @@ describe('POINT Fantasy public registered teams ranking', () => {
     expect(body.items[1]).toMatchObject({ identidade: null, nomePublico: null });
     for (const item of body.items) {
       expect(item).toMatchObject({ posicao: null, pontuacao: null, meuTime: false, formacao: null });
-      expect(Object.keys(item).sort()).toEqual(['posicao', 'pontuacao', 'meuTime', 'formacao', 'identidade', 'nomePublico', 'escalacaoId'].sort());
+      expect(Object.keys(item).sort()).toEqual(['brasaoId', 'posicao', 'pontuacao', 'meuTime', 'formacao', 'identidade', 'nomePublico', 'escalacaoId'].sort());
     }
     expect(db.fantasyEscalacao.findMany).toHaveBeenCalledTimes(1);
     expect(db.fantasyEscalacao.findMany).toHaveBeenCalledWith({ where: { competicaoId: 8, status: 'INSCRITA' },
       orderBy: { id: 'asc' }, skip: 0, take: 50,
-      select: { id: true, usuarioId: true, nomePublico: true, sequencial: true, formacao: true,
+      select: { usuario: { select: { fantasyBrasaoId: true } }, id: true, usuarioId: true, nomePublico: true, sequencial: true, formacao: true,
         identidade: { select: { identificadorPublico: true, nomeBase: true } } } });
     expect(db.$transaction).toHaveBeenCalledWith(expect.any(Function), { isolationLevel: 'RepeatableRead' });
+  });
+  it('returns current global crest without exposing owner data or querying each participant', async () => {
+    rows.forEach(row => { row.usuario = { fantasyBrasaoId: row.usuarioId === 7 ? 'v1:c0:p1' : null }; });
+    const body = await (await request()).json() as any;
+    expect(body.items.slice(0, 2).map((item: any) => item.brasaoId)).toEqual(['v1:c0:p1', 'v1:c0:p1']);
+    expect(db.fantasyEscalacao.findMany).toHaveBeenCalledTimes(1);
+    rows[0].usuario.fantasyBrasaoId = 'v1:c3:p2';
+    rows.forEach(row => { if (row.usuarioId === 7) row.usuario.fantasyBrasaoId = 'v1:c3:p2'; });
+    expect(((await (await request()).json()) as any).items[0].brasaoId).toBe('v1:c3:p2');
+    expect(JSON.stringify(body)).not.toMatch(/fantasyBrasaoId|usuarioId|email/);
   });
   it.each([['owner', [true, true, false]], ['other', [false, false, true]]])('marks ownership using only validated JWT: %s', async (token, expected) => {
     const res = await request('', token as string); const body = await res.json() as any;

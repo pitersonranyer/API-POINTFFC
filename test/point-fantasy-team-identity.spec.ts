@@ -66,6 +66,27 @@ describe('Public team identity', () => {
     await expect(service.create(1, 10, { formacao: '4-3-3', nomeBase: 'Outro' })).rejects.toMatchObject({ status: 409 });
     expect(identities[0].ultimoSequencial).toBe(1);
   });
+  it('shares current participant crest across competitions and duplicates without changing textual identity', async () => {
+    let preference: string | null = null;
+    const create = tx.fantasyEscalacao.create.getMockImplementation();
+    tx.fantasyEscalacao.create.mockImplementation(async (args: any) => {
+      const row = await create(args);
+      Object.defineProperty(row, 'usuario', { get: () => ({ fantasyBrasaoId: row.usuarioId === 1 ? preference : null }) });
+      return row;
+    });
+    const a = await service.create(1, 10, { formacao: '4-3-3' });
+    const b = await service.create(1, 11, { formacao: '4-3-3' });
+    expect(a.brasaoId).toBe(b.brasaoId);
+    preference = 'v1:c3:p2';
+    const copy = await service.duplicate(1, a.id, 1);
+    expect(copy).toMatchObject({ brasaoId: preference, sequencial: 2 });
+    expect((await service.get(1, a.id))).toMatchObject({ brasaoId: preference, nomePublico: a.nomePublico });
+    expect((await service.list(1, 11, { page: 1, limit: 50 })).items[0]).toMatchObject({ brasaoId: preference, nomePublico: b.nomePublico });
+    preference = 'v1:c0:p0';
+    expect((await service.get(1, copy.id)).brasaoId).toBe(preference);
+    expect((await service.get(1, b.id)).brasaoId).toBe(preference);
+    expect(identities).toHaveLength(2);
+  });
   it('replays create and duplicate keys; rejects changed payload and deleted replay', async () => {
     const dto = { formacao: '4-3-3', chaveIdempotencia: 'create-1' };
     const a = await service.create(1, 10, dto);

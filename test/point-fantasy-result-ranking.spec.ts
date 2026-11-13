@@ -27,6 +27,13 @@ describe('3C result ranking visibility (mocks only)', () => {
     expect((await service.ranking(8, { page: 2, limit: 2 })).items[0].posicao).toBe(3);
     expect(JSON.stringify(result)).not.toMatch(/private|auditoria|atletas|usuarioId|capitaoAtletaId/);
   });
+  it('uses current participant preference after closure without changing scoring', async () => {
+    entries.forEach(entry => { entry.usuario = { fantasyBrasaoId: 'v1:c2:p1' }; });
+    const result = await service.ranking(8, { page: 1, limit: 50 });
+    expect(result.items.every(item => item.brasaoId === 'v1:c2:p1')).toBe(true);
+    expect(result.items[0].pontuacao).toBe('10');
+    expect(db.fantasyEscalacao.findMany).toHaveBeenCalledTimes(1);
+  });
   it.each(['revision', 'lineup', 'competition', 'round', 'season', 'hash', 'missing'])('hides stale or incomplete ranking: %s', async reason => {
     if (reason === 'revision') round.revisaoAtual = 2n;
     if (reason === 'lineup') entries[0].versao++;

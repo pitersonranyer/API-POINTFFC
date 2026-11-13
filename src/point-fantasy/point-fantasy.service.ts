@@ -1,3 +1,4 @@
+import { participantCrest } from './participant-crest';
 import { BadGatewayException, BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CartolaService } from '../cartola/cartola.service';
@@ -197,7 +198,7 @@ export class PointFantasyService {
           temporada_rodada: { temporada: competition.temporada, rodada: competition.rodada },
         } });
         const entries = await tx.fantasyEscalacao.findMany({ where: { competicaoId: id, status: 'INSCRITA' },
-          include: { resultado: true, identidade: { select: { identificadorPublico: true, nomeBase: true } } },
+          include: { usuario: { select: { fantasyBrasaoId: true } }, resultado: true, identidade: { select: { identificadorPublico: true, nomeBase: true } } },
           orderBy: { id: 'asc' } });
         const rows = rankScores(entries.map(entry => {
           const result = entry.resultado;
@@ -207,7 +208,7 @@ export class PointFantasyService {
         const complete = rows.length > 0 && rows.every(row => row.total !== null);
         return { competicaoId: id, estadoPontuacao: complete ? 'PARCIAL' : 'INDISPONIVEL',
           items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
-            posicao: complete ? posicao : null, escalacaoId: entry.id, nomePublico: entry.nomePublico,
+            brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: complete ? posicao : null, escalacaoId: entry.id, nomePublico: entry.nomePublico,
             identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
             formacao: entry.formacao, pontuacao: complete ? total : null,
             meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
@@ -217,7 +218,7 @@ export class PointFantasyService {
       const [items, total] = await Promise.all([
         tx.fantasyEscalacao.findMany({ where, orderBy: { id: 'asc' },
           skip: (page.page - 1) * page.limit, take: page.limit,
-          select: { id: true, usuarioId: true, nomePublico: true, sequencial: true, formacao: true,
+          select: { usuario: { select: { fantasyBrasaoId: true } }, id: true, usuarioId: true, nomePublico: true, sequencial: true, formacao: true,
             identidade: { select: { identificadorPublico: true, nomeBase: true } } } }),
         tx.fantasyEscalacao.count({ where }),
       ]);
@@ -226,7 +227,7 @@ export class PointFantasyService {
         match.status === 'AGENDADA' && match.inicioReal === null
         && Number.isFinite(match.inicioPrevisto.getTime()) && match.inicioPrevisto > now);
       return { competicaoId: id, estadoPontuacao: notStarted ? 'NAO_INICIADA' : 'INDISPONIVEL',
-        items: items.map(item => ({ posicao: null, escalacaoId: item.id, nomePublico: item.nomePublico,
+        items: items.map(item => ({ brasaoId: participantCrest(item.usuarioId, item.usuario?.fantasyBrasaoId), posicao: null, escalacaoId: item.id, nomePublico: item.nomePublico,
           identidade: item.identidade ? { ...item.identidade, sequencial: item.sequencial } : null,
           formacao: usuarioId !== undefined && item.usuarioId === usuarioId ? item.formacao : null,
           pontuacao: null, meuTime: usuarioId !== undefined && item.usuarioId === usuarioId })),

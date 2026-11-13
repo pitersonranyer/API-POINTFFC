@@ -1,0 +1,1 @@
+ALTER TABLE `USUARIO` ADD COLUMN `fantasy_brasao_id` VARCHAR(40) NULL;

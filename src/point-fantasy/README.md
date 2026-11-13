@@ -138,7 +138,9 @@ Resposta: `{ competicaoId, estadoPontuacao, items, total, page, limit }`.
 Cada item contém `{ posicao: null, escalacaoId, nomePublico, identidade,
 formacao, pontuacao: null, meuTime }`. Identidade contém identificadorPublico,
 nomeBase e sequencial; pode ser null nos legados, assim como nomePublico.
-Esses dados públicos permitem ao frontend derivar o brasão sem dados pessoais.
+Cada item também contém `brasaoId`, resolvido pela preferência global do participante
+ou fallback determinístico. O frontend deve renderizar esse ID em vez de derivar
+um brasão por escalação. Catálogo e endpoints: [fase 1B.6A](../../docs/point-fantasy-participant-crest-1b6a.md).
 
 NAO_INICIADA exige partidas presentes, todas AGENDADA, sem início real e com
 início previsto válido estritamente futuro. Nos demais casos, inclusive no

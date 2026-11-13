@@ -1,3 +1,4 @@
+import { participantCrest } from '../participant-crest';
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
@@ -7,7 +8,7 @@ import { ConfirmFreeLineupsDto, CreateLineupDto, LineupPageDto, UpdateLineupDto 
 import { LineupSelection, selectionIds, validateSelection } from './lineup.rules';
 import { readResultDetail, readResultSummaries } from './lineup-result.read';
 
-const include = { identidade: true, atletas: { include: { atleta: true }, orderBy: { id: 'asc' as const } } };
+const include = { usuario: { select: { fantasyBrasaoId: true } }, identidade: true, atletas: { include: { atleta: true }, orderBy: { id: 'asc' as const } } };
 type StoredLineup = Prisma.FantasyEscalacaoGetPayload<{ include: typeof include }>;
 type Competition = Prisma.FantasyCompeticaoGetPayload<{ include: { catalogo: true; partidas: true } }>;
 
@@ -69,7 +70,7 @@ export class LineupService {
 
   private response(lineup: StoredLineup) {
     const selection = this.selection(lineup);
-    return { id: lineup.id, competicaoId: lineup.competicaoId, status: lineup.status, versao: lineup.versao,
+    return { brasaoId: participantCrest(lineup.usuarioId, lineup.usuario?.fantasyBrasaoId), id: lineup.id, competicaoId: lineup.competicaoId, status: lineup.status, versao: lineup.versao,
       confirmadaEm: lineup.confirmadaEm ?? null,
       nomePublico: lineup.nomePublico ?? null, sequencial: lineup.sequencial ?? null,
       legado: !lineup.identidadeId, identidade: lineup.identidade ? this.identityResponse(lineup.identidade) : null,
