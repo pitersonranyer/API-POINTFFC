@@ -192,8 +192,13 @@ export class PointFantasyService {
   }
 
   async ranking(id: number, page: LineupPageDto, usuarioId?: number) {
-    // Read visibility and official result metadata from one snapshot; Cartola calls
-    // happen after the transaction so slow provider reads do not hold DB resources.
+    // Official market cache is the round reference; stored max(round) is not.
+    // A market outage must not change the existing live/validated-result path.
+    let reference: Awaited<ReturnType<CartolaService['getMarketStatus']>> | null = null;
+    try { reference = await this.cartola.getMarketStatus(); } catch { /* Existing preview handles source failure. */ }
+
+    // Read visibility and result metadata from one snapshot. The market reference
+    // is fetched above; live provider calls run after this transaction.
     const context = await this.prisma.$transaction(async tx => {
       const competition = await this.competition(id, tx);
       const now = new Date();
@@ -227,6 +232,41 @@ export class PointFantasyService {
       const entries = await tx.fantasyEscalacao.findMany({ where,
           include: { usuario: { select: { fantasyBrasaoId: true } }, resultado: true, identidade: { select: { identificadorPublico: true, nomeBase: true } } },
           orderBy: { id: 'asc' } });
+      const market = reference?.value;
+      const officialReference = market && Number.isInteger(market.temporada) && market.temporada! > 0
+        && Number.isInteger(market.rodada_atual) && market.rodada_atual >= 1 && market.rodada_atual <= 38;
+      const historical = officialReference && (competition.temporada < market.temporada!
+        || competition.temporada === market.temporada && competition.rodada < market.rodada_atual);
+      if (historical) {
+        // Reuse computed Fantasy results. No traditional processing state, provider
+        // points/matches, collection, or scoring replay is required for this read.
+        const rows = rankScores(entries.map(entry => ({ entry, escalacaoId: entry.id,
+          total: isCurrentResult(entry.resultado, round, competition, entry.versao)
+            ? entry.resultado!.total?.toFixed() ?? null : null })));
+        const motivoPendencia = !rows.length ? 'SEM_INSCRICOES'
+          : !round ? 'APURACAO_INDISPONIVEL'
+          : round.estado === 'EM_REVISAO' ? 'APURACAO_EM_REVISAO'
+          : round.revisaoValidada !== null && round.revisaoValidada !== round.revisaoAtual ? 'REVISAO_EM_VALIDACAO'
+          : entries.some(entry => !entry.resultado) ? 'RESULTADO_AUSENTE'
+          : entries.some(entry => !isCurrentResult(entry.resultado, round, competition, entry.versao)) ? 'RESULTADO_DESATUALIZADO'
+          : rows.some(row => row.total === null) ? 'PONTUACAO_INDISPONIVEL' : undefined;
+        // The immediately preceding round remains in the backend's final-source
+        // window. Earlier rounds (or seasons) are outside that correction window.
+        const correctionWindowClosed = competition.temporada < market.temporada!
+          || competition.rodada < market.rodada_atual - 1;
+        const validated = round?.estado === 'VALIDADA' && round.revisaoValidada === round.revisaoAtual;
+        const estadoPontuacao = motivoPendencia ? 'PENDENTE' as const
+          : !reference?.stale && (correctionWindowClosed || validated) ? 'DEFINITIVO' as const : 'PROVISORIO' as const;
+        return { response: { competicaoId: id, estadoPontuacao,
+          ...(motivoPendencia ? { motivoPendencia } : {}),
+          ...(reference?.stale ? { cacheDesatualizado: true } : {}),
+          items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
+            brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
+            posicao: motivoPendencia ? null : posicao, escalacaoId: entry.id, nomePublico: entry.nomePublico,
+            identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
+            formacao: entry.formacao, pontuacao: total, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
+          })), total: entries.length, page: page.page, limit: page.limit } };
+      }
       const officialPhase = !!competition.fechamentoDefinitivoEm && competition.fechamentoDefinitivoEm <= now
         && round?.revisaoValidada !== null && round?.revisaoValidada !== undefined;
       if (officialPhase) {
