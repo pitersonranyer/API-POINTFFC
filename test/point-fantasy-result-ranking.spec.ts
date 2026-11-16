@@ -2,11 +2,11 @@ import { Prisma } from '@prisma/client';
 import { PointFantasyService } from '../src/point-fantasy/point-fantasy.service';
 
 describe('3C result ranking visibility (mocks only)', () => {
-  let db: any, competition: any, entries: any[], round: any, service: PointFantasyService;
+  let db: any, competition: any, entries: any[], round: any, service: PointFantasyService, scoring: any;
   beforeEach(() => {
     competition = { id: 8, temporada: 2026, rodada: 31, status: 'PUBLICADA',
-      fechamentoDefinitivoEm: new Date(1000), partidas: [] };
-    round = { revisaoAtual: 1n, hashConteudoAtual: 'a'.repeat(64) };
+      fimInscricao: new Date(0), fechamentoDefinitivoEm: new Date(1000), partidas: [] };
+    round = { revisaoAtual: 1n, revisaoValidada: 1n, estado: 'VALIDADA', hashConteudoAtual: 'a'.repeat(64) };
     entries = [3, 1, 2].map(id => ({ id, usuarioId: id, versao: 2, formacao: '4-3-3', nomePublico: `Time ${id}`,
       identidade: null, sequencial: id, atletas: 'private', capitaoAtletaId: 999,
       resultado: { competicaoId: 8, temporada: 2026, rodada: 31, revisao: 1n,
@@ -18,11 +18,13 @@ describe('3C result ranking visibility (mocks only)', () => {
       fantasyEscalacao: { findMany: jest.fn(async () => entries), count: jest.fn(async () => 3) },
     };
     db.$transaction = jest.fn(async action => action(db));
-    service = new PointFantasyService(db, {} as any);
+    scoring = { previewCartolaCompetition: jest.fn() };
+    service = new PointFantasyService(db, {} as any, scoring);
   });
   it('ranks globally before pagination; ties have the same position', async () => {
     const result = await service.ranking(8, { page: 1, limit: 2 }, 2);
-    expect(result.estadoPontuacao).toBe('PARCIAL');
+    expect(result.estadoPontuacao).toBe('DEFINITIVO');
+    expect(scoring.previewCartolaCompetition).not.toHaveBeenCalled();
     expect(result.items.map(i => [i.escalacaoId, i.posicao, i.pontuacao, i.meuTime])).toEqual([[1, 1, '10', false], [2, 1, '10', true]]);
     expect((await service.ranking(8, { page: 2, limit: 2 })).items[0].posicao).toBe(3);
     expect(JSON.stringify(result)).not.toMatch(/private|auditoria|atletas|usuarioId|capitaoAtletaId/);
@@ -43,11 +45,13 @@ describe('3C result ranking visibility (mocks only)', () => {
     if (reason === 'hash') entries[0].resultado.hashFonte = 'b'.repeat(64);
     if (reason === 'missing') entries[0].resultado.total = null;
     const result = await service.ranking(8, { page: 1, limit: 50 });
-    expect(result.estadoPontuacao).toBe('INDISPONIVEL');
+    expect(result.estadoPontuacao).toBe('PENDENTE');
     expect(result.items.every(i => i.pontuacao === null && i.posicao === null)).toBe(true);
   });
   it('never reads results before definitive closure', async () => {
-    competition.fechamentoDefinitivoEm = new Date(Date.now() + 100000);
+    competition.fimInscricao = new Date(Date.now() + 100000);
+    competition.partidas = [{ status: 'AGENDADA', inicioReal: null, inicioPrevisto: new Date(Date.now() + 200000) }];
+    competition.fechamentoDefinitivoEm = new Date(Date.now() + 300000);
     await service.ranking(8, { page: 1, limit: 50 });
     expect(db.fantasyApuracaoRodada.findUnique).not.toHaveBeenCalled();
     expect(db.fantasyEscalacao.findMany).toHaveBeenCalledWith(expect.objectContaining({

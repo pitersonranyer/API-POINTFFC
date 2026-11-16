@@ -8,7 +8,8 @@ import { AdminPointFantasyController, PointFantasyController } from './point-fan
 import { PointFantasyService } from './point-fantasy.service';
 import { LineupController } from './lineups/lineup.controller';
 import { LineupService } from './lineups/lineup.service';
+import { LineupScoringService } from './scoring/lineup-scoring.service';
 
 @Module({ imports: [PrismaModule, CartolaModule, AuthModule], controllers: [ParticipantCrestController, PointFantasyController, AdminPointFantasyController, LineupController],
-  providers: [PointFantasyService, AdminGuard, LineupService] })
+  providers: [PointFantasyService, AdminGuard, LineupService, LineupScoringService] })
 export class PointFantasyModule {}

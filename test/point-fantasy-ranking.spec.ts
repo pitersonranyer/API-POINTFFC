@@ -11,11 +11,12 @@ describe('POINT Fantasy public registered teams ranking', () => {
     db = {
       fantasyCompeticao: { findFirst: jest.fn(async ({ where }: any) =>
         competition?.id === where.id && competition.status === where.status ? competition : null) },
+      fantasyApuracaoRodada: { findUnique: jest.fn(async () => null) },
       fantasyEscalacao: {
         findMany: jest.fn(async ({ where, skip, take, select }: any) => rows
           .filter(r => r.competicaoId === where.competicaoId && r.status === where.status)
-          .sort((a, b) => a.id - b.id).slice(skip, skip + take)
-          .map(r => Object.fromEntries(Object.keys(select).map(key => [key, r[key]])))),
+          .sort((a, b) => a.id - b.id).slice(skip ?? 0, take === undefined ? undefined : (skip ?? 0) + take)
+          .map(r => select ? Object.fromEntries(Object.keys(select).map(key => [key, r[key]])) : r)),
         count: jest.fn(async ({ where }: any) => rows.filter(r => r.competicaoId === where.competicaoId && r.status === where.status).length),
       },
     };
@@ -116,7 +117,7 @@ describe('POINT Fantasy public registered teams ranking', () => {
     if (reason === 'invalid-date') competition.partidas[0].inicioPrevisto = new Date(NaN);
     if (reason === 'another-match') competition.partidas.push({ ...competition.partidas[0], inicioPrevisto: new Date(0) });
     const body = await (await request()).json() as any;
-    expect(body.estadoPontuacao).toBe('INDISPONIVEL');
+    expect(body.estadoPontuacao).toBe('PENDENTE');
     expect(body.items.every((r: any) => r.posicao === null && r.pontuacao === null)).toBe(true);
   });
   it('supports empty competitions and PAGO reads without financial access', async () => {

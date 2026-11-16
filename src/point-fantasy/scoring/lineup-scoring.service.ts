@@ -1,14 +1,25 @@
 import { Prisma } from '@prisma/client';
+import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { CartolaService } from '../../cartola/cartola.service';
+import { CartolaMatch } from '../../cartola/cartola.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { validateSelection } from '../lineups/lineup.rules';
 import { rankScores, scoreLineup } from './scoring-engine';
 import { resolveScoringSource } from './source-completeness';
 import { loadCartolaEvidence } from './cartola-evidence';
 import { stableJson } from '../observation/current-scoring-plan';
+import { athleteParticipation, matchEnded, matchStart, matchesByClub, scoreMap } from '../../round-processing/round-calculator';
 
 export const SCORING_ENGINE_VERSION = '3F-1';
 const include = { catalogo: true, partidas: true } as const;
 type Competition = Prisma.FantasyCompeticaoGetPayload<{ include: typeof include }>;
+
+function matchStartState(match: CartolaMatch, now: number): 'NAO_INICIADA' | 'EM_ANDAMENTO' | 'INDEFINIDA' {
+  const period = (match.periodo_tr ?? '').trim().toUpperCase();
+  if (['1T', '2T', 'INT', 'I', 'ET', 'PEN'].includes(period)) return 'EM_ANDAMENTO';
+  const start = matchStart(match);
+  return Number.isFinite(start) && start > now ? 'NAO_INICIADA' : 'INDEFINIDA';
+}
 
 export function assertScoringCompetition(c: Competition, now = new Date(), requireClosure = true) {
   if (c.status !== 'PUBLICADA' || c.catalogo.status !== 'CONGELADO'
@@ -20,7 +31,111 @@ export function assertScoringCompetition(c: Competition, now = new Date(), requi
 
 /** Explicit invocation only; no collector, scheduler or financial dependencies. */
 export class LineupScoringService {
-  constructor(private readonly db: PrismaService) {}
+  constructor(private readonly db: PrismaService, private readonly cartola?: CartolaService) {}
+
+  /** Batch preview using one read of each Cartola source for a whole ranking. */
+  async previewCartolaCompetition(competicaoId: number) {
+    if (!this.cartola) throw new ServiceUnavailableException('Fonte Cartola indisponivel para o preview Fantasy');
+    const { competition, lineups } = await this.db.$transaction(async tx => {
+      const competition = await tx.fantasyCompeticao.findFirst({
+        where: { id: competicaoId, status: 'PUBLICADA' },
+        include: { catalogo: true, partidas: { orderBy: { id: 'asc' } } },
+      });
+      if (!competition) throw new NotFoundException('Competicao Fantasy nao encontrada');
+      assertScoringCompetition(competition, new Date(), false);
+      const lineups = await tx.fantasyEscalacao.findMany({
+        where: { competicaoId, status: 'INSCRITA', confirmadaEm: { not: null } },
+        include: { usuario: { select: { fantasyBrasaoId: true } }, identidade: { select: { identificadorPublico: true, nomeBase: true } },
+          atletas: { include: { atleta: true } } }, orderBy: { id: 'asc' },
+      });
+      return { competition, lineups };
+    }, { isolationLevel: 'RepeatableRead' });
+
+    // These calls go through CartolaService's existing cache and history rules. No HTTP
+    // request is made to this API's own controller and no Fantasy data is persisted.
+    const [scored, matches] = await Promise.all([
+      this.cartola.getScoredAthletes(competition.rodada, competition.temporada),
+      this.cartola.getMatchesByRound(competition.rodada, competition.temporada),
+    ]);
+    const previews = lineups.map(lineup => this.scoreCartolaLineup(competition, lineup, scored, matches));
+    const matchStates = competition.partidas.map(fixture => {
+      const match = matches.value.partidas.find(item => item.partida_id === fixture.partidaIdExterno);
+      return !match ? 'INDEFINIDA' as const : matchEnded(match) ? 'ENCERRADA' as const : matchStartState(match, Date.now());
+    });
+    return { competicaoId, temporada: competition.temporada, rodada: competition.rodada,
+      partidas: [...new Set(matchStates)], cacheDesatualizado: scored.stale || matches.stale,
+      items: lineups.map((lineup, index) => ({ escalacaoId: lineup.id, versaoEscalacao: lineup.versao,
+        nomePublico: lineup.nomePublico, sequencial: lineup.sequencial, identidade: lineup.identidade,
+        usuarioId: lineup.usuarioId, brasaoPreferido: lineup.usuario?.fantasyBrasaoId ?? null,
+        formacao: lineup.formacao, ...previews[index] })) };
+  }
+
+  /** Read-only single-lineup adapter retained for local tools and focused callers. */
+  async previewCartolaLineup(competicaoId: number, escalacaoId: number) {
+    const result = await this.previewCartolaCompetition(competicaoId);
+    const item = result.items.find(lineup => lineup.escalacaoId === escalacaoId);
+    if (!item) throw new NotFoundException('Escalacao inscrita nao encontrada');
+    return item;
+  }
+
+  private scoreCartolaLineup(competition: Competition,
+    lineup: Prisma.FantasyEscalacaoGetPayload<{ include: { usuario: { select: { fantasyBrasaoId: true } };
+      identidade: { select: { identificadorPublico: true; nomeBase: true } }; atletas: { include: { atleta: true } } } }>,
+    scored: Awaited<ReturnType<CartolaService['getScoredAthletes']>>,
+    matches: Awaited<ReturnType<CartolaService['getMatchesByRound']>>) {
+    const payload = scored.value;
+    if (payload.rodada !== competition.rodada) throw new ServiceUnavailableException('Rodada dos pontos Cartola divergente');
+    // The Cartola envelope may be partial while games are live. Validate every
+    // included athlete with the shared parser, while retaining the original
+    // completeness signal so an omitted athlete is never treated as a DNP.
+    const scores = scoreMap({ ...payload, total_atletas: Object.keys(payload.atletas ?? {}).length }, competition.rodada);
+    const providerMatches = matchesByClub(matches.value, competition.rodada);
+    const providerMatchesById = new Map(matches.value.partidas.map(match => [match.partida_id, match]));
+    const completeEnvelope = payload.total_atletas === scores.size && scores.size > 0;
+    const participation = athleteParticipation(scores, providerMatches, completeEnvelope);
+    const selectedClubs = new Set(competition.partidas.flatMap(match => [match.clubeMandanteId, match.clubeVisitanteId]));
+    const selection = {
+      formacao: lineup.formacao,
+      titulares: lineup.atletas.filter(a => a.papel === 'TITULAR').map(a => a.catalogoAtletaId),
+      reservas: lineup.atletas.filter(a => a.papel === 'RESERVA').map(a => a.catalogoAtletaId),
+      tecnico: lineup.atletas.find(a => a.papel === 'TECNICO')?.catalogoAtletaId ?? null,
+      capitaoAtletaId: lineup.capitaoAtletaId,
+      reservaMagoAtletaId: lineup.reservaMagoAtletaId,
+    };
+    if (lineup.atletas.some(a => a.atleta.catalogoId !== competition.catalogoId
+      || !selectedClubs.has(a.atleta.clubeIdExterno))
+      || !validateSelection(selection, lineup.atletas.map(a => a.atleta)).completa) {
+      throw new ServiceUnavailableException('Escalacao Fantasy incompleta ou incompativel com a competicao');
+    }
+    const individual = lineup.atletas.map(({ atleta, papel, catalogoAtletaId }) => {
+      const supplied = scores.get(atleta.atletaIdExterno);
+      if (supplied && ((supplied.clube_id !== undefined && supplied.clube_id !== atleta.clubeIdExterno)
+        || (supplied.posicao_id !== undefined && supplied.posicao_id !== atleta.posicaoId))) {
+        throw new ServiceUnavailableException(`Identidade Cartola divergente para o atleta ${atleta.atletaIdExterno}`);
+      }
+      const match = providerMatchesById.get(competition.partidas.find(item => item.clubeMandanteId === atleta.clubeIdExterno
+        || item.clubeVisitanteId === atleta.clubeIdExterno)?.partidaIdExterno ?? -1)
+        ?? providerMatches.get(atleta.clubeIdExterno);
+      const ended = !!match && matchEnded(match);
+      const rawParticipation = supplied && typeof supplied.entrou_em_campo === 'boolean' ? supplied.entrou_em_campo : undefined;
+      // A false flag before full time means “not yet observed”, not “did not play”.
+      const played = rawParticipation === true ? true : ended ? participation({ atletaId: atleta.atletaIdExterno,
+        clubeId: atleta.clubeIdExterno, posicaoId: atleta.posicaoId, titular: false, reserva: papel === 'RESERVA', capitao: lineup.capitaoAtletaId === catalogoAtletaId }) : null;
+      return { catalogoAtletaId, atletaIdCartola: atleta.atletaIdExterno, papel,
+        pontuacaoCartola: typeof supplied?.pontuacao === 'number' ? String(supplied.pontuacao) : null,
+        entrouEmCampo: played ?? null, partida: !match ? 'INDEFINIDA' as const : ended ? 'ENCERRADA' as const
+          : matchStartState(match, Date.now()), stale: scored.stale || matches.stale };
+    });
+    const players = individual.map(row => ({ id: row.catalogoAtletaId,
+      position: lineup.atletas.find(a => a.catalogoAtletaId === row.catalogoAtletaId)!.atleta.posicaoId,
+      role: row.papel, points: row.pontuacaoCartola, played: row.entrouEmCampo ?? null }));
+    const result = scoreLineup(players, lineup.capitaoAtletaId!, lineup.reservaMagoAtletaId!);
+    return { temporada: competition.temporada,
+      rodada: competition.rodada, estado: result.total === null ? 'PENDENTE' as const : 'PROVISORIO' as const,
+      pontuacoesEnvelopeCompleto: completeEnvelope,
+      cacheDesatualizado: scored.stale || matches.stale, partidas: [...new Set(individual.map(a => a.partida))],
+      atletas: individual, ...result, persistido: false };
+  }
 
   private async calculate(tx: Prisma.TransactionClient, competicaoId: number, preview = false) {
     const competition = await tx.fantasyCompeticao.findUniqueOrThrow({ where: { id: competicaoId }, include });
