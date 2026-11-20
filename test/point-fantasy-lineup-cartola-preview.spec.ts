@@ -1,4 +1,6 @@
 import { LineupScoringService } from '../src/point-fantasy/scoring/lineup-scoring.service';
+import { ScoredAthletesCacheService } from '../src/scored-athletes-cache/scored-athletes-cache.service';
+import { MemoryScoredAthletesCacheStore } from '../src/scored-athletes-cache/memory-scored-athletes-cache.store';
 import { completeLineup } from './point-fantasy-lineup.fixture';
 
 describe('POINT Fantasy Cartola scoring preview', () => {
@@ -24,15 +26,23 @@ describe('POINT Fantasy Cartola scoring preview', () => {
     const providerMatch: any = { partida_id: 9001, clube_casa_id: 263,
         clube_visitante_id: 264, partida_data: new Date(Date.now() - 60_000).toISOString(), timestamp: Math.floor((Date.now() - 60_000) / 1000),
         valida: true, periodo_tr: 'F' };
-    const cartola: any = { getScoredAthletes: jest.fn(async () => ({ value: payload, cache: 'hit', stale: false })),
+    const cartola: any = {
+      // The general Cartola read would require rodadaProcessamento.pontuados in
+      // production; the live preview must use the current official feed instead.
+      getScoredAthletes: jest.fn(async () => { throw new Error('persisted snapshot missing'); }),
+      loadScoredAthletesFresh: jest.fn(async () => ({ value: payload, ttlMs: 15_000 })),
       getMatchesByRound: jest.fn(async () => ({ value: { rodada: 31, partidas: [providerMatch] }, cache: 'hit', stale: false })) };
-    return { service: new LineupScoringService(db, cartola), db, cartola, lineup, payload, athletes, selection, providerMatch };
+    const scoredCache = new ScoredAthletesCacheService(new MemoryScoredAthletesCacheStore(), cartola,
+      { get: (_key: string, fallback: number) => fallback } as any);
+    return { service: new LineupScoringService(db, cartola, scoredCache), db, cartola, scoredCache,
+      lineup, payload, athletes, selection, providerMatch };
   };
 
-  it('uses Cartola individual values for 11 starters, five reserves and coach, then applies Fantasy rules', async () => {
+  it('reads current Cartola points without a persisted snapshot and applies Fantasy rules', async () => {
     const f = setup();
     const result = await f.service.previewCartolaLineup(8, 71);
-    expect(f.cartola.getScoredAthletes).toHaveBeenCalledWith(31, 2026);
+    expect(f.cartola.getScoredAthletes).not.toHaveBeenCalled();
+    expect(f.cartola.loadScoredAthletesFresh).toHaveBeenCalledWith(31, 2026);
     expect(f.cartola.getMatchesByRound).toHaveBeenCalledWith(31, 2026);
     expect(result.atletas).toHaveLength(17);
     expect(result.atletas.map((a: any) => a.pontuacaoCartola)).toEqual(f.athletes.map(a => String(a.id === f.selection.capitaoAtletaId ? -1.25 : a.id)));
@@ -76,7 +86,20 @@ describe('POINT Fantasy Cartola scoring preview', () => {
     f.db.fantasyEscalacao.findMany.mockResolvedValue([f.lineup, { ...f.lineup, id: 72 }]);
     const result = await f.service.previewCartolaCompetition(8);
     expect(result.items).toHaveLength(2);
-    expect(f.cartola.getScoredAthletes).toHaveBeenCalledTimes(1);
+    expect(f.cartola.getScoredAthletes).not.toHaveBeenCalled();
+    expect(f.cartola.loadScoredAthletesFresh).toHaveBeenCalledTimes(1);
     expect(f.cartola.getMatchesByRound).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the fresh feed instead of an older current-round snapshot', async () => {
+    const f = setup();
+    const freshPoints = { ...f.payload, atletas: { ...f.payload.atletas,
+      [String(f.athletes[0].atletaIdExterno)]: { ...f.payload.atletas[String(f.athletes[0].atletaIdExterno)], pontuacao: 99 } } };
+    f.cartola.loadScoredAthletesFresh.mockResolvedValueOnce({ value: freshPoints, ttlMs: 15_000 });
+
+    const result = await f.service.previewCartolaLineup(8, 71);
+
+    expect(result.atletas.find((a: any) => a.atletaIdCartola === f.athletes[0].atletaIdExterno)?.pontuacaoCartola).toBe('99');
+    expect(f.cartola.getScoredAthletes).not.toHaveBeenCalled();
   });
 });

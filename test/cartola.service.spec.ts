@@ -86,6 +86,26 @@ describe('CartolaService', () => {
     expect(get.mock.calls.filter(([path]) => path === '/atletas/pontuados')).toHaveLength(2);
   });
 
+  it('carrega o feed atual quando há um snapshot não consolidado no Prisma', async () => {
+    const staleSnapshot = { rodada: 25, total_atletas: 1, atletas: { '123': { pontuacao: 2 } } };
+    const currentFeed = { rodada: 25, total_atletas: 1, atletas: { '123': { pontuacao: 9, entrou_em_campo: true } } };
+    const prisma: any = { rodadaProcessamento: { findUnique: jest.fn(async () => ({
+      status: 'EM_ANDAMENTO', pontuados: staleSnapshot,
+    })) } };
+    get.mockImplementation((path: string) => {
+      if (path === '/mercado/status') return Promise.resolve({ ...status(2, true), temporada: 2026 });
+      if (path === '/atletas/pontuados/25') return Promise.resolve(currentFeed);
+      return Promise.resolve({});
+    });
+    service = new CartolaService({ get } as unknown as CartolaHttpClient, new CartolaCacheService(), prisma);
+
+    const result = await service.loadScoredAthletesFresh(25, 2026);
+
+    expect(result.value).toEqual(currentFeed);
+    expect(result.value).not.toEqual(staleSnapshot);
+    expect(get).toHaveBeenCalledWith('/atletas/pontuados/25');
+  });
+
   it('consulta substituições oficiais diretamente pelo timeId', async () => {
     const substitutions = [{
       saiu: { atleta_id: 94583, posicao_id: 5 },

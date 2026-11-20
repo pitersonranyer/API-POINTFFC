@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { CartolaService } from '../cartola/cartola.service';
 import { CachedResult, CartolaScoredAthletesPayload } from '../cartola/cartola.types';
+import { scoreMap } from '../round-processing/round-calculator';
 import { ScoredAthletesCacheStore } from './scored-athletes-cache.store';
 
 interface StoredScoredAthletes {
@@ -78,7 +79,7 @@ export class ScoredAthletesCacheService {
   private async refresh(temporada: number, rodada: number, key: string): Promise<CachedResult<CartolaScoredAthletesPayload>> {
     const stale = await this.readValid(`${key}:stale`, rodada);
     try {
-      const loaded = await this.cartola.loadScoredAthletesFresh(rodada);
+      const loaded = await this.cartola.loadScoredAthletesFresh(rodada, temporada);
       this.validateEnvelope(loaded.value, rodada);
       const serialized = JSON.stringify({ cachedAt: new Date().toISOString(), payload: loaded.value } satisfies StoredScoredAthletes);
       await Promise.all([
@@ -119,6 +120,15 @@ export class ScoredAthletesCacheService {
   private validateEnvelope(payload: CartolaScoredAthletesPayload, rodada: number): void {
     if (!this.isRecord(payload) || !this.isRecord(payload.atletas)) throw new BadGatewayException('Envelope de atletas pontuados inválido');
     if (!Number.isInteger(payload.rodada) || payload.rodada !== rodada) throw new BadGatewayException('Rodada inválida no envelope de atletas pontuados');
+    // Cartola may omit athletes whose matches have not started. Validate each
+    // supplied row without treating total_atletas as a completeness requirement.
+    scoreMap({ ...payload, total_atletas: Object.keys(payload.atletas).length }, rodada);
+    for (const [id, athlete] of Object.entries(payload.atletas)) {
+      if ((athlete.clube_id !== undefined && (!Number.isInteger(athlete.clube_id) || athlete.clube_id < 1))
+        || (athlete.posicao_id !== undefined && (!Number.isInteger(athlete.posicao_id) || athlete.posicao_id < 1))) {
+        throw new BadGatewayException(`Identidade inválida no atleta pontuado ${id}`);
+      }
+    }
   }
 
   private validateIdentifiers(temporada: number, rodada: number): void {

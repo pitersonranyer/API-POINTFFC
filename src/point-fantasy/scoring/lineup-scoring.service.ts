@@ -1,8 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CartolaService } from '../../cartola/cartola.service';
 import { CartolaMatch } from '../../cartola/cartola.types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ScoredAthletesCacheService } from '../../scored-athletes-cache/scored-athletes-cache.service';
 import { validateSelection } from '../lineups/lineup.rules';
 import { rankScores, scoreLineup } from './scoring-engine';
 import { resolveScoringSource } from './source-completeness';
@@ -31,11 +32,18 @@ export function assertScoringCompetition(c: Competition, now = new Date(), requi
 
 /** Explicit invocation only; no collector, scheduler or financial dependencies. */
 export class LineupScoringService {
-  constructor(private readonly db: PrismaService, private readonly cartola?: CartolaService) {}
+  private readonly logger = new Logger(LineupScoringService.name);
+
+  constructor(private readonly db: PrismaService, private readonly cartola?: CartolaService,
+    private readonly scoredAthletesCache?: ScoredAthletesCacheService) {}
 
   /** Batch preview using one read of each Cartola source for a whole ranking. */
   async previewCartolaCompetition(competicaoId: number) {
-    if (!this.cartola) throw new ServiceUnavailableException('Fonte Cartola indisponivel para o preview Fantasy');
+    const cartola = this.cartola;
+    const scoredAthletesCache = this.scoredAthletesCache;
+    if (!cartola || !scoredAthletesCache) {
+      throw new ServiceUnavailableException('Fontes Cartola indisponíveis para o preview Fantasy');
+    }
     const { competition, lineups } = await this.db.$transaction(async tx => {
       const competition = await tx.fantasyCompeticao.findFirst({
         where: { id: competicaoId, status: 'PUBLICADA' },
@@ -51,11 +59,14 @@ export class LineupScoringService {
       return { competition, lineups };
     }, { isolationLevel: 'RepeatableRead' });
 
-    // These calls go through CartolaService's existing cache and history rules. No HTTP
-    // request is made to this API's own controller and no Fantasy data is persisted.
+    // Ranking Live reads the official Cartola feed through the scored-athletes cache.
+    // It deliberately bypasses CartolaService.getScoredAthletes(), which may require
+    // rodadaProcessamento.pontuados when Prisma is available. Nothing is persisted here.
     const [scored, matches] = await Promise.all([
-      this.cartola.getScoredAthletes(competition.rodada, competition.temporada),
-      this.cartola.getMatchesByRound(competition.rodada, competition.temporada),
+      this.readPreviewSource('pontuados', competition.id, competition.rodada,
+        () => scoredAthletesCache.getScoredAthletes(competition.temporada, competition.rodada)),
+      this.readPreviewSource('partidas', competition.id, competition.rodada,
+        () => cartola.getMatchesByRound(competition.rodada, competition.temporada)),
     ]);
     const previews = lineups.map(lineup => this.scoreCartolaLineup(competition, lineup, scored, matches));
     const matchStates = competition.partidas.map(fixture => {
@@ -68,6 +79,18 @@ export class LineupScoringService {
         nomePublico: lineup.nomePublico, sequencial: lineup.sequencial, identidade: lineup.identidade,
         usuarioId: lineup.usuarioId, brasaoPreferido: lineup.usuario?.fantasyBrasaoId ?? null,
         formacao: lineup.formacao, ...previews[index] })) };
+  }
+
+  private async readPreviewSource<T>(source: 'pontuados' | 'partidas', competicaoId: number, rodada: number,
+    read: () => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (error) {
+      // Do not log provider payloads, URLs, headers, or credentials.
+      this.logger.error({ event: 'point_fantasy_live_preview_source_failed', source, competicaoId, rodada,
+        errorType: error instanceof Error ? error.name : 'UnknownError' });
+      throw error;
+    }
   }
 
   /** Read-only single-lineup adapter retained for local tools and focused callers. */
