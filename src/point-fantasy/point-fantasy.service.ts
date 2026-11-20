@@ -1,5 +1,5 @@
 import { participantCrest } from './participant-crest';
-import { BadGatewayException, BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { CartolaService } from '../cartola/cartola.service';
 import { CartolaMarketStatus } from '../cartola/cartola.types';
@@ -25,6 +25,8 @@ function uint(value: unknown, allowZero = false): number {
 
 @Injectable()
 export class PointFantasyService {
+  private readonly logger = new Logger(PointFantasyService.name);
+
   constructor(private readonly prisma: PrismaService, private readonly cartola: CartolaService,
     @Optional() private readonly lineupScoring?: LineupScoringService) {}
 
@@ -312,6 +314,17 @@ export class PointFantasyService {
       const complete = rows.length > 0 && rows.every(row => row.total !== null
         && (previewByLineup.get(row.escalacaoId)?.missing?.length ?? 0) === 0);
       const estadoPontuacao = hasLiveMatch ? 'AO_VIVO' as const : allEnded && complete ? 'PROVISORIO' as const : 'PENDENTE' as const;
+      if (estadoPontuacao === 'PENDENTE') {
+        const incomplete = rows.flatMap(row => {
+          const item = previewByLineup.get(row.escalacaoId);
+          const versionMatches = item?.versaoEscalacao === row.entry.versao;
+          if (row.total !== null && versionMatches && (item?.missing?.length ?? 0) === 0) return [];
+          return [{ escalacaoId: row.escalacaoId, previewEncontrado: !!item, versaoCompativel: versionMatches,
+            totalDisponivel: row.total !== null, atletasSemPontuacao: item?.missing?.length ?? null }];
+        });
+        this.logger.warn({ event: 'point_fantasy_ranking_preview_incomplete', competicaoId: id,
+          partidasPreview: preview.partidas, escalacoes: incomplete });
+      }
       return { competicaoId: id, estadoPontuacao,
         items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
           brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
@@ -323,6 +336,8 @@ export class PointFantasyService {
         total: context.total, page: page.page, limit: page.limit, cacheDesatualizado: preview.cacheDesatualizado };
     } catch (error) {
       if (!(error instanceof HttpException)) throw error;
+      this.logger.error({ event: 'point_fantasy_ranking_preview_pending', competicaoId: id,
+        errorType: error.name, httpStatus: error.getStatus() });
       return pending();
     }
   }

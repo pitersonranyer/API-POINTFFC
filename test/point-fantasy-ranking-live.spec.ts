@@ -75,6 +75,7 @@ describe('POINT Fantasy live ranking', () => {
   });
 
   it('does not mark ended matches PROVISORIO while any lineup still has missing athletes', async () => {
+    const operationalLog = jest.spyOn((service as any).logger, 'warn').mockImplementation();
     scoring.previewCartolaCompetition.mockResolvedValue({ partidas: ['ENCERRADA'], cacheDesatualizado: false,
       items: entries.map(entry => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao,
         total: '5', missing: entry.id === 2 ? [999] : [] })) });
@@ -83,12 +84,24 @@ describe('POINT Fantasy live ranking', () => {
 
     expect(result.estadoPontuacao).toBe('PENDENTE');
     expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
+    expect(operationalLog).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'point_fantasy_ranking_preview_incomplete', competicaoId: 8, partidasPreview: ['ENCERRADA'],
+      escalacoes: [expect.objectContaining({ escalacaoId: 2, previewEncontrado: true,
+        versaoCompativel: true, totalDisponivel: true, atletasSemPontuacao: 1 })],
+    }));
+    expect(JSON.stringify(operationalLog.mock.calls)).not.toContain('999');
   });
 
   it('does not turn source failures into zero scores', async () => {
+    const operationalLog = jest.spyOn((service as any).logger, 'error').mockImplementation();
     scoring.previewCartolaCompetition.mockRejectedValue(new ServiceUnavailableException('Cartola indisponivel'));
     const result = await service.ranking(8, { page: 1, limit: 50 });
     expect(result.estadoPontuacao).toBe('PENDENTE');
     expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
+    expect(operationalLog).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'point_fantasy_ranking_preview_pending', competicaoId: 8,
+      errorType: 'ServiceUnavailableException', httpStatus: 503,
+    }));
+    expect(JSON.stringify(operationalLog.mock.calls)).not.toContain('Cartola indisponivel');
   });
 });
