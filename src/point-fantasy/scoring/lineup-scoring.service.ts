@@ -157,6 +157,8 @@ export class LineupScoringService {
         clubeId: atleta.clubeIdExterno, posicaoId: atleta.posicaoId, titular: false, reserva: papel === 'RESERVA', capitao: lineup.capitaoAtletaId === catalogoAtletaId }) : null;
       return { catalogoAtletaId, atletaIdCartola: atleta.atletaIdExterno, papel,
         pontuacaoCartola: typeof supplied?.pontuacao === 'number' ? String(supplied.pontuacao) : null,
+        scouts: supplied?.scout && typeof supplied.scout === 'object' && !Array.isArray(supplied.scout)
+          ? { ...supplied.scout } : null,
         entrouEmCampo: played ?? null, partida: !match ? 'INDEFINIDA' as const : ended ? 'ENCERRADA' as const
           : matchStartState(match, Date.now()), stale: scored.stale || matches.stale };
     });
