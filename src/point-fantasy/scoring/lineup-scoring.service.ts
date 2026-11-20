@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { HttpException, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { HttpException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CartolaService } from '../../cartola/cartola.service';
 import { CartolaMatch } from '../../cartola/cartola.types';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -31,6 +31,7 @@ export function assertScoringCompetition(c: Competition, now = new Date(), requi
 }
 
 /** Explicit invocation only; no collector, scheduler or financial dependencies. */
+@Injectable()
 export class LineupScoringService {
   private readonly logger = new Logger(LineupScoringService.name);
 
