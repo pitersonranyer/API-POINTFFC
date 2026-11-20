@@ -59,6 +59,46 @@ describe('POINT FFC 3C scoring (memory only)', () => {
     patch(2, { points: null, played: null });
     expect(run()).toMatchObject({ total: null, missing: [2], substitutions: [] });
   });
+  it('totals known live points while omitting future athletes from the partial sum', () => {
+    patch(2, { points: null, played: null, matchEnded: false });
+    const partial = scoreLineup(players, 1, 13, { partial: true });
+    expect(partial).toMatchObject({ total: '12', missing: [2], substitutions: [] });
+    expect(partial.contributions.some(row => row.athlete === 2)).toBe(false);
+    expect(run().total).toBeNull();
+  });
+  it('keeps a lineup with only future players unscored instead of asserting zero', () => {
+    players.forEach(player => Object.assign(player, { points: null, played: null, matchEnded: false }));
+    expect(scoreLineup(players, 1, 13, { partial: true })).toMatchObject({
+      total: null, missing: players.map(player => player.id), substitutions: [], contributions: [],
+    });
+  });
+  it('does not substitute an athlete missing from an in-progress match', () => {
+    patch(2, { points: null, played: null, matchEnded: false });
+    patch(14, { points: '5', played: true, matchEnded: false });
+    expect(scoreLineup(players, 1, 13, { partial: true })).toMatchObject({
+      total: '12', missing: [2], substitutions: [],
+    });
+  });
+  it('applies a common reserve only after the starter is confirmed absent', () => {
+    patch(2, { points: null, played: false, matchEnded: true });
+    patch(14, { points: '5', played: true, matchEnded: false });
+    expect(scoreLineup(players, 1, 13, { partial: true })).toMatchObject({
+      total: '17', missing: [], substitutions: [expect.objectContaining({ out: 2, in: 14, kind: 'COMUM' })],
+    });
+  });
+  it('waits for the Mago and eligible starter matches to end before substituting', () => {
+    patch(1, { points: '1', played: true, matchEnded: false });
+    patch(13, { points: '10', played: true, matchEnded: false });
+    expect(scoreLineup(players, 1, 13, { partial: true }).substitutions).toEqual([]);
+    patch(1, { matchEnded: true }); patch(13, { matchEnded: true });
+    expect(scoreLineup(players, 1, 13, { partial: true }).substitutions).toEqual([
+      expect.objectContaining({ out: 1, in: 13, kind: 'MAGO' }),
+    ]);
+  });
+  it('matches the consolidated engine once all scores and matches are final', () => {
+    players.forEach(player => Object.assign(player, { matchEnded: true }));
+    expect(scoreLineup(players, 1, 13, { partial: true })).toEqual(run());
+  });
   it('missing reserve information also prevents an invented optimum', () => {
     patch(14, { points: null }); expect(run()).toMatchObject({ total: null, missing: [14] });
   });

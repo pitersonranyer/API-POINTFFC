@@ -63,8 +63,41 @@ describe('POINT Fantasy Cartola scoring preview', () => {
     const f = setup(1017);
     const result = await f.service.previewCartolaLineup(8, 71);
     expect(result.estado).toBe('PENDENTE');
-    expect(result.total).toBeNull();
+    expect(result.total).toBe('103');
+    expect(result.missing).toContain(17);
     expect(result.atletas.find((a: any) => a.atletaIdCartola === 1017)).toMatchObject({ pontuacaoCartola: null, entrouEmCampo: null });
+  });
+
+  it('returns a live partial total when one athlete in an in-progress match has no score', async () => {
+    const f = setup();
+    const missing = f.lineup.atletas.find((row: any) => row.papel === 'TITULAR' && row.catalogoAtletaId !== f.selection.capitaoAtletaId)!;
+    delete f.payload.atletas[String(missing.atleta.atletaIdExterno)];
+    f.providerMatch.periodo_tr = '2T';
+
+    const result = await f.service.previewCartolaLineup(8, 71);
+    const expected = f.lineup.atletas.filter((row: any) => row.papel !== 'RESERVA'
+      && row.catalogoAtletaId !== missing.catalogoAtletaId).reduce((sum: number, row: any) => {
+        const points = row.atleta.id === f.selection.capitaoAtletaId ? -1.25 : row.atleta.id;
+        return sum + points * (row.atleta.id === f.selection.capitaoAtletaId ? 2 : 1);
+      }, 0);
+
+    expect(result.partidas).toContain('EM_ANDAMENTO');
+    expect(result.total).toBe(String(expected));
+    expect(result.missing).toContain(missing.catalogoAtletaId);
+    expect(result.substitutions).toEqual([]);
+  });
+
+  it('confirms a nonparticipant and permits the common reserve only after the match ends', async () => {
+    const f = setup();
+    const absent = f.lineup.atletas.find((row: any) => row.papel === 'TITULAR' && row.catalogoAtletaId !== f.selection.capitaoAtletaId)!;
+    delete f.payload.atletas[String(absent.atleta.atletaIdExterno)];
+    f.payload.total_atletas = Object.keys(f.payload.atletas).length;
+    f.providerMatch.periodo_tr = 'F';
+
+    const result = await f.service.previewCartolaLineup(8, 71);
+
+    expect(result.missing).not.toContain(absent.catalogoAtletaId);
+    expect(result.substitutions).toContainEqual(expect.objectContaining({ kind: 'COMUM', out: absent.catalogoAtletaId }));
   });
 
   it('distinguishes an evidenced live match from a scheduled match with unknown status', async () => {
@@ -101,5 +134,16 @@ describe('POINT Fantasy Cartola scoring preview', () => {
 
     expect(result.atletas.find((a: any) => a.atletaIdCartola === f.athletes[0].atletaIdExterno)?.pontuacaoCartola).toBe('99');
     expect(f.cartola.getScoredAthletes).not.toHaveBeenCalled();
+  });
+
+  it('preserves Cartola official points and does not recalculate scouts such as SG', async () => {
+    const f = setup();
+    const athlete = f.athletes[0];
+    f.payload.atletas[String(athlete.atletaIdExterno)] = { pontuacao: 5, entrou_em_campo: true,
+      clube_id: athlete.clubeIdExterno, posicao_id: athlete.posicaoId, scout: { SG: 1 } };
+
+    const result = await f.service.previewCartolaLineup(8, 71);
+
+    expect(result.atletas.find((row: any) => row.atletaIdCartola === athlete.atletaIdExterno)?.pontuacaoCartola).toBe('5');
   });
 });

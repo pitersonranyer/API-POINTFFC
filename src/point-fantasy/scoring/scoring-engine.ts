@@ -8,6 +8,7 @@ export interface ScoringPlayer {
   role: 'TITULAR' | 'RESERVA' | 'TECNICO';
   points: string | null;
   played: boolean | null;
+  matchEnded?: boolean;
 }
 export interface Substitution {
   out: number; in: number; kind: 'COMUM' | 'MAGO'; multiplier: number;
@@ -24,7 +25,8 @@ export interface ScoringResult {
  * A Mago can enter as a common reserve OR as Mago, never both. Compare complete
  * assignments including captain inheritance, so the two rules cannot conflict.
  */
-export function scoreLineup(players: ScoringPlayer[], captain: number, mago: number): ScoringResult {
+export function scoreLineup(players: ScoringPlayer[], captain: number, mago: number,
+  options: { partial?: boolean } = {}): ScoringResult {
   const sorted = [...players].sort((a, b) => a.id - b.id);
   const starters = sorted.filter(p => p.role === 'TITULAR');
   const reserves = sorted.filter(p => p.role === 'RESERVA');
@@ -36,6 +38,11 @@ export function scoreLineup(players: ScoringPlayer[], captain: number, mago: num
   const value = (p: ScoringPlayer) => p.played === false ? new Decimal(0)
     : p.points === null ? null : new Decimal(p.points);
   const missing = sorted.filter(p => value(p) === null).map(p => p.id);
+  if (options.partial && sorted.some(player => {
+    const points = value(player);
+    return points !== null && !points.isFinite();
+  })) throw Error('INVALID_SCORING_POINTS');
+  if (options.partial) return scorePartialLineup(sorted, captain, mago, value, missing);
   if (missing.length) return { total: null, missing, substitutions: [], contributions: [] };
   if (sorted.some(p => !value(p)!.isFinite())) throw Error('INVALID_SCORING_POINTS');
   let total = value(coaches[0])!;
@@ -92,6 +99,89 @@ export function scoreLineup(players: ScoringPlayer[], captain: number, mago: num
     contributions.push(...chosen.rows);
   }
   return { total: total.toFixed(), missing: [], substitutions, contributions };
+}
+
+function scorePartialLineup(sorted: ScoringPlayer[], captain: number, mago: number,
+  value: (player: ScoringPlayer) => InstanceType<typeof Decimal> | null, missing: number[]): ScoringResult {
+  const starters = sorted.filter(p => p.role === 'TITULAR');
+  const reserves = sorted.filter(p => p.role === 'RESERVA');
+  const coach = sorted.find(p => p.role === 'TECNICO')!;
+  const coachPoints = value(coach);
+  let total = coachPoints ?? new Decimal(0);
+  const contributions: ScoringResult['contributions'] = coachPoints === null ? [] : [{ starter: coach.id,
+    athlete: coach.id, multiplier: 1, points: coachPoints.toFixed() }];
+  const substitutions: Substitution[] = [];
+
+  for (const position of [1, 2, 3, 4, 5]) {
+    const slots = starters.filter(p => p.position === position);
+    const bench = reserves.filter(p => p.position === position);
+    let best: { total: InstanceType<typeof Decimal>; subs: Substitution[];
+      rows: ScoringResult['contributions'] } | null = null;
+    const search = (index: number, used: Set<number>, sum: InstanceType<typeof Decimal>,
+      subs: Substitution[], rows: ScoringResult['contributions']) => {
+      if (index === slots.length) {
+        const magic = subs.find(s => s.kind === 'MAGO');
+        if (magic) {
+          const commonOut = new Set(subs.filter(s => s.kind === 'COMUM').map(s => s.out));
+          const eligible = slots.filter(s => !commonOut.has(s.id));
+          const target = slots.find(s => s.id === magic.out)!;
+          // A Mago decision is only stable after the reserve and every original
+          // starter still eligible in that position have finished their matches.
+          if (!magic || magic.in !== mago || eligible.some(s => value(s) === null || s.matchEnded !== true)
+            || value(target) === null || eligible.some(s => value(s)!.lt(value(target)!))) return;
+        }
+        if (best === null || sum.gt(best.total) || (sum.eq(best.total)
+          && subs.filter(s => s.kind === 'COMUM').length > best.subs.filter(s => s.kind === 'COMUM').length)) {
+          best = { total: sum, subs, rows };
+        }
+        return;
+      }
+
+      const slot = slots[index];
+      const original = value(slot);
+      // Unknown future/live points are omitted from the partial sum. They are
+      // never treated as zero and cannot trigger either substitution rule.
+      if (original === null) {
+        search(index + 1, used, sum, subs, rows);
+        return;
+      }
+      const multiplier = slot.id === captain ? 2 : 1;
+      const row = (athlete: number, points: InstanceType<typeof Decimal>) => ({
+        starter: slot.id, athlete, multiplier, points: points.times(multiplier).toFixed(),
+      });
+      search(index + 1, used, sum.plus(original.times(multiplier)), subs, [...rows, row(slot.id, original)]);
+
+      for (const reserve of bench) {
+        if (used.has(reserve.id) || reserve.played === false) continue;
+        const points = value(reserve);
+        if (points === null) continue;
+        const choices: { kind: Substitution['kind']; points: InstanceType<typeof Decimal> }[] = [];
+        // Absence is actionable only once the starter's match is confirmed ended.
+        if (slot.played === false && slot.matchEnded === true) choices.push({ kind: 'COMUM', points: Decimal.max(0, points) });
+        // The performance-based Mago rule also waits for both scores to settle.
+        if (reserve.id === mago && reserve.matchEnded === true && slot.matchEnded === true && points.gt(original)) {
+          choices.push({ kind: 'MAGO', points });
+        }
+        for (const choice of choices) {
+          const contribution = choice.points.times(multiplier);
+          search(index + 1, new Set([...used, reserve.id]), sum.plus(contribution), [...subs, {
+            out: slot.id, in: reserve.id, kind: choice.kind, multiplier,
+            officialPoints: points.toFixed(), contribution: contribution.toFixed(),
+          }], [...rows, row(reserve.id, choice.points)]);
+        }
+      }
+    };
+    search(0, new Set(), new Decimal(0), [], []);
+    const chosen = best! as { total: InstanceType<typeof Decimal>; subs: Substitution[];
+      rows: ScoringResult['contributions'] };
+    total = total.plus(chosen.total);
+    substitutions.push(...chosen.subs.sort((a, b) =>
+      (a.kind === 'COMUM' ? 0 : 1) - (b.kind === 'COMUM' ? 0 : 1) || a.out - b.out));
+    contributions.push(...chosen.rows);
+  }
+
+  const hasKnownValue = sorted.some(player => value(player) !== null);
+  return { total: hasKnownValue ? total.toFixed() : null, missing, substitutions, contributions };
 }
 
 export function rankScores<T extends { escalacaoId: number; total: string | null }>(rows: T[]) {

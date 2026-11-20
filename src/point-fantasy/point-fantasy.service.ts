@@ -309,13 +309,16 @@ export class PointFantasyService {
           ? previewByLineup.get(entry.id)?.total ?? null : null, entry })));
       const hasLiveMatch = preview.partidas.includes('EM_ANDAMENTO');
       const allEnded = preview.partidas.length > 0 && preview.partidas.every(match => match === 'ENCERRADA');
-      const complete = rows.length > 0 && rows.every(row => row.total !== null);
+      const complete = rows.length > 0 && rows.every(row => row.total !== null
+        && (previewByLineup.get(row.escalacaoId)?.missing?.length ?? 0) === 0);
       const estadoPontuacao = hasLiveMatch ? 'AO_VIVO' as const : allEnded && complete ? 'PROVISORIO' as const : 'PENDENTE' as const;
       return { competicaoId: id, estadoPontuacao,
         items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
-          brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao, escalacaoId: entry.id,
+          brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
+          posicao: estadoPontuacao === 'PENDENTE' ? null : posicao, escalacaoId: entry.id,
           nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
-          formacao: entry.formacao, pontuacao: total, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
+          formacao: entry.formacao, pontuacao: estadoPontuacao === 'PENDENTE' ? null : total,
+          meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
         })),
         total: context.total, page: page.page, limit: page.limit, cacheDesatualizado: preview.cacheDesatualizado };
     } catch (error) {
