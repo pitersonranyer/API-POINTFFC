@@ -11,6 +11,7 @@ import { LineupPageDto } from './lineups/lineup.dto';
 import { rankScores } from './scoring/scoring-engine';
 import { isCurrentResult } from './scoring/result-readiness';
 import { LineupScoringService } from './scoring/lineup-scoring.service';
+import { readResultDetail, readResultSummaries } from './lineups/lineup-result.read';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BadGatewayException('Objeto Cartola invalido');
@@ -349,6 +350,72 @@ export class PointFantasyService {
         errorType: error.name, httpStatus: error.getStatus() });
       return pending();
     }
+  }
+
+  /** Public, read-only projection used after the ranking has become visible.
+   * It never replays scoring rules: live data comes from the same preview as the
+   * ranking and the fallback is the validated stored result projection. */
+  async rankingLineup(id: number, lineupId: number, usuarioId?: number) {
+    const ranking = await this.ranking(id, { page: 1, limit: Number.MAX_SAFE_INTEGER }, usuarioId);
+    const rankingItem = ranking.items.find(item => item.escalacaoId === lineupId);
+    if (!rankingItem) throw new NotFoundException('Escalacao inscrita nao encontrada');
+
+    const stored = await this.prisma.$transaction(async tx => {
+      const competition = await tx.fantasyCompeticao.findFirst({ where: { id, status: 'PUBLICADA' },
+        include: { catalogo: true, partidas: true } });
+      if (!competition) throw new NotFoundException('Competicao Fantasy nao encontrada');
+      const now = new Date();
+      const visible = competition.fimInscricao <= now || competition.partidas.some(match =>
+        match.status !== 'AGENDADA' || match.inicioReal !== null || match.inicioPrevisto <= now);
+      if (!visible) throw new NotFoundException('Escalacao inscrita nao encontrada');
+      const lineup = await tx.fantasyEscalacao.findFirst({ where: { id: lineupId, competicaoId: id,
+          status: 'INSCRITA', confirmadaEm: { not: null } },
+        include: { usuario: { select: { fantasyBrasaoId: true } }, identidade: true,
+          atletas: { include: { atleta: true }, orderBy: { id: 'asc' } } } });
+      if (!lineup) throw new NotFoundException('Escalacao inscrita nao encontrada');
+      const resultContext = await readResultSummaries(tx, competition);
+      const persisted = await readResultDetail(tx, competition, lineup, resultContext);
+      return { competition, lineup, persisted };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+
+    let preview: Awaited<ReturnType<LineupScoringService['previewCartolaLineup']>> | undefined;
+    if (this.lineupScoring) {
+      try { preview = await this.lineupScoring.previewCartolaLineup(id, lineupId); }
+      catch (error) {
+        this.logger.warn({ event: 'point_fantasy_ranking_lineup_preview_unavailable', competicaoId: id,
+          escalacaoId: lineupId, errorType: error instanceof Error ? error.name : 'UnknownError',
+          httpStatus: error instanceof HttpException ? error.getStatus() : undefined });
+      }
+    }
+    if (!preview && !stored.persisted) throw new NotFoundException('Detalhamento da pontuacao indisponivel');
+
+    const refs = stored.competition.catalogo.referencias as unknown as CatalogReferences;
+    return {
+      competicaoId: id,
+      temporada: stored.competition.temporada,
+      rodada: stored.competition.rodada,
+      ranking: { estadoPontuacao: ranking.estadoPontuacao, posicao: rankingItem.posicao,
+        pontuacao: rankingItem.pontuacao,
+        cacheDesatualizado: 'cacheDesatualizado' in ranking ? ranking.cacheDesatualizado ?? false : false },
+      escalacao: {
+        id: stored.lineup.id, nomePublico: stored.lineup.nomePublico,
+        brasaoId: participantCrest(stored.lineup.usuarioId, stored.lineup.usuario?.fantasyBrasaoId),
+        identidade: stored.lineup.identidade ? { identificadorPublico: stored.lineup.identidade.identificadorPublico,
+          nomeBase: stored.lineup.identidade.nomeBase, sequencial: stored.lineup.sequencial } : null,
+        formacao: stored.lineup.formacao, capitaoAtletaId: stored.lineup.capitaoAtletaId,
+        reservaMagoAtletaId: stored.lineup.reservaMagoAtletaId,
+        atletas: stored.lineup.atletas.map(row => ({ catalogoAtletaId: row.catalogoAtletaId,
+          papel: row.papel, atleta: row.atleta, clube: refs.clubes[String(row.atleta.clubeIdExterno)] ?? null })),
+      },
+      pontuacao: preview ? { fonte: 'PREVIEW_CARTOLA' as const, total: preview.total,
+        atletas: preview.atletas, contribuicoes: preview.contributions,
+        substituicoes: preview.substitutions, pendencias: preview.missing,
+        partidas: preview.partidas, cacheDesatualizado: preview.cacheDesatualizado }
+        : { fonte: 'RESULTADO_PERSISTIDO' as const, total: stored.persisted!.pontuacao,
+          atletas: stored.persisted!.atletas.map(atleta => ({ ...atleta, scouts: null })),
+          contribuicoes: stored.persisted!.contribuicoes, substituicoes: stored.persisted!.substituicoes,
+          pendencias: [], partidas: [], cacheDesatualizado: false },
+    };
   }
 
   async eligible(id: number, page: FantasyPageDto) {
