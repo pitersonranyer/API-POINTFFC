@@ -94,7 +94,7 @@ describe('CartolaService', () => {
     })) } };
     get.mockImplementation((path: string) => {
       if (path === '/mercado/status') return Promise.resolve({ ...status(2, true), temporada: 2026 });
-      if (path === '/atletas/pontuados/25') return Promise.resolve(currentFeed);
+      if (path === '/atletas/pontuados') return Promise.resolve(currentFeed);
       return Promise.resolve({});
     });
     service = new CartolaService({ get } as unknown as CartolaHttpClient, new CartolaCacheService(), prisma);
@@ -103,7 +103,21 @@ describe('CartolaService', () => {
 
     expect(result.value).toEqual(currentFeed);
     expect(result.value).not.toEqual(staleSnapshot);
-    expect(get).toHaveBeenCalledWith('/atletas/pontuados/25');
+    expect(get).toHaveBeenCalledWith('/atletas/pontuados');
+  });
+
+  it('keeps the numbered fresh endpoint for a round other than the current round', async () => {
+    const historicalFeed = { rodada: 24, total_atletas: 1, atletas: { '123': { pontuacao: 2 } } };
+    get.mockImplementation((path: string) => {
+      if (path === '/mercado/status') return Promise.resolve({ ...status(2, true), temporada: 2026 });
+      if (path === '/atletas/pontuados/24') return Promise.resolve(historicalFeed);
+      return Promise.resolve({});
+    });
+
+    const result = await service.loadScoredAthletesFresh(24, 2026);
+
+    expect(result.value).toEqual(historicalFeed);
+    expect(get).toHaveBeenCalledWith('/atletas/pontuados/24');
   });
 
   it('consulta substituições oficiais diretamente pelo timeId', async () => {

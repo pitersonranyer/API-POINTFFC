@@ -120,7 +120,9 @@ export class CartolaService {
       throw new NotFoundException('Temporada solicitada sem fonte Cartola atual ou snapshot consolidado');
     }
     this.validateScoredAthletesRound(state, round);
-    const suffix = round === undefined ? '' : `/${round}`;
+    // Cartola exposes the active round only through /atletas/pontuados. Its
+    // numbered route is for round-specific lookups and rejects the live round.
+    const suffix = round === undefined || round === state.rodada ? '' : `/${round}`;
     const value = await this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados${suffix}`);
     return { value, ttlMs: this.scoredAthletesTtl(state) };
   }
