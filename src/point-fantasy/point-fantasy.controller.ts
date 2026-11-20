@@ -24,6 +24,13 @@ export class PointFantasyController {
   ranking(@Param() params: LineupIdDto, @Query() page: LineupPageDto, @AuthenticatedUser() user?: Usuario) {
     return this.service.ranking(params.id, page, user?.idUsuario);
   }
+  @Get('competicoes/:id/ranking/:lineupId')
+  @UseGuards(OptionalJwtAuthGuard)
+  @Header('Cache-Control', 'private, no-store')
+  rankingLineup(@Param('id', ParseIntPipe) id: number, @Param('lineupId', ParseIntPipe) lineupId: number,
+    @AuthenticatedUser() user?: Usuario) {
+    return this.service.rankingLineup(id, lineupId, user?.idUsuario);
+  }
   @Get('competicoes/:id') competition(@Param('id', ParseIntPipe) id: number) { return this.service.competition(id); }
   @Get('competicoes/:id/partidas') async matches(@Param('id', ParseIntPipe) id: number) { return { items: (await this.service.competition(id)).partidas }; }
   @Get('competicoes/:id/atletas') eligible(@Param('id', ParseIntPipe) id: number, @Query() page: FantasyPageDto) { return this.service.eligible(id, page); }
