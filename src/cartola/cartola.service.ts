@@ -107,15 +107,18 @@ export class CartolaService {
     return this.cache.getOrLoad(`atletas/pontuados${suffix}`, ttl, () => this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados${suffix}`));
   }
 
-  async loadScoredAthletesFresh(round?: number): Promise<CartolaScoredAthletesFreshResult> {
+  async loadScoredAthletesFresh(round?: number, temporada?: number): Promise<CartolaScoredAthletesFreshResult> {
     if (round !== undefined) {
-      const historical = await this.historicalRound(round);
+      const historical = await this.historicalRound(round, temporada);
       if (historical?.status === 'CONSOLIDADA') {
         if (!historical.pontuados) throw new ServiceUnavailableException('Rodada consolidada sem atletas persistidos');
         return { value: historical.pontuados as CartolaScoredAthletesPayload, ttlMs: 10 * MINUTE };
       }
     }
     const state = await this.getState();
+    if (temporada !== undefined && temporada !== state.temporada) {
+      throw new NotFoundException('Temporada solicitada sem fonte Cartola atual ou snapshot consolidado');
+    }
     this.validateScoredAthletesRound(state, round);
     const suffix = round === undefined ? '' : `/${round}`;
     const value = await this.http.get<CartolaScoredAthletesPayload>(`/atletas/pontuados${suffix}`);
