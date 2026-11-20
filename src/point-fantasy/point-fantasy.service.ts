@@ -240,6 +240,15 @@ export class PointFantasyService {
       const historical = officialReference && (competition.temporada < market.temporada!
         || competition.temporada === market.temporada && competition.rodada < market.rodada_atual);
       if (historical) {
+        const precedingRoundCorrectionWindow = !reference?.stale && entries.length > 0 && round === null
+          && competition.temporada === market.temporada && competition.rodada === market.rodada_atual - 1
+          && market.status_mercado === 1;
+        if (precedingRoundCorrectionWindow) {
+          // A round can advance before the Fantasy apuração is created. Reuse the
+          // read-only Cartola preview in that correction window; its sources can
+          // load the already persisted Cartola round snapshot after cache expiry.
+          return { live: true as const, entradas: entries, total: entries.length };
+        }
         // Reuse computed Fantasy results. No traditional processing state, provider
         // points/matches, collection, or scoring replay is required for this read.
         const rows = rankScores(entries.map(entry => ({ entry, escalacaoId: entry.id,
