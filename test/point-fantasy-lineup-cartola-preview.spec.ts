@@ -124,6 +124,20 @@ describe('POINT Fantasy Cartola scoring preview', () => {
     expect(f.cartola.getMatchesByRound).toHaveBeenCalledTimes(1);
   });
 
+  it('logs the failing lineup without athlete payload details when preview validation rejects it', async () => {
+    const f = setup();
+    const operationalLog = jest.spyOn((f.service as any).logger, 'error').mockImplementation();
+    f.lineup.atletas[0].atleta.clubeIdExterno = 999;
+
+    await expect(f.service.previewCartolaCompetition(8)).rejects.toThrow();
+
+    expect(operationalLog).toHaveBeenCalledWith(expect.objectContaining({
+      event: 'point_fantasy_live_preview_lineup_failed', competicaoId: 8,
+      temporada: 2026, rodada: 31, escalacaoId: 71, errorType: 'ServiceUnavailableException', httpStatus: 503,
+    }));
+    expect(JSON.stringify(operationalLog.mock.calls)).not.toContain('Atleta 1');
+  });
+
   it('uses the fresh feed instead of an older current-round snapshot', async () => {
     const f = setup();
     const freshPoints = { ...f.payload, atletas: { ...f.payload.atletas,

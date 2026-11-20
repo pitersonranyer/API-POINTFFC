@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { HttpException, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CartolaService } from '../../cartola/cartola.service';
 import { CartolaMatch } from '../../cartola/cartola.types';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -68,7 +68,17 @@ export class LineupScoringService {
       this.readPreviewSource('partidas', competition.id, competition.rodada,
         () => cartola.getMatchesByRound(competition.rodada, competition.temporada)),
     ]);
-    const previews = lineups.map(lineup => this.scoreCartolaLineup(competition, lineup, scored, matches));
+    const previews = lineups.map(lineup => {
+      try {
+        return this.scoreCartolaLineup(competition, lineup, scored, matches);
+      } catch (error) {
+        this.logger.error({ event: 'point_fantasy_live_preview_lineup_failed', competicaoId,
+          temporada: competition.temporada, rodada: competition.rodada, escalacaoId: lineup.id,
+          errorType: error instanceof Error ? error.name : 'UnknownError',
+          httpStatus: error instanceof HttpException ? error.getStatus() : undefined });
+        throw error;
+      }
+    });
     const matchStates = competition.partidas.map(fixture => {
       const match = matches.value.partidas.find(item => item.partida_id === fixture.partidaIdExterno);
       return !match ? 'INDEFINIDA' as const : matchEnded(match) ? 'ENCERRADA' as const : matchStartState(match, Date.now());
