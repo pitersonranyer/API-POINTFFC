@@ -7,7 +7,8 @@ describe('POINT Fantasy live ranking', () => {
   const preview = (points: Array<string | null>, partidas = ['EM_ANDAMENTO']) => ({
     partidas, cacheDesatualizado: false,
     items: entries.map((entry, index) => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao,
-      total: points[index], estado: points[index] === null ? 'PENDENTE' : 'PROVISORIO' })),
+      total: points[index], missing: points[index] === null ? [999] : [],
+      estado: points[index] === null ? 'PENDENTE' : 'PROVISORIO' })),
   });
 
   beforeEach(() => {
@@ -46,6 +47,19 @@ describe('POINT Fantasy live ranking', () => {
     expect(scoring.previewCartolaCompetition).toHaveBeenCalledTimes(1);
   });
 
+  it('returns known partial totals as AO_VIVO when some athletes await future matches', async () => {
+    scoring.previewCartolaCompetition.mockResolvedValue({ partidas: ['EM_ANDAMENTO', 'NAO_INICIADA'],
+      cacheDesatualizado: false, items: entries.map((entry, index) => ({
+        escalacaoId: entry.id, versaoEscalacao: entry.versao, total: String(4 + index), missing: [900 + index],
+      })) });
+
+    const result = await service.ranking(8, { page: 1, limit: 50 });
+
+    expect(result.estadoPontuacao).toBe('AO_VIVO');
+    expect(result.items.map(item => item.pontuacao)).toEqual(['6', '5', '4']);
+    expect(result.items.every(item => item.posicao !== null)).toBe(true);
+  });
+
   it('returns PENDENTE when Cartola has not supplied scores before kickoff', async () => {
     scoring.previewCartolaCompetition.mockImplementation(async () => preview([null, null, null], ['NAO_INICIADA']));
     const result = await service.ranking(8, { page: 1, limit: 50 });
@@ -58,6 +72,17 @@ describe('POINT Fantasy live ranking', () => {
     const result = await service.ranking(8, { page: 1, limit: 50 });
     expect(result.estadoPontuacao).toBe('PROVISORIO');
     expect(result.items[0].posicao).toBe(1);
+  });
+
+  it('does not mark ended matches PROVISORIO while any lineup still has missing athletes', async () => {
+    scoring.previewCartolaCompetition.mockResolvedValue({ partidas: ['ENCERRADA'], cacheDesatualizado: false,
+      items: entries.map(entry => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao,
+        total: '5', missing: entry.id === 2 ? [999] : [] })) });
+
+    const result = await service.ranking(8, { page: 1, limit: 50 });
+
+    expect(result.estadoPontuacao).toBe('PENDENTE');
+    expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
   });
 
   it('does not turn source failures into zero scores', async () => {

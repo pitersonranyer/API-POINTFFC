@@ -151,10 +151,11 @@ export class LineupScoringService {
     });
     const players = individual.map(row => ({ id: row.catalogoAtletaId,
       position: lineup.atletas.find(a => a.catalogoAtletaId === row.catalogoAtletaId)!.atleta.posicaoId,
-      role: row.papel, points: row.pontuacaoCartola, played: row.entrouEmCampo ?? null }));
-    const result = scoreLineup(players, lineup.capitaoAtletaId!, lineup.reservaMagoAtletaId!);
+      role: row.papel, points: row.pontuacaoCartola, played: row.entrouEmCampo ?? null,
+      matchEnded: row.partida === 'ENCERRADA' }));
+    const result = scoreLineup(players, lineup.capitaoAtletaId!, lineup.reservaMagoAtletaId!, { partial: true });
     return { temporada: competition.temporada,
-      rodada: competition.rodada, estado: result.total === null ? 'PENDENTE' as const : 'PROVISORIO' as const,
+      rodada: competition.rodada, estado: result.total === null || result.missing.length ? 'PENDENTE' as const : 'PROVISORIO' as const,
       pontuacoesEnvelopeCompleto: completeEnvelope,
       cacheDesatualizado: scored.stale || matches.stale, partidas: [...new Set(individual.map(a => a.partida))],
       atletas: individual, ...result, persistido: false };
