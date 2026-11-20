@@ -41,6 +41,8 @@ describe('POINT Fantasy Cartola scoring preview', () => {
   it('reads current Cartola points without a persisted snapshot and applies Fantasy rules', async () => {
     const f = setup();
     const result = await f.service.previewCartolaLineup(8, 71);
+    expect(result.atletas.find((athlete: any) => athlete.pontuacaoCartola !== null)).toEqual(
+      expect.objectContaining({ scouts: expect.any(Object) }));
     expect(f.cartola.getScoredAthletes).not.toHaveBeenCalled();
     expect(f.cartola.loadScoredAthletesFresh).toHaveBeenCalledWith(31, 2026);
     expect(f.cartola.getMatchesByRound).toHaveBeenCalledWith(31, 2026);
