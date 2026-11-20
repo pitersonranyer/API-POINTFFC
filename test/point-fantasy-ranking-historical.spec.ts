@@ -58,6 +58,88 @@ describe('historical ranking (memory only; no database writes)', () => {
     expect((await service.ranking(1, { page: 1, limit: 50 })).estadoPontuacao).toBe('PROVISORIO');
   });
 
+  it('preserves Ranking scores when Cartola advances before Fantasy apuração exists', async () => {
+    competition.rodada = 35;
+    const totals = ['34.41', '30.31', '85.51'];
+    scoring.previewCartolaCompetition
+      .mockResolvedValueOnce({ partidas: ['EM_ANDAMENTO'], cacheDesatualizado: false,
+        items: entries.map((entry, index) => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao,
+          total: totals[index], missing: [] })) })
+      .mockResolvedValueOnce({ partidas: ['ENCERRADA'], cacheDesatualizado: false,
+        items: entries.map((entry, index) => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao,
+          total: totals[index], missing: [] })) });
+    cartola.getMarketStatus.mockResolvedValueOnce({ value: { temporada: 2026, rodada_atual: 35, status_mercado: 1 }, stale: false });
+
+    const live = await service.ranking(1, { page: 1, limit: 50 });
+
+    expect(live.estadoPontuacao).toBe('AO_VIVO');
+    expect(live.items.map(item => item.pontuacao)).toEqual(['85.51', '34.41', '30.31']);
+
+    round = null;
+    cartola.getMarketStatus.mockResolvedValueOnce({ value: { temporada: 2026, rodada_atual: 36, status_mercado: 1 }, stale: false });
+    const afterRoundAdvance = await service.ranking(1, { page: 1, limit: 50 });
+
+    expect(afterRoundAdvance.estadoPontuacao).toBe('PROVISORIO');
+    expect(afterRoundAdvance.items.map(item => [item.escalacaoId, item.posicao, item.pontuacao])).toEqual([
+      [7, 1, '85.51'], [5, 2, '34.41'], [6, 3, '30.31'],
+    ]);
+    expect(scoring.previewCartolaCompetition).toHaveBeenCalledTimes(2);
+  });
+
+  it('serves previous-round provisional scores through the public Ranking endpoint', async () => {
+    let app: INestApplication | undefined;
+    competition.rodada = 35;
+    round = null;
+    cartola.getMarketStatus.mockResolvedValue({ value: { temporada: 2026, rodada_atual: 36, status_mercado: 1 }, stale: false });
+    scoring.previewCartolaCompetition.mockResolvedValue({ partidas: ['ENCERRADA'], cacheDesatualizado: false,
+      items: entries.map((entry, index) => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao,
+        total: ['34.41', '30.31', '85.51'][index], missing: [] })) });
+    const module = await Test.createTestingModule({ controllers: [PointFantasyController], providers: [
+      OptionalJwtAuthGuard, { provide: PointFantasyService, useValue: service }, { provide: AuthService, useValue: {} },
+    ] }).compile();
+
+    try {
+      app = module.createNestApplication({ logger: false });
+      app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+      await app.listen(0, '127.0.0.1');
+      const response = await fetch(`${await app.getUrl()}/point-fantasy/competicoes/1/ranking?page=1&limit=50`);
+      const body = await response.json() as any;
+
+      expect(response.status).toBe(200);
+      expect(body).toMatchObject({ competicaoId: 1, estadoPontuacao: 'PROVISORIO', total: 3 });
+      expect(body.items.map((item: any) => [item.escalacaoId, item.posicao, item.pontuacao])).toEqual([
+        [7, 1, '85.51'], [5, 2, '34.41'], [6, 3, '30.31'],
+      ]);
+    } finally { await app?.close(); }
+  });
+
+  it('keeps the previous-round fallback pending when preview data is incomplete', async () => {
+    competition.rodada = 35;
+    round = null;
+    cartola.getMarketStatus.mockResolvedValue({ value: { temporada: 2026, rodada_atual: 36, status_mercado: 1 }, stale: false });
+    scoring.previewCartolaCompetition.mockResolvedValue({ partidas: ['ENCERRADA'], cacheDesatualizado: false,
+      items: entries.map(entry => ({ escalacaoId: entry.id, versaoEscalacao: entry.versao, total: '10', missing: [900] })) });
+
+    const result = await service.ranking(1, { page: 1, limit: 50 });
+
+    expect(result.estadoPontuacao).toBe('PENDENTE');
+    expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
+  });
+
+  it.each([
+    ['Cartola market closed', 32, 2],
+    ['more than one round old', 33, 1],
+  ])('does not use the preview fallback when the official correction window is closed: %s', async (_reason, currentRound, marketStatus) => {
+    round = null;
+    cartola.getMarketStatus.mockResolvedValue({ value: { temporada: 2026, rodada_atual: currentRound, status_mercado: marketStatus }, stale: false });
+
+    const result = await service.ranking(1, { page: 1, limit: 50 });
+
+    expect(result.estadoPontuacao).toBe('PENDENTE');
+    expect(result).toMatchObject({ motivoPendencia: 'APURACAO_INDISPONIVEL' });
+    expect(scoring.previewCartolaCompetition).not.toHaveBeenCalled();
+  });
+
   it('allows an explicitly validated previous round to retain its definitive status', async () => {
     cartola.getMarketStatus.mockResolvedValue({ value: { temporada: 2026, rodada_atual: 32 }, stale: false });
     round.estado = 'VALIDADA'; round.revisaoValidada = 2n;
