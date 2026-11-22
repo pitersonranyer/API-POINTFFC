@@ -298,7 +298,8 @@ export class PointFantasyService {
             meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
           })), total: entries.length, page: page.page, limit: page.limit } };
       }
-      return { live: true as const, entradas: entries, total: entries.length };
+      return { live: true as const, entradas: entries, total: entries.length,
+        escopoParcial: { temporada: competition.temporada, rodada: competition.rodada } };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
     if ('response' in context && context.response) return context.response;
@@ -316,16 +317,34 @@ export class PointFantasyService {
     try {
       const preview = await this.lineupScoring.previewCartolaCompetition(id);
       const previewByLineup = new Map(preview.items.map(item => [item.escalacaoId, item]));
-      const rows = rankScores(context.entradas.map(entry => ({ escalacaoId: entry.id,
-        total: previewByLineup.get(entry.id)?.versaoEscalacao === entry.versao
-          ? previewByLineup.get(entry.id)?.total ?? null : null, entry })));
+      const totals = context.entradas.map(entry => {
+        const item = previewByLineup.get(entry.id);
+        return { escalacaoId: entry.id, total: item?.versaoEscalacao === entry.versao ? item.total : null, entry };
+      });
       const hasLiveMatch = preview.partidas.includes('EM_ANDAMENTO');
       const allEnded = preview.partidas.length > 0 && preview.partidas.every(match => match === 'ENCERRADA');
-      const complete = rows.length > 0 && rows.every(row => row.total !== null
+      const complete = totals.length > 0 && totals.every(row => row.total !== null
         && (previewByLineup.get(row.escalacaoId)?.missing?.length ?? 0) === 0);
-      const estadoPontuacao = hasLiveMatch ? 'AO_VIVO' as const : allEnded && complete ? 'PROVISORIO' as const : 'PENDENTE' as const;
+      const estadoPontuacao = hasLiveMatch && totals.some(row => row.total !== null) ? 'AO_VIVO' as const
+        : allEnded && complete ? 'PROVISORIO' as const : 'PENDENTE' as const;
+      const scope = context.escopoParcial;
+      const canPublishPartials = estadoPontuacao === 'PENDENTE' && scope !== undefined
+        && preview.temporada === scope.temporada && preview.rodada === scope.rodada;
+      // Match status and partial availability are independent. Require an
+      // official score used in the total, not a synthetic zero or a bench-only score.
+      const rows = rankScores(totals.map(row => {
+        if (estadoPontuacao !== 'PENDENTE' || row.total === null) return row;
+        if (canPublishPartials) {
+          const item = previewByLineup.get(row.escalacaoId);
+          const official = new Set(item?.atletas.filter(atleta => atleta.pontuacaoCartola !== null)
+            .map(atleta => atleta.catalogoAtletaId));
+          if (item?.contributions.some(contribution => official.has(contribution.athlete))) return row;
+        }
+        return { ...row, total: null };
+      }));
+      const parciaisDisponiveis = estadoPontuacao === 'PENDENTE' && rows.some(row => row.total !== null);
       if (estadoPontuacao === 'PENDENTE') {
-        const incomplete = rows.flatMap(row => {
+        const incomplete = totals.flatMap(row => {
           const item = previewByLineup.get(row.escalacaoId);
           const versionMatches = item?.versaoEscalacao === row.entry.versao;
           if (row.total !== null && versionMatches && (item?.missing?.length ?? 0) === 0) return [];
@@ -333,14 +352,15 @@ export class PointFantasyService {
             totalDisponivel: row.total !== null, atletasSemPontuacao: item?.missing?.length ?? null }];
         });
         this.logger.warn({ event: 'point_fantasy_ranking_preview_incomplete', competicaoId: id,
-          partidasPreview: preview.partidas, escalacoes: incomplete });
+          partidasPreview: preview.partidas, parciaisDisponiveis, escalacoes: incomplete });
       }
       return { competicaoId: id, estadoPontuacao,
+        ...(parciaisDisponiveis ? { parciaisDisponiveis } : {}),
         items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
           brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
-          posicao: estadoPontuacao === 'PENDENTE' ? null : posicao, escalacaoId: entry.id,
+          posicao, escalacaoId: entry.id,
           nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
-          formacao: entry.formacao, pontuacao: estadoPontuacao === 'PENDENTE' ? null : total,
+          formacao: entry.formacao, pontuacao: total,
           meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
         })),
         total: context.total, page: page.page, limit: page.limit, cacheDesatualizado: preview.cacheDesatualizado };
