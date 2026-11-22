@@ -67,6 +67,62 @@ describe('POINT Fantasy live ranking', () => {
     expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
   });
 
+  const partialPreview = () => {
+    const result = preview(['0', '10', '99'], ['INDEFINIDA']);
+    return { ...result, temporada: 2026, rodada: 31, items: result.items.map((item, index) => ({
+      ...item, missing: [999], versaoEscalacao: index === 2 ? item.versaoEscalacao - 1 : item.versaoEscalacao,
+      atletas: [{ catalogoAtletaId: 1, pontuacaoCartola: item.total }, { catalogoAtletaId: 999, pontuacaoCartola: null }],
+      contributions: [{ athlete: 1, points: item.total }],
+    })) };
+  };
+
+  it('publishes official compatible totals even with unknown matches and pending athletes', async () => {
+    scoring.previewCartolaCompetition.mockResolvedValue(partialPreview());
+    const page = await service.ranking(8, { page: 1, limit: 50 });
+    expect(page).toMatchObject({ estadoPontuacao: 'PENDENTE', parciaisDisponiveis: true });
+    expect(page.items.map(item => [item.escalacaoId, item.posicao, item.pontuacao]))
+      .toEqual([[2, 1, '10'], [1, 2, '0'], [3, null, null]]);
+    expect(await service.ranking(8, { page: 3, limit: 1 })).toMatchObject({ parciaisDisponiveis: true,
+      items: [expect.objectContaining({ pontuacao: null, posicao: null })] });
+  });
+
+  it.each(['season', 'round', 'no official scores', 'bench-only scores'])('does not publish partials with %s', async issue => {
+    const data = partialPreview();
+    if (issue === 'season') data.temporada--;
+    if (issue === 'round') data.rodada--;
+    if (issue === 'no official scores') data.items.forEach(item => { item.atletas[0].pontuacaoCartola = null; });
+    if (issue === 'bench-only scores') data.items.forEach(item => { item.contributions[0].athlete = 999; });
+    scoring.previewCartolaCompetition.mockResolvedValue(data);
+    const result = await service.ranking(8, { page: 1, limit: 50 });
+    expect(result.estadoPontuacao).toBe('PENDENTE');
+    expect(result).not.toHaveProperty('parciaisDisponiveis');
+    expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
+  });
+
+  it('keeps the ranking pending when matches are live but no lineups have a total', async () => {
+    scoring.previewCartolaCompetition.mockResolvedValue(preview([null, null, null]));
+    const result = await service.ranking(8, { page: 1, limit: 50 });
+    expect(result.estadoPontuacao).toBe('PENDENTE');
+    expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
+  });
+
+  it('keeps the published totals as the match moves from unknown to live and then provisional', async () => {
+    const data = partialPreview();
+    scoring.previewCartolaCompetition.mockResolvedValueOnce(data)
+      .mockResolvedValueOnce({ ...data, partidas: ['EM_ANDAMENTO'] })
+      .mockResolvedValueOnce(preview(['0', '10', '12'], ['ENCERRADA']));
+
+    const request = () => service.ranking(8, { page: 1, limit: 50 });
+    const partial = await request();
+    const live = await request();
+    const provisional = await request();
+    expect(partial).toMatchObject({ estadoPontuacao: 'PENDENTE', parciaisDisponiveis: true });
+    expect(live.estadoPontuacao).toBe('AO_VIVO');
+    expect(live.items.map(item => item.pontuacao)).toEqual(partial.items.map(item => item.pontuacao));
+    expect(provisional.estadoPontuacao).toBe('PROVISORIO');
+    expect(provisional.items.map(item => item.pontuacao)).toEqual(['12', '10', '0']);
+  });
+
   it('returns PROVISORIO once all competition matches ended and scores are available', async () => {
     scoring.previewCartolaCompetition.mockImplementation(async () => preview(['5', '10', '10'], ['ENCERRADA']));
     const result = await service.ranking(8, { page: 1, limit: 50 });
