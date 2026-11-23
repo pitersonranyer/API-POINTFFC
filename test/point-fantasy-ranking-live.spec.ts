@@ -61,6 +61,23 @@ describe('POINT Fantasy live ranking', () => {
     expect(scoring.previewCartolaCompetition).toHaveBeenCalledTimes(1);
   });
 
+  it('returns all own teams across public pages without changing tied positions or totals', async () => {
+    const template = entries[0];
+    entries = Array.from({ length: 105 }, (_, i) => ({
+      ...template, id: i + 1, sequencial: i + 1, usuarioId: i % 3 === 0 ? 42 : 8,
+    }));
+    scoring.previewCartolaCompetition.mockImplementation(async () => preview(entries.map((_, i) => String(6 - Math.floor(i / 2)))));
+    const first = await service.ranking(8, { page: 1, limit: 50 }, 42);
+    const second = await service.ranking(8, { page: 2, limit: 50 }, 42);
+    const last = await service.ranking(8, { page: 3, limit: 50 }, 42);
+    const own = await service.myRanking(8, 42);
+    expect(own).toMatchObject({ total: 35, limit: 35, page: 1, estadoPontuacao: 'AO_VIVO' });
+    expect(own.items).toEqual([...first.items, ...second.items, ...last.items].filter(item => item.meuTime));
+    expect(own.items.some(item => item.posicao! > 100)).toBe(true);
+    expect(own.items.map(item => item.pontuacao)).toEqual(expect.arrayContaining(['0', '-1']));
+    expect(await service.myRanking(8, 99)).toMatchObject({ total: 0, items: [] });
+  });
+
   it('returns known partial totals as AO_VIVO when some athletes await future matches', async () => {
     scoring.previewCartolaCompetition.mockResolvedValue({ partidas: ['EM_ANDAMENTO', 'NAO_INICIADA'],
       cacheDesatualizado: false, items: entries.map((entry, index) => ({

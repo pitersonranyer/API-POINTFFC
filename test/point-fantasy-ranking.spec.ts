@@ -14,10 +14,10 @@ describe('POINT Fantasy public registered teams ranking', () => {
       fantasyApuracaoRodada: { findUnique: jest.fn(async () => null) },
       fantasyEscalacao: {
         findMany: jest.fn(async ({ where, skip, take, select }: any) => rows
-          .filter(r => r.competicaoId === where.competicaoId && r.status === where.status)
+          .filter(r => r.competicaoId === where.competicaoId && r.status === where.status && (where.usuarioId === undefined || where.usuarioId === r.usuarioId))
           .sort((a, b) => a.id - b.id).slice(skip ?? 0, take === undefined ? undefined : (skip ?? 0) + take)
           .map(r => select ? Object.fromEntries(Object.keys(select).map(key => [key, r[key]])) : r)),
-        count: jest.fn(async ({ where }: any) => rows.filter(r => r.competicaoId === where.competicaoId && r.status === where.status).length),
+        count: jest.fn(async ({ where }: any) => rows.filter(r => r.competicaoId === where.competicaoId && r.status === where.status && (where.usuarioId === undefined || where.usuarioId === r.usuarioId)).length),
       },
     };
     db.$transaction = jest.fn(async (action: any) => action(db));
@@ -49,6 +49,18 @@ describe('POINT Fantasy public registered teams ranking', () => {
   const request = (query = '', token?: string, id = 8) => fetch(`${url}/point-fantasy/competicoes/${id}/ranking${query}`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 
+  it('requires authentication and returns only the caller’s enrolled teams before release', async () => {
+    expect((await request('/meus-times')).status).toBe(401);
+    expect((await request('/meus-times', 'blocked')).status).toBe(403);
+    const owner = await request('/meus-times?usuarioId=9', 'owner');
+    expect(owner.status).toBe(200);
+    expect(owner.headers.get('cache-control')).toBe('private, no-store');
+    const own = await owner.json() as { items: { escalacaoId: number; meuTime: boolean }[] };
+    expect(own.items.map(item => item.escalacaoId)).toEqual([1, 2]);
+    expect(own.items.every(item => item.meuTime)).toBe(true);
+    expect(own.items.every(item => !('capitaoNome' in item))).toBe(true);
+    expect(await (await request('/meus-times', 'other')).json()).toMatchObject({ total: 1, items: [{ escalacaoId: 4 }] });
+  });
   it('lists every enrolled team across owners, including multiple teams and nullable legacy identity', async () => {
     const res = await request(); const body = await res.json() as any;
     expect(res.status).toBe(200);
