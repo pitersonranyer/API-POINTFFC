@@ -24,6 +24,12 @@ export class PointFantasyController {
   ranking(@Param() params: LineupIdDto, @Query() page: LineupPageDto, @AuthenticatedUser() user?: Usuario) {
     return this.service.ranking(params.id, page, user?.idUsuario);
   }
+  @Get('competicoes/:id/ranking/meus-times')
+  @UseGuards(JwtAuthGuard)
+  @Header('Cache-Control', 'private, no-store')
+  myRanking(@Param() params: LineupIdDto, @AuthenticatedUser() user: Usuario) {
+    return this.service.myRanking(params.id, user.idUsuario);
+  }
   @Get('competicoes/:id/ranking/:lineupId')
   @UseGuards(OptionalJwtAuthGuard)
   @Header('Cache-Control', 'private, no-store')

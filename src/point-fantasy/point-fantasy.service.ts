@@ -198,7 +198,16 @@ export class PointFantasyService {
     return competition;
   }
 
-  async ranking(id: number, page: LineupPageDto, usuarioId?: number) {
+  async myRanking(id: number, usuarioId: number) {
+    const data = await this.ranking(id, { page: 1, limit: 50 }, usuarioId, true);
+    return { ...data, total: data.items.length, limit: Math.max(1, data.items.length) };
+  }
+
+  async ranking(id: number, page: LineupPageDto, usuarioId?: number, ownOnly = false) {
+    // Filter only after ranking the full competition, without renumbering positions.
+    const selectPage = <T>(rows: T[], owner: (row: T) => number) => ownOnly
+      ? rows.filter(row => owner(row) === usuarioId)
+      : rows.slice((page.page - 1) * page.limit, page.page * page.limit);
     // Official market cache is the round reference; stored max(round) is not.
     // A market outage must not change the existing live/validated-result path.
     let reference: Awaited<ReturnType<CartolaService['getMarketStatus']>> | null = null;
@@ -212,12 +221,13 @@ export class PointFantasyService {
       const where = { competicaoId: id, status: 'INSCRITA' };
 
       if (!rankingLineupsArePublic(competition.fimInscricao, now)) {
+        const visibleWhere = ownOnly ? { ...where, usuarioId } : where;
         const [items, total] = await Promise.all([
-          tx.fantasyEscalacao.findMany({ where, orderBy: { id: 'asc' },
-            skip: (page.page - 1) * page.limit, take: page.limit,
+          tx.fantasyEscalacao.findMany({ where: visibleWhere, orderBy: { id: 'asc' },
+            ...(ownOnly ? {} : { skip: (page.page - 1) * page.limit, take: page.limit }),
             select: { usuario: { select: { fantasyBrasaoId: true } }, id: true, usuarioId: true, nomePublico: true, sequencial: true, formacao: true,
               identidade: { select: { identificadorPublico: true, nomeBase: true } } } }),
-          tx.fantasyEscalacao.count({ where }),
+          tx.fantasyEscalacao.count({ where: visibleWhere }),
         ]);
         const notStarted = competition.partidas.length > 0 && competition.partidas.every(match =>
           match.status === 'AGENDADA' && match.inicioReal === null
@@ -273,7 +283,7 @@ export class PointFantasyService {
         return { response: { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao,
           ...(motivoPendencia ? { motivoPendencia } : {}),
           ...(reference?.stale ? { cacheDesatualizado: true } : {}),
-          items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
+          items: selectPage(rows, row => row.entry.usuarioId).map(({ entry, total, posicao }) => ({
             brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
             posicao: motivoPendencia ? null : posicao, escalacaoId: entry.id, nomePublico: entry.nomePublico,
             identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
@@ -292,7 +302,7 @@ export class PointFantasyService {
           && !!round.hashConteudoAtual;
         const complete = validationCurrent && rows.length > 0 && rows.every(row => row.total !== null);
         return { response: { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao: complete ? 'DEFINITIVO' as const : 'PENDENTE' as const,
-          items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
+          items: selectPage(rows, row => row.entry.usuarioId).map(({ entry, total, posicao }) => ({
             brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: complete ? posicao : null, escalacaoId: entry.id, nomePublico: entry.nomePublico,
             identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
             capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: complete ? total : null,
@@ -308,7 +318,7 @@ export class PointFantasyService {
       items: [], total: 0, page: page.page, limit: page.limit };
 
     const pending = (estadoPontuacao: 'PENDENTE' | 'AO_VIVO' = 'PENDENTE') => ({
-      competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao, items: context.entradas.slice((page.page - 1) * page.limit, page.page * page.limit).map(entry => ({
+      competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao, items: selectPage(context.entradas, entry => entry.usuarioId).map(entry => ({
         brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: null, escalacaoId: entry.id,
         nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
         capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: null, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
@@ -357,7 +367,7 @@ export class PointFantasyService {
       }
       return { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao,
         ...(parciaisDisponiveis ? { parciaisDisponiveis } : {}),
-        items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
+        items: selectPage(rows, row => row.entry.usuarioId).map(({ entry, total, posicao }) => ({
           brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
           posicao, escalacaoId: entry.id,
           nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
