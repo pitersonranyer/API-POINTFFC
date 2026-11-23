@@ -24,6 +24,10 @@ function uint(value: unknown, allowZero = false): number {
   return value;
 }
 
+function rankingLineupsArePublic(fimInscricao: Date, now: Date): boolean {
+  return fimInscricao.getTime() <= now.getTime();
+}
+
 @Injectable()
 export class PointFantasyService {
   private readonly logger = new Logger(PointFantasyService.name);
@@ -205,12 +209,9 @@ export class PointFantasyService {
     const context = await this.prisma.$transaction(async tx => {
       const competition = await this.competition(id, tx);
       const now = new Date();
-      const marketClosed = competition.fimInscricao <= now || competition.partidas.some(match =>
-        match.status !== 'AGENDADA' || match.inicioReal !== null || !Number.isFinite(match.inicioPrevisto.getTime())
-        || match.inicioPrevisto <= now);
       const where = { competicaoId: id, status: 'INSCRITA' };
 
-      if (!marketClosed) {
+      if (!rankingLineupsArePublic(competition.fimInscricao, now)) {
         const [items, total] = await Promise.all([
           tx.fantasyEscalacao.findMany({ where, orderBy: { id: 'asc' },
             skip: (page.page - 1) * page.limit, take: page.limit,
@@ -221,7 +222,7 @@ export class PointFantasyService {
         const notStarted = competition.partidas.length > 0 && competition.partidas.every(match =>
           match.status === 'AGENDADA' && match.inicioReal === null
           && Number.isFinite(match.inicioPrevisto.getTime()) && match.inicioPrevisto > now);
-        return { response: { competicaoId: id, estadoPontuacao: notStarted ? 'NAO_INICIADA' as const : 'PENDENTE' as const,
+        return { response: { competicaoId: id, detalhesPublicosLiberados: false, estadoPontuacao: notStarted ? 'NAO_INICIADA' as const : 'PENDENTE' as const,
           items: items.map(item => ({ brasaoId: participantCrest(item.usuarioId, item.usuario?.fantasyBrasaoId), posicao: null, escalacaoId: item.id, nomePublico: item.nomePublico,
             identidade: item.identidade ? { ...item.identidade, sequencial: item.sequencial } : null,
             formacao: usuarioId !== undefined && item.usuarioId === usuarioId ? item.formacao : null,
@@ -269,7 +270,7 @@ export class PointFantasyService {
         const validated = round?.estado === 'VALIDADA' && round.revisaoValidada === round.revisaoAtual;
         const estadoPontuacao = motivoPendencia ? 'PENDENTE' as const
           : !reference?.stale && (correctionWindowClosed || validated) ? 'DEFINITIVO' as const : 'PROVISORIO' as const;
-        return { response: { competicaoId: id, estadoPontuacao,
+        return { response: { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao,
           ...(motivoPendencia ? { motivoPendencia } : {}),
           ...(reference?.stale ? { cacheDesatualizado: true } : {}),
           items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
@@ -290,7 +291,7 @@ export class PointFantasyService {
         const validationCurrent = round?.estado === 'VALIDADA' && round.revisaoValidada === round.revisaoAtual
           && !!round.hashConteudoAtual;
         const complete = validationCurrent && rows.length > 0 && rows.every(row => row.total !== null);
-        return { response: { competicaoId: id, estadoPontuacao: complete ? 'DEFINITIVO' as const : 'PENDENTE' as const,
+        return { response: { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao: complete ? 'DEFINITIVO' as const : 'PENDENTE' as const,
           items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
             brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: complete ? posicao : null, escalacaoId: entry.id, nomePublico: entry.nomePublico,
             identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
@@ -303,11 +304,11 @@ export class PointFantasyService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 
     if ('response' in context && context.response) return context.response;
-    if (!context.entradas.length) return { competicaoId: id, estadoPontuacao: 'PENDENTE' as const,
+    if (!context.entradas.length) return { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao: 'PENDENTE' as const,
       items: [], total: 0, page: page.page, limit: page.limit };
 
     const pending = (estadoPontuacao: 'PENDENTE' | 'AO_VIVO' = 'PENDENTE') => ({
-      competicaoId: id, estadoPontuacao, items: context.entradas.slice((page.page - 1) * page.limit, page.page * page.limit).map(entry => ({
+      competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao, items: context.entradas.slice((page.page - 1) * page.limit, page.page * page.limit).map(entry => ({
         brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: null, escalacaoId: entry.id,
         nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
         capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: null, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
@@ -354,7 +355,7 @@ export class PointFantasyService {
         this.logger.warn({ event: 'point_fantasy_ranking_preview_incomplete', competicaoId: id,
           partidasPreview: preview.partidas, parciaisDisponiveis, escalacoes: incomplete });
       }
-      return { competicaoId: id, estadoPontuacao,
+      return { competicaoId: id, detalhesPublicosLiberados: true, estadoPontuacao,
         ...(parciaisDisponiveis ? { parciaisDisponiveis } : {}),
         items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
           brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
@@ -384,10 +385,9 @@ export class PointFantasyService {
       const competition = await tx.fantasyCompeticao.findFirst({ where: { id, status: 'PUBLICADA' },
         include: { catalogo: true, partidas: true } });
       if (!competition) throw new NotFoundException('Competicao Fantasy nao encontrada');
-      const now = new Date();
-      const visible = competition.fimInscricao <= now || competition.partidas.some(match =>
-        match.status !== 'AGENDADA' || match.inicioReal !== null || match.inicioPrevisto <= now);
-      if (!visible) throw new NotFoundException('Escalacao inscrita nao encontrada');
+      if (!rankingLineupsArePublic(competition.fimInscricao, new Date())) {
+        throw new NotFoundException('Escalacao inscrita nao encontrada');
+      }
       const lineup = await tx.fantasyEscalacao.findFirst({ where: { id: lineupId, competicaoId: id,
           status: 'INSCRITA', confirmadaEm: { not: null } },
         include: { usuario: { select: { fantasyBrasaoId: true } }, identidade: true,

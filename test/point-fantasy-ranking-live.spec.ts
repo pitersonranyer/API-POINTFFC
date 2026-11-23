@@ -32,7 +32,7 @@ describe('POINT Fantasy live ranking', () => {
     competition.fimInscricao = new Date(Date.now() + 60_000);
     competition.partidas = [{ status: 'AGENDADA', inicioReal: null, inicioPrevisto: new Date(Date.now() + 120_000) }];
     const result = await service.ranking(8, { page: 1, limit: 50 }, 2);
-    expect(result.estadoPontuacao).toBe('NAO_INICIADA');
+    expect(result).toMatchObject({ estadoPontuacao: 'NAO_INICIADA', detalhesPublicosLiberados: false });
     expect(result.items.map(item => item.formacao)).toEqual([null, '4-3-3', null]);
     expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
     expect(scoring.previewCartolaCompetition).not.toHaveBeenCalled();
@@ -40,10 +40,18 @@ describe('POINT Fantasy live ranking', () => {
     expect(db.fantasyEscalacao.findMany.mock.calls[0][0].select).not.toHaveProperty('capitao');
   });
 
+  it('keeps captains and details private when a match starts before the registration deadline', async () => {
+    competition.fimInscricao = new Date(Date.now() + 60_000);
+    const result = await service.ranking(8, { page: 1, limit: 50 });
+    expect(result).toMatchObject({ detalhesPublicosLiberados: false });
+    expect(result.items.every(item => !('capitaoNome' in item) && item.formacao === null)).toBe(true);
+    expect(scoring.previewCartolaCompetition).not.toHaveBeenCalled();
+  });
+
   it('ranks all entries globally, preserves ties, and returns AO_VIVO after lock', async () => {
     scoring.previewCartolaCompetition.mockImplementation(async () => preview(['5', '10', '10'], ['EM_ANDAMENTO']));
     const result = await service.ranking(8, { page: 1, limit: 50 }, 2);
-    expect(result.estadoPontuacao).toBe('AO_VIVO');
+    expect(result).toMatchObject({ estadoPontuacao: 'AO_VIVO', detalhesPublicosLiberados: true });
     expect(result.items.map(item => [item.escalacaoId, item.posicao, item.pontuacao])).toEqual([[2, 1, '10'], [3, 1, '10'], [1, 3, '5']]);
     expect(result.items.every(item => item.formacao === '4-3-3')).toBe(true);
     expect(result.items.map(item => 'capitaoNome' in item ? item.capitaoNome : undefined)).toEqual(['Vitor Roque', null, 'Pedro']);

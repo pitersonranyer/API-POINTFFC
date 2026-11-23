@@ -36,7 +36,7 @@ describe('POINT Fantasy public registered teams ranking', () => {
   afterAll(async () => { await app?.close(); });
   beforeEach(() => {
     jest.clearAllMocks();
-    competition = { id: 8, status: 'PUBLICADA', tipoAcesso: 'FREE', partidas: [
+    competition = { id: 8, status: 'PUBLICADA', tipoAcesso: 'FREE', fimInscricao: new Date(Date.now() + 30 * 60_000), partidas: [
       { status: 'AGENDADA', inicioReal: null, inicioPrevisto: new Date(Date.now() + 3600000) },
     ] };
     rows = [4, 1, 3, 2, 5].map(id => ({ id, competicaoId: id === 5 ? 99 : 8,

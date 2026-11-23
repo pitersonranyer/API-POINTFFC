@@ -1,4 +1,8 @@
 import { NotFoundException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { AuthService } from '../src/auth/auth.service';
+import { OptionalJwtAuthGuard } from '../src/auth/optional-jwt-auth.guard';
+import { PointFantasyController } from '../src/point-fantasy/point-fantasy.controller';
 import { PointFantasyService } from '../src/point-fantasy/point-fantasy.service';
 
 describe('POINT Fantasy public ranking lineup detail', () => {
@@ -22,10 +26,10 @@ describe('POINT Fantasy public ranking lineup detail', () => {
       atletas: [{ catalogoAtletaId: 10, pontuacaoCartola: '6.25', scouts: { G: 1 } }],
       contributions: [{ starter: 10, athlete: 10, multiplier: 2, points: '12.5' }], substitutions: [] })) };
     const service = new PointFantasyService(db, {} as any, scoring);
-    jest.spyOn(service, 'ranking').mockResolvedValue({ competicaoId: 7, estadoPontuacao: 'PROVISORIO',
+    jest.spyOn(service, 'ranking').mockResolvedValue({ competicaoId: 7, estadoPontuacao: 'PROVISORIO', detalhesPublicosLiberados: true,
       items: [{ escalacaoId: 18, posicao: 1, pontuacao: '12.5', nomePublico: 'Time A',
         brasaoId: 'default', identidade: null, capitaoNome: null, formacao: '4-3-3', meuTime: false }], total: 1, page: 1, limit: 50 });
-    return { service, scoring, competition };
+    return { service, scoring, competition, db };
   };
 
   it('exposes only a registered lineup after lock with official preview scouts and substitutions', async () => {
@@ -43,5 +47,28 @@ describe('POINT Fantasy public ranking lineup detail', () => {
     competition.fimInscricao = new Date(Date.now() + 60_000);
     competition.partidas = [{ status: 'AGENDADA', inicioReal: null, inicioPrevisto: new Date(Date.now() + 120_000) }];
     await expect(service.rankingLineup(7, 18)).rejects.toBeInstanceOf(NotFoundException);
+  });
+  it('enforces the deadline on direct HTTP requests even when a match is marked as started', async () => {
+    const { service, competition, db, scoring } = setup();
+    competition.fimInscricao = new Date(Date.now() + 60_000);
+    const module = await Test.createTestingModule({ controllers: [PointFantasyController], providers: [
+      OptionalJwtAuthGuard, { provide: PointFantasyService, useValue: service }, { provide: AuthService, useValue: {} },
+    ] }).compile();
+    const app = module.createNestApplication({ logger: false });
+    try {
+      await app.listen(0, '127.0.0.1');
+      const url = `${await app.getUrl()}/point-fantasy/competicoes/7/ranking/18`;
+      expect((await fetch(url)).status).toBe(404);
+      expect(db.fantasyEscalacao.findFirst).not.toHaveBeenCalled();
+      expect(scoring.previewCartolaLineup).not.toHaveBeenCalled();
+
+      competition.fimInscricao = new Date(0);
+      const response = await fetch(url);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        escalacao: { atletas: [expect.objectContaining({ catalogoAtletaId: 10 })] },
+        pontuacao: { atletas: [expect.objectContaining({ scouts: { G: 1 } })], substituicoes: [] },
+      });
+    } finally { await app.close(); }
   });
 });
