@@ -24,7 +24,7 @@ describe('POINT Fantasy public ranking lineup detail', () => {
     const service = new PointFantasyService(db, {} as any, scoring);
     jest.spyOn(service, 'ranking').mockResolvedValue({ competicaoId: 7, estadoPontuacao: 'PROVISORIO',
       items: [{ escalacaoId: 18, posicao: 1, pontuacao: '12.5', nomePublico: 'Time A',
-        brasaoId: 'default', identidade: null, formacao: '4-3-3', meuTime: false }], total: 1, page: 1, limit: 50 });
+        brasaoId: 'default', identidade: null, capitaoNome: null, formacao: '4-3-3', meuTime: false }], total: 1, page: 1, limit: 50 });
     return { service, scoring, competition };
   };
 

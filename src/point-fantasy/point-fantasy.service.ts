@@ -233,7 +233,7 @@ export class PointFantasyService {
           temporada_rodada: { temporada: competition.temporada, rodada: competition.rodada },
         }, select: { revisaoAtual: true, revisaoValidada: true, hashConteudoAtual: true, estado: true } });
       const entries = await tx.fantasyEscalacao.findMany({ where,
-          include: { usuario: { select: { fantasyBrasaoId: true } }, resultado: true, identidade: { select: { identificadorPublico: true, nomeBase: true } } },
+          include: { usuario: { select: { fantasyBrasaoId: true } }, resultado: true, capitao: { select: { apelido: true } }, identidade: { select: { identificadorPublico: true, nomeBase: true } } },
           orderBy: { id: 'asc' } });
       const market = reference?.value;
       const officialReference = market && Number.isInteger(market.temporada) && market.temporada! > 0
@@ -276,7 +276,7 @@ export class PointFantasyService {
             brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
             posicao: motivoPendencia ? null : posicao, escalacaoId: entry.id, nomePublico: entry.nomePublico,
             identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
-            formacao: entry.formacao, pontuacao: total, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
+            capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: total, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
           })), total: entries.length, page: page.page, limit: page.limit } };
       }
       const officialPhase = !!competition.fechamentoDefinitivoEm && competition.fechamentoDefinitivoEm <= now
@@ -294,7 +294,7 @@ export class PointFantasyService {
           items: rows.slice((page.page - 1) * page.limit, page.page * page.limit).map(({ entry, total, posicao }) => ({
             brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: complete ? posicao : null, escalacaoId: entry.id, nomePublico: entry.nomePublico,
             identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
-            formacao: entry.formacao, pontuacao: complete ? total : null,
+            capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: complete ? total : null,
             meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
           })), total: entries.length, page: page.page, limit: page.limit } };
       }
@@ -310,7 +310,7 @@ export class PointFantasyService {
       competicaoId: id, estadoPontuacao, items: context.entradas.slice((page.page - 1) * page.limit, page.page * page.limit).map(entry => ({
         brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId), posicao: null, escalacaoId: entry.id,
         nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
-        formacao: entry.formacao, pontuacao: null, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
+        capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: null, meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
       })), total: context.total, page: page.page, limit: page.limit });
 
     if (!this.lineupScoring) return pending();
@@ -360,7 +360,7 @@ export class PointFantasyService {
           brasaoId: participantCrest(entry.usuarioId, entry.usuario?.fantasyBrasaoId),
           posicao, escalacaoId: entry.id,
           nomePublico: entry.nomePublico, identidade: entry.identidade ? { ...entry.identidade, sequencial: entry.sequencial } : null,
-          formacao: entry.formacao, pontuacao: total,
+          capitaoNome: entry.capitao?.apelido ?? null, formacao: entry.formacao, pontuacao: total,
           meuTime: usuarioId !== undefined && entry.usuarioId === usuarioId,
         })),
         total: context.total, page: page.page, limit: page.limit, cacheDesatualizado: preview.cacheDesatualizado };

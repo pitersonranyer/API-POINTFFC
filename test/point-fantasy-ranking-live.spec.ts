@@ -16,7 +16,8 @@ describe('POINT Fantasy live ranking', () => {
       fechamentoDefinitivoEm: null, partidas: [{ status: 'EM_ANDAMENTO', inicioReal: new Date(1000), inicioPrevisto: new Date(0) }] };
     entries = [1, 2, 3].map(id => ({ id, competicaoId: 8, usuarioId: id, versao: 2, nomePublico: `Time ${id}`,
       sequencial: id, formacao: '4-3-3', identidade: { identificadorPublico: `ID${id}`, nomeBase: `Time ${id}` },
-      usuario: { fantasyBrasaoId: null }, resultado: null }));
+      usuario: { fantasyBrasaoId: null }, resultado: null,
+      capitao: id === 1 ? { apelido: 'Pedro' } : id === 2 ? { apelido: 'Vitor Roque' } : null }));
     db = {
       fantasyCompeticao: { findFirst: jest.fn(async () => competition) },
       fantasyEscalacao: { findMany: jest.fn(async () => entries), count: jest.fn(async () => entries.length) },
@@ -35,6 +36,8 @@ describe('POINT Fantasy live ranking', () => {
     expect(result.items.map(item => item.formacao)).toEqual([null, '4-3-3', null]);
     expect(result.items.every(item => item.pontuacao === null && item.posicao === null)).toBe(true);
     expect(scoring.previewCartolaCompetition).not.toHaveBeenCalled();
+    expect(result.items.every(item => !('capitaoNome' in item))).toBe(true);
+    expect(db.fantasyEscalacao.findMany.mock.calls[0][0].select).not.toHaveProperty('capitao');
   });
 
   it('ranks all entries globally, preserves ties, and returns AO_VIVO after lock', async () => {
@@ -43,6 +46,9 @@ describe('POINT Fantasy live ranking', () => {
     expect(result.estadoPontuacao).toBe('AO_VIVO');
     expect(result.items.map(item => [item.escalacaoId, item.posicao, item.pontuacao])).toEqual([[2, 1, '10'], [3, 1, '10'], [1, 3, '5']]);
     expect(result.items.every(item => item.formacao === '4-3-3')).toBe(true);
+    expect(result.items.map(item => 'capitaoNome' in item ? item.capitaoNome : undefined)).toEqual(['Vitor Roque', null, 'Pedro']);
+    expect(db.fantasyEscalacao.findMany).toHaveBeenCalledTimes(1);
+    expect(db.fantasyEscalacao.findMany.mock.calls[0][0].include.capitao).toEqual({ select: { apelido: true } });
     expect(JSON.stringify(result)).not.toMatch(/atletas|capitaoAtletaId|usuarioId/);
     expect(scoring.previewCartolaCompetition).toHaveBeenCalledTimes(1);
   });

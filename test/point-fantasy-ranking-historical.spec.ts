@@ -38,11 +38,14 @@ describe('historical ranking (memory only; no database writes)', () => {
   });
 
   it('reads R31 stored results as definitive against official R35, independent of processing status', async () => {
+    entries[0].capitao = { apelido: 'Pedro' };
+    entries[2].capitao = { apelido: 'Vitor Roque' };
     const before = entries.map(e => e.resultado.total.toFixed());
     const result = await service.ranking(1, { page: 1, limit: 50 }, 6);
     expect(result.estadoPontuacao).toBe('DEFINITIVO');
     expect(result.items.map(i => [i.escalacaoId, i.posicao, i.pontuacao])).toEqual([[7, 1, '85.51'], [5, 2, '34.41'], [6, 3, '30.31']]);
     expect(result.items[2].meuTime).toBe(true);
+    expect(result.items.map(item => 'capitaoNome' in item ? item.capitaoNome : undefined)).toEqual(['Vitor Roque', 'Pedro', null]);
     expect(result.items.every(i => i.brasaoId === 'v1:c2:p2')).toBe(true);
     expect(entries.map(e => e.resultado.total.toFixed())).toEqual(before);
     expect(cartola.getMarketStatus).toHaveBeenCalledTimes(1);
