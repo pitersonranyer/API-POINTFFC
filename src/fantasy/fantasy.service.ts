@@ -6,7 +6,9 @@ import { mapEstatisticas, mapFormacao, mapPreJogo, mapSumario } from './api-fute
 @Injectable()
 export class FantasyService {
   constructor(private readonly client: ApiFutebolV2Client) {}
-  agenda(temporada: string, rodada?: string) { return consultarAgenda(this.client, temporada, rodada); }
+  agenda(temporada?: string, rodada?: string, campeonato?: string, fase?: string) {
+    return consultarAgenda(this.client, temporada, rodada, campeonato, fase);
+  }
   async preJogo(fixtureId: string) { return mapPreJogo(await this.client.detalhe(this.id(fixtureId))); }
   async formacao(fixtureId: string) { return mapFormacao(await this.client.detalhe(this.id(fixtureId))); }
   async sumario(fixtureId: string) {

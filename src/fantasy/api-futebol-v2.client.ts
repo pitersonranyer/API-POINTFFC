@@ -20,9 +20,17 @@ export class ApiFutebolV2Client {
   eventos(id: number) { return this.get(id, '/eventos'); }
   lances(id: number) { return this.get(id, '/lances'); }
   estatisticas(id: number) { return this.get(id, '/estatisticas'); }
-  campeonato() { return this.get(0, '', '/campeonatos/1'); }
-  rodadas() { return this.get(0, '', '/campeonatos/1/rodadas'); }
-  rodada(numero: number) { return this.get(0, '', `/campeonatos/1/rodadas/${numero}?timezone=America%2FSao_Paulo`); }
+  campeonato(id = 1) { return this.get(0, '', `/campeonatos/${id}`); }
+  rodadas(id = 1, temporada?: number) {
+    const query = temporada === undefined ? '' : `?temporada=${temporada}`;
+    return this.get(0, '', `/campeonatos/${id}/rodadas${query}`);
+  }
+  rodada(numero: number, id = 1, temporada?: number, fase?: number) {
+    const query = new URLSearchParams({ timezone: 'America/Sao_Paulo' });
+    if (temporada !== undefined) query.set('temporada', String(temporada));
+    if (fase !== undefined) query.set('fase', String(fase));
+    return this.get(0, '', `/campeonatos/${id}/rodadas/${numero}?${query}`);
+  }
 
   private setting(name: string, fallback: number): number {
     const value = Number(this.config.get(name) ?? fallback);
