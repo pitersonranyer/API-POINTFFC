@@ -44,7 +44,9 @@ export function mapAgenda(data: Registro, temporada: number, rodada: number, tot
 }
 
 export async function consultarAgenda(client: ApiFutebolV2Client, ano?: string, numeroRodada?: string, campeonato?: string, fase?: string) {
-  if (campeonato === '15') return consultarChampions(client, ano, numeroRodada, fase);
+  if (campeonato === '15' || campeonato === '19' || campeonato === '22') {
+    return consultarInternacional(client, Number(campeonato), ano, numeroRodada, fase);
+  }
   if ((campeonato !== undefined && campeonato !== '1') || fase !== undefined) throw new BadRequestException('Campeonato ou fase inválida');
   const temporada = inteiro(ano, 1900, 2100, 'temporada');
   const solicitada = numeroRodada === undefined ? undefined : inteiro(numeroRodada, 1, 38, 'rodada');
@@ -67,13 +69,12 @@ function inteiroPositivo(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-async function consultarChampions(client: ApiFutebolV2Client, ano?: string, rodada?: string, fase?: string) {
+async function consultarInternacional(client: ApiFutebolV2Client, campeonatoId: number, ano?: string, rodada?: string, fase?: string) {
   const solicitada = rodada === undefined ? undefined : inteiro(rodada, 1, Number.MAX_SAFE_INTEGER, 'rodada');
   const faseSolicitada = fase === undefined ? undefined : inteiro(fase, 1, Number.MAX_SAFE_INTEGER, 'fase');
   const anoSolicitado = ano === undefined ? undefined : inteiro(ano, 1900, 2100, 'temporada');
   if ((solicitada === undefined) !== (faseSolicitada === undefined)) throw new BadRequestException('Informe rodada e fase juntas');
 
-  const campeonatoId = 15;
   const campeonato = await client.campeonato(campeonatoId);
   if (campeonato.id !== campeonatoId) throw new BadGatewayException('Campeonato divergente na agenda');
   const temporadaAtual = registro(campeonato.temporada_atual);
@@ -93,9 +94,39 @@ async function consultarChampions(client: ApiFutebolV2Client, ano?: string, roda
   if (new Set(rodadas.map(r => `${r.fase}/${r.rodada}`)).size !== rodadas.length) throw new BadGatewayException('Calendário de rodadas inválido');
 
   // Preserve a ordem do calendário e identifique a rodada pelo par fase e número.
-  const atual = solicitada === undefined
-    ? rodadas.filter(r => ['andamento', 'finalizado'].includes(String(r.status))).at(-1) ?? rodadas[0]
-    : rodadas.find(r => r.rodada === solicitada && r.fase === faseSolicitada);
+  type Rodada = typeof rodadas[number];
+  const carregar = (r: Rodada) => client.rodada(r.rodada, campeonatoId, temporada, r.fase);
+  let atual: Rodada | undefined;
+  if (solicitada !== undefined) {
+    atual = rodadas.find(r => r.rodada === solicitada && r.fase === faseSolicitada);
+  } else {
+    const ultimaEncerrada = rodadas.filter(r => r.status === 'finalizado').at(-1);
+    const inicio = ultimaEncerrada ? rodadas.indexOf(ultimaEncerrada) + 1 : 0;
+    const restantes = rodadas.slice(inicio);
+    const agora = Date.now();
+    // Confira primeiro as rodadas ativas. Pendências adiadas não tornam uma rodada atual.
+    for (const r of restantes.filter(r => r.status === 'andamento').reverse()) {
+      const jogos = (await carregar(r)).partidas;
+      if (!Array.isArray(jogos)) throw new BadGatewayException('Partidas indisponíveis');
+      if (jogos.map(registro).some(p => ['andamento', 'intervalo'].includes(String(p.status))
+        || (['agendado', 'pre-jogo'].includes(String(p.status)) && Date.parse(String(p.data_hora)) >= agora))) {
+        atual = r;
+        break;
+      }
+    }
+    if (!atual) {
+      for (const r of restantes.filter(r => r.status === 'agendado')) {
+        const jogos = (await carregar(r)).partidas;
+        if (!Array.isArray(jogos)) throw new BadGatewayException('Partidas indisponíveis');
+        if (jogos.map(registro).some(p => ['andamento', 'pre-jogo'].includes(String(p.status))
+          || (p.status === 'agendado' && Date.parse(String(p.data_hora)) >= agora))) {
+          atual = r;
+          break;
+        }
+      }
+    }
+    atual ??= ultimaEncerrada;
+  }
   if (!atual) throw new NotFoundException('Fase ou rodada não disponível no calendário');
 
   const detalhe = await client.rodada(atual.rodada, campeonatoId, temporada, atual.fase);
@@ -106,7 +137,7 @@ async function consultarChampions(client: ApiFutebolV2Client, ano?: string, roda
   const proxima = rodadas[indice + 1];
   return {
     ...mapAgenda(detalhe, temporada, atual.rodada, total, campeonatoId, atual.fase),
-    competicao: texto(campeonato.nome_completo) ?? texto(campeonato.nome_popular) ?? 'Champions League',
+    competicao: texto(campeonato.nome_completo) ?? texto(campeonato.nome_popular),
     campeonatoId,
     champions: {
       temporadaNome,
