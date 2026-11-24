@@ -5,7 +5,14 @@ import { FantasyService } from './fantasy.service';
 export class FantasyController {
   constructor(private readonly service: FantasyService) {}
   @Get('agenda')
-  agenda(@Query('temporada') temporada: string, @Query('rodada') rodada?: string) { return this.service.agenda(temporada, rodada); }
+  agenda(
+    @Query('temporada') temporada?: string,
+    @Query('rodada') rodada?: string,
+    @Query('campeonato') campeonato?: string,
+    @Query('fase') fase?: string,
+  ) {
+    return this.service.agenda(temporada, rodada, campeonato, fase);
+  }
 
   @Get('partidas/:fixtureId/pre-jogo')
   preJogo(@Param('fixtureId') fixtureId: string) { return this.service.preJogo(fixtureId); }
