@@ -23,6 +23,9 @@ export class FantasyController {
   @Get('partidas/:fixtureId/estatisticas')
   estatisticas(@Param('fixtureId') fixtureId: string) { return this.service.estatisticas(fixtureId); }
 
+  @Get('partidas/:fixtureId/fantasy')
+  fantasy(@Param('fixtureId') fixtureId: string) { return this.service.fantasy(fixtureId); }
+
   @Get('partidas/:fixtureId/formacao')
   formacao(@Param('fixtureId') fixtureId: string) { return this.service.formacao(fixtureId); }
 }
